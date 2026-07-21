@@ -1,3 +1,6 @@
+# tooling manifest — kept on disk for local git hooks, not part of the project
+.arena.json
+
 # secrets
 .env
 .env.*
