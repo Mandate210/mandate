@@ -1,0 +1,23 @@
+# secrets
+.env
+.env.*
+!.env.example
+*.keypair.json
+id.json
+
+# local overrides
+*.local
+
+# dependencies
+node_modules/
+target/
+
+# build output
+dist/
+build/
+
+# os / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
