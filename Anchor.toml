@@ -1,0 +1,23 @@
+[toolchain]
+anchor_version = "0.30.1"
+solana_version = "1.18.26"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+drain_cover = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
+
+[programs.devnet]
+drain_cover = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "localnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "pnpm vitest run --dir tests"

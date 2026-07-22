@@ -1,0 +1,25 @@
+{
+  "name": "@drain-cover/attestor",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@drain-cover/sdk": "workspace:*",
+    "@drain-cover/shared": "workspace:*",
+    "@solana/web3.js": "^1.95.4",
+    "pino": "^9.5.0"
+  },
+  "devDependencies": {
+    "pino-pretty": "^13.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

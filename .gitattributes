@@ -1,0 +1,9 @@
+# Normalize to LF in the repository regardless of the checkout platform.
+# CRLF in shell scripts breaks shebangs when CI runs them on Linux.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary
+*.so binary
+*.wasm binary

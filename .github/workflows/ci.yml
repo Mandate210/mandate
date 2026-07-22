@@ -1,0 +1,25 @@
+name: ci
+
+on: [push, pull_request]
+
+jobs:
+  typescript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo run lint typecheck test build
+
+  program:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Versions are pinned in rust-toolchain.toml and Anchor.toml; drift between
+      # them and CI is risk R-8 in docs/PLAN.md.
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
