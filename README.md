@@ -1,4 +1,4 @@
-# Admin-Key Drain Cover
+# Mandate
 
 Parametric coverage for Solana protocols that pays out automatically when a
 protocol's privileged admin access is used without authorization.

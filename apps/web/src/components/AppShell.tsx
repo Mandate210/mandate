@@ -26,7 +26,7 @@ const AppShell = ({ children }: { children: ReactNode }) => {
         <div className="mx-auto w-full max-w-[1400px] px-6 h-14 flex items-center gap-8">
           <NavLink to="/" className="flex items-baseline gap-2 shrink-0">
             <span className="mono text-[13px] font-semibold tracking-[0.14em] uppercase">
-              Aegis&nbsp;Parametric
+              Mandate
             </span>
             <span className="hidden md:inline label">admin-abuse cover</span>
           </NavLink>

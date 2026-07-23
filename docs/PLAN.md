@@ -1,4 +1,4 @@
-# PLAN — Admin-Key Drain Cover
+# PLAN — Mandate
 **Статус:** draft
 **Дата:** 2026-08-10
 **Спека:** `docs/SPEC.md` (clarified, 34 FR / 10 SC / 5 US)

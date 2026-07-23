@@ -1,4 +1,4 @@
-# SPEC — Admin-Key Drain Cover
+# SPEC — Mandate
 **Статус:** clarified
 **Дата:** 2026-08-10
 
