@@ -16,6 +16,16 @@ no-entrypoint = []
 no-idl = []
 no-log-ix-name = []
 idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+# Emitted by Anchor's macros but never declared by them. Without these three the
+# unexpected_cfgs lint fires, and CI runs clippy with -D warnings.
+anchor-debug = []
+custom-heap = []
+custom-panic = []
+
+[lints.rust]
+# `solana` is a cfg the platform-tools compiler sets for the SBF target; host
+# builds do not know it. Not a feature, so it cannot be declared above.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }
 
 [dependencies]
 anchor-lang = "0.32.1"
