@@ -1,7 +1,7 @@
 # PLAN — Mandate
 **Статус:** draft
 **Дата:** 2026-08-10
-**Спека:** `docs/SPEC.md` (clarified, 34 FR / 10 SC / 5 US)
+**Спека:** `docs/SPEC.md` (clarified, 35 FR / 10 SC / 5 US)
 
 ---
 
@@ -117,12 +117,16 @@ US1 (P1) потребує: програму, `attestor`, мінімальний 
 | `Pool` | `["pool", protocol]` | `vault`, `total_assets`, `total_shares`, `locked_limit`, `open_incidents`, `acc_premium_per_share: u128` |
 | `UnderwriterPosition` | `["position", pool, owner]` | `shares`, `premium_checkpoint: u128`, `pending_withdraw`, `unlock_ts` |
 | `Policy` | `["policy", protocol, seq]` | `limit`, `retention`, `remaining_limit`, `start_ts`, `end_ts`, `premium_paid`, `beneficiary`, `status` |
-| `DeclarationEntry` | `["decl", protocol, seq]` | `program_id`, `ix_discriminator: [u8;8]`, `not_before`, `not_after`, `submitted_at`, `effective_at`, `revoked_at` |
+| `DeclarationEntry` | `["decl", protocol, seq]` | `program_id`, `ix_discriminator: [u8;8]`, `not_before`, `not_after: Option<i64>`, `moves_funds: bool`, `submitted_at`, `effective_at`, `revoked_at` |
 | `Attestor` | `["attestor", authority]` | `authority`, `active_from_epoch`, `stake` (0 у P1), `agreed`, `disagreed` |
 | `Incident` | `["incident", protocol, seq]` | `policy`, `trigger_sig: [u8;64]`, `opener`, `bond`, `opened_at`, `deadline`, `yes`, `no`, `status`, `payout`, `shortfall` |
 | `Attestation` | `["attest", incident, attestor]` | `verdict`, `submitted_at` |
 
 **FR-009 («один атестатор — одне свідчення») забезпечується самою схемою PDA:** адреса виводиться з `(incident, attestor)`, тож друге створення провалюється на рівні рантайму, без окремої перевірки в коді.
+
+**Тип вікна запису декларації (FR-035).** `not_after: None` означає постійний запис. Інструкція `submit_declaration` вимагає `not_after.is_some()`, якщо `moves_funds` — тобто постійне вікно доступне лише для операції без руху коштів. Перевірка ончейн, а не в атестаторі: постійний запис для операції з рухом коштів не повинен існувати взагалі, а не відкидатися кожним атестатором окремо. Pure-функція звірки читає ті самі поля й трактує `None` як «без верхньої межі», тож для неї це один рядок, а не окрема гілка.
+
+`moves_funds` заявляє сам протокол — програма не може перевірити, чи дискримінатор рухає кошти. Це не дає обходу: хибно позначений запис — це **новий** запис, тож він проходить `declaration_delay` (FR-031) і скасовується негайно (FR-032), як і будь-який інший, поданий скомпрометованим ключем. FR-035 закриває саме те, що обходило затримку — постійне вікно, дане в добрій вірі задовго до компрометації.
 
 **Розподіл премій (FR-018, SC-010).** Акумуляторна модель: при сплаті премії `acc_premium_per_share += premium * 1e12 / total_shares`. Андеррайтер отримує `shares * (acc - checkpoint) / 1e12`. Час перебування врахований автоматично — заробляється лише те, що нараховано, поки частка була в пулі. Похибка масштабування `1e12` на реалістичних сумах на порядки менша за 0.1% з SC-010.
 
@@ -134,8 +138,9 @@ US1 (P1) потребує: програму, `attestor`, мінімальний 
 protocols(pubkey PK, treasury, privileged jsonb, paused, updated_slot)
 pools(pubkey PK, protocol FK, total_assets, total_shares, locked_limit, open_incidents, updated_slot)
 policies(pubkey PK, protocol FK, limit, retention, remaining_limit, start_ts, end_ts, status, updated_slot)
-declarations(pubkey PK, protocol FK, program_id, ix_discriminator, not_before, not_after,
-             submitted_at, effective_at, revoked_at, updated_slot)
+declarations(pubkey PK, protocol FK, program_id, ix_discriminator, not_before,
+             not_after nullable, moves_funds, submitted_at, effective_at, revoked_at,
+             updated_slot)
 incidents(pubkey PK, protocol FK, policy FK, trigger_sig, opened_at, deadline,
           yes, no, status, payout, shortfall, payout_sig, updated_slot)
 attestations(pubkey PK, incident FK, attestor, verdict, submitted_at, tx_sig, updated_slot)
@@ -234,6 +239,7 @@ drain-cover/
 | **R-5** | Спам-інциденти блокують вивід капіталу (FR-019). | Застава за відкриття + дедлайн збору свідчень. Обидва параметри в `Config`, підбираються на devnet. |
 | **R-6** | WS-підписки Helius: ліміт конкурентних підписок і вартість поллінг-фолбеку (розрахунок нижче). | Не більше 3 покритих протоколів на безкоштовному tier; фолбек 60 с і лише під час обриву WS. |
 | **R-7** | Атестатор пропускає транзакцію (WS-розрив) → інцидент не відкрито. | Перевірка розриву за слотами при реконекті: добір пропущених сигнатур через `getSignaturesForAddress` за вікно простою. |
+| **R-9** | `moves_funds` у записі декларації заявляє протокол, а не програма. Протокол може позначити операцію з рухом коштів як безпечну й дістати постійне вікно. | Хибне позначення — новий запис, тож на нього діють `declaration_delay` (FR-031) і негайне скасування (FR-032). Додатково: `attestor` попереджає, коли постійний запис із `moves_funds: false` посилається на дискримінатор, що в історії протоколу вже переміщував кошти. |
 | **R-8** | Дрейф версій Anchor/Solana ламає збірку. **Реалізувався одразу**, див. нижче. | Пін точних версій у `Anchor.toml` і `rust-toolchain.toml`, `--frozen-lockfile` у CI, `Cargo.lock` у репозиторії. |
 
 **R-8 спрацював ще до першого рядка коду.** Початкові піни бралися зі `01-STACK-DEFAULTS.md` (`@coral-xyz/anchor ^0.30`) і виявилися застарілими на два роки: Anchor 0.30.1 і Solana 1.18.26 — це 2024 рік, Rust 1.79 — червень 2024. Сучасна crates.io вимагає `edition2024`, стабілізований у Rust 1.85, тому збірка падала на транзитивних залежностях (`cpufeatures`, потім `blake3`, потім `zeroize_derive` — каскад без видимого кінця).
