@@ -6,11 +6,11 @@ solana_version = "4.2.0"
 resolution = true
 skip-lint = false
 
-[programs.localnet]
-drain_cover = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
-
 [programs.devnet]
-drain_cover = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
+drain_cover = "DsRdHv4QRYQ7teVhwuLVttktF792gvDFQdiuraQ4eF4P"
+
+[programs.localnet]
+drain_cover = "DsRdHv4QRYQ7teVhwuLVttktF792gvDFQdiuraQ4eF4P"
 
 [registry]
 url = "https://api.apr.dev"
