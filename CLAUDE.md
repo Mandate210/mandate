@@ -11,7 +11,9 @@ last session stopped.
 ## Stack
 
 pnpm 9 workspace + Turborepo · TypeScript 5 strict · Biome · Vitest · Hono ·
-Drizzle + Postgres · React 18 + Vite 5 · Anchor 0.30 / Solana 1.18 (Rust).
+Drizzle + Postgres · React 18 + Vite 5 · Anchor 0.32.1 / Agave 4.2.0 / Rust 1.97
+(exact versions in `docs/PLAN.md`; the Anchor TS client tops out at 0.32.1, which
+is why the CLI is pinned there and not at 1.x).
 
 ```
 programs/drain-cover/   Anchor program — the only source of truth
@@ -33,6 +35,8 @@ anchor build     # regenerates the IDL that packages/sdk depends on
 anchor test      # runs tests/ against solana-test-validator
 ```
 
+The two `anchor` commands run inside WSL — see «Toolchain» below.
+
 ## Hard rules
 
 - **No `any`.** Enforced by Biome, not by agreement. Use `unknown` + a guard.
@@ -51,10 +55,24 @@ anchor test      # runs tests/ against solana-test-validator
   `.arena.json` stays out of the index. Before any push, check that no personal
   path, email or name leaked (`docs/PLAN.md` → Безпека).
 
-## Known blockers
+## Toolchain
 
-- Rust / Solana CLI / Anchor are **not installed** — `programs/` cannot build and
-  the `program` CI job will fail until they are (`docs/PLAN.md` → C-6).
-- `declare_id!` still holds the Anchor template placeholder. Run `anchor keys sync`
-  before the first deploy; `tests/config-consistency.test.ts` guards the three
-  places it is duplicated.
+The on-chain toolchain lives in **WSL** (Ubuntu 24.04): Rust, Agave CLI, Anchor,
+`solana-test-validator`. Everything else — git, pnpm, TS tests — runs on Windows.
+Build from Windows with `wsl -e bash -lc "cd <repo path in WSL> && anchor build"`.
+
+**Never commit from WSL.** Hooks and per-directory identity are configured with
+Windows paths, so a commit made there skips the identity, secret and repo-owner
+checks entirely (`docs/PLAN.md` → «Тулчейн: розподіл між WSL і Windows»).
+
+`anchor build` from the mounted Windows drive takes minutes — that is the 9p
+filesystem, not a broken setup.
+
+## Watch out
+
+- **The program keypair exists only in `target/deploy/`, which is gitignored.**
+  Wiping `target` makes `anchor keys sync` mint a different address and orphans
+  anything already deployed. Back it up before the first deploy.
+- `anchor keys sync` rewrites only the cluster configured in `Anchor.toml`; the
+  other one is updated by hand. `tests/config-consistency.test.ts` guards all
+  three places the id is duplicated.

@@ -25,5 +25,14 @@ released automatically — no claim review, no negotiation, no trust in an insur
 
 ## Status
 
-Early development. The product specification is being written and is not part of
-this repository yet.
+Early development, nothing deployed. What exists:
+
+- `docs/SPEC.md` — requirements and success criteria, clarified.
+- `docs/PLAN.md` — architecture, on-chain data model, risks.
+- `docs/TASKS.md` — the work broken down by user story.
+- `apps/web` — a visual prototype running on mock data, to show the flow.
+- `programs/drain-cover` — the Anchor skeleton; it builds, and holds no logic yet.
+
+The program is the only source of truth by design: it holds the capital, counts
+the quorum and executes the payout. Everything off-chain is a cache or an
+observer, and can be rebuilt from the chain.
