@@ -1,0 +1,23 @@
+use anchor_lang::prelude::*;
+
+pub const ATTESTOR_SEED: &[u8] = b"attestor";
+
+/// An independent observer entitled to classify privileged transactions. The
+/// authority is in the PDA seeds; the field repeats it so the account can be read
+/// without rederiving the address.
+#[account]
+#[derive(InitSpace)]
+pub struct Attestor {
+    pub authority: Pubkey,
+    /// Membership starts with the next epoch, never mid-incident: an attestation
+    /// is only accepted from a member of the set as it stood when the incident
+    /// opened (FR-008).
+    pub active_from_epoch: u64,
+    /// Zero while the set is a permissive list. Stake, rewards and slashing
+    /// arrive with US3 and change only how the set is formed (FR-021).
+    pub stake: u64,
+    /// Agreements and disagreements with settled decisions. Public record now,
+    /// input to slashing later (FR-022, FR-023).
+    pub agreed: u32,
+    pub disagreed: u32,
+}

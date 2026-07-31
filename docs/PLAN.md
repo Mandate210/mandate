@@ -114,13 +114,26 @@ US1 (P1) потребує: програму, `attestor`, мінімальний 
 |---|---|---|
 | `Config` | `["config"]` | `admin`, `asset_mint`, `declaration_delay`, `attest_window`, `quorum_bps`, `open_bond`, `paused` |
 | `Protocol` | `["protocol", protocol_id]` | `authority`, `treasury`, `privileged: Vec<Pubkey>` (cap 16), `pool`, `new_policies_paused` |
-| `Pool` | `["pool", protocol]` | `vault`, `total_assets`, `total_shares`, `locked_limit`, `open_incidents`, `acc_premium_per_share: u128` |
+| `Pool` | `["pool", protocol]` | `vault`, `total_assets`, `total_shares`, `locked_limit`, `open_incidents`, `acc_premium_per_share: u128`, `bump` |
 | `UnderwriterPosition` | `["position", pool, owner]` | `shares`, `premium_checkpoint: u128`, `pending_withdraw`, `unlock_ts` |
 | `Policy` | `["policy", protocol, seq]` | `limit`, `retention`, `remaining_limit`, `start_ts`, `end_ts`, `premium_paid`, `beneficiary`, `status` |
 | `DeclarationEntry` | `["decl", protocol, seq]` | `program_id`, `ix_discriminator: [u8;8]`, `not_before`, `not_after: Option<i64>`, `moves_funds: bool`, `submitted_at`, `effective_at`, `revoked_at` |
 | `Attestor` | `["attestor", authority]` | `authority`, `active_from_epoch`, `stake` (0 у P1), `agreed`, `disagreed` |
-| `Incident` | `["incident", protocol, seq]` | `policy`, `trigger_sig: [u8;64]`, `opener`, `bond`, `opened_at`, `deadline`, `yes`, `no`, `status`, `payout`, `shortfall` |
+| `Incident` | `["incident", protocol, seq]` | `policy`, `trigger_sig: [u8;64]`, `opener`, `bond`, `opened_at`, `deadline`, `votes_unauthorized`, `votes_authorized`, `status`, `payout`, `shortfall` |
 | `Attestation` | `["attest", incident, attestor]` | `verdict`, `submitted_at` |
+
+**Розміри акаунтів (T008).** Виведені `#[derive(InitSpace)]`, зафіксовані тестом у
+`state/mod.rs`: `Config` 91, `Protocol` 613, `Pool` 77, `UnderwriterPosition` 40,
+`Policy` 81, `DeclarationEntry` 83, `Attestor` 56, `Incident` 173, `Attestation` 9
+байтів без дискримінатора. Один інцидент алокує `Incident` + `Attestation` =
+181 + 17 байтів разом із дискримінаторами — це вхідні для межі за `SC-008` (T064),
+тому обидва акаунти тримаються без полів «про запас».
+
+Два відхилення від первісної таблиці, обидва свідомі: у `Pool` доданий `bump`, бо
+пул підписує кожен переказ зі свого vault і виводити bump щоразу — марна витрата
+CU; `yes`/`no` в `Incident` названі `votes_unauthorized`/`votes_authorized`, бо
+кворум рахується за однією конкретною класифікацією (FR-010), і «yes» на питання
+«санкціонована чи ні» читається двояко там, де від цього залежать гроші.
 
 **FR-009 («один атестатор — одне свідчення») забезпечується самою схемою PDA:** адреса виводиться з `(incident, attestor)`, тож друге створення провалюється на рівні рантайму, без окремої перевірки в коді.
 
