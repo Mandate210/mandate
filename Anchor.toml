@@ -20,4 +20,6 @@ cluster = "localnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
-test = "pnpm vitest run --dir tests"
+# `anchor test` boots solana-test-validator, so it runs the suite that needs one.
+# The unit suite is part of `pnpm gate` and must not depend on a validator.
+test = "pnpm --filter @drain-cover/tests test:integration"

@@ -32,10 +32,16 @@ pnpm gate        # lint + typecheck + test — must be green before every commit
 pnpm dev         # all apps
 pnpm lint:fix    # biome check --write
 anchor build     # regenerates the IDL that packages/sdk depends on
-anchor test      # runs tests/ against solana-test-validator
+anchor test      # boots a validator and runs tests/*.itest.ts
 ```
 
 The two `anchor` commands run inside WSL — see «Toolchain» below.
+
+**Two test suites, on purpose.** `*.test.ts` needs nothing but Node and belongs to
+`pnpm gate`; `*.itest.ts` needs a running validator and is excluded from the default
+`vitest run`. Keep the gate green on a machine with no Rust and no validator — that
+is what the CI `typescript` job is. Integration tests build their world through
+`tests/harness.ts`, which refuses any RPC endpoint that is not loopback.
 
 ## Hard rules
 
