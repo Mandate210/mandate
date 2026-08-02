@@ -32,16 +32,40 @@ pnpm gate        # lint + typecheck + test — must be green before every commit
 pnpm dev         # all apps
 pnpm lint:fix    # biome check --write
 anchor build     # regenerates the IDL that packages/sdk depends on
-anchor test      # boots a validator and runs tests/*.itest.ts
+anchor deploy    # deploys to whatever cluster Anchor.toml points at
 ```
 
-The two `anchor` commands run inside WSL — see «Toolchain» below.
+**`anchor build` alone produces a program that will not deploy.** `cargo-build-sbf`
+defaults to `--arch v0`, and every cluster with current features active refuses v0
+execution. Build the deployable artifact in two steps, in this order — the second
+overwrites the `.so` the first wrote:
+
+```bash
+anchor build                                                      # IDL
+cargo build-sbf --manifest-path programs/drain-cover/Cargo.toml --arch v3
+```
+
+Both `anchor` commands run inside WSL — see «Toolchain» below.
 
 **Two test suites, on purpose.** `*.test.ts` needs nothing but Node and belongs to
 `pnpm gate`; `*.itest.ts` needs a running validator and is excluded from the default
 `vitest run`. Keep the gate green on a machine with no Rust and no validator — that
 is what the CI `typescript` job is. Integration tests build their world through
 `tests/harness.ts`, which refuses any RPC endpoint that is not loopback.
+
+**`anchor test` is not usable here** and is wired to fail with an explanation.
+Anchor runs its scripts inside WSL, which has no node. Three steps instead:
+
+```bash
+wsl -e bash -lc "solana-test-validator --reset"             # WSL, keep running
+wsl -e bash -lc "cd <repo in WSL> && anchor deploy"         # WSL
+pnpm --filter @drain-cover/tests test:integration           # Windows
+```
+
+`--reset` is not optional. `Config` is a singleton PDA and other accounts key off
+constant seeds, so the suite cannot recreate what a previous run already created.
+Re-run against a used ledger and the tests fail on "account already in use" — the
+suites say so explicitly rather than letting you debug the wrong thing.
 
 ## Hard rules
 

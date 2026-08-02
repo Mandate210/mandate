@@ -20,6 +20,10 @@ cluster = "localnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
-# `anchor test` boots solana-test-validator, so it runs the suite that needs one.
-# The unit suite is part of `pnpm gate` and must not depend on a validator.
-test = "pnpm --filter @drain-cover/tests test:integration"
+# `anchor test` cannot run this suite. Anchor executes scripts inside WSL, where
+# there is no node — pnpm and the TS tooling live on Windows by design (docs/PLAN.md
+# → «Тулчейн: розподіл між WSL і Windows»). The flow is three steps instead:
+#   WSL:      solana-test-validator
+#   WSL:      anchor deploy
+#   Windows:  pnpm --filter @drain-cover/tests test:integration
+test = "echo 'Run the integration suite from Windows — see the comment in Anchor.toml' && exit 1"
