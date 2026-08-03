@@ -41,4 +41,8 @@ pub enum DrainCoverError {
     /// a saturating fallback.
     #[msg("Arithmetic overflow")]
     MathOverflow,
+    #[msg("Quorum must be above zero and at most 10000 basis points")]
+    InvalidQuorum,
+    #[msg("Duration must be positive")]
+    InvalidDuration,
 }
