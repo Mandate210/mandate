@@ -1,0 +1,73 @@
+import { BN } from '@coral-xyz/anchor'
+import { PublicKey } from '@solana/web3.js'
+
+/**
+ * Seeds, byte for byte as the program declares them. Every string here has a
+ * counterpart in `programs/drain-cover/src/state/*.rs`, and nothing but
+ * `pdas.test.ts` cross-checks the two: a mismatch derives a valid-looking address
+ * that the program will never recognise.
+ */
+export const SEEDS = {
+  config: 'config',
+  protocol: 'protocol',
+  pool: 'pool',
+  position: 'position',
+  policy: 'policy',
+  declaration: 'decl',
+  attestor: 'attestor',
+  incident: 'incident',
+  attestation: 'attest',
+} as const
+
+const seed = (value: string): Buffer => Buffer.from(value)
+
+/** Sequence numbers are u64 in the program, little-endian in the seed. */
+export const seqSeed = (seq: number | bigint): Buffer =>
+  new BN(seq.toString()).toArrayLike(Buffer, 'le', 8)
+
+const derive = (programId: PublicKey, seeds: Buffer[]): PublicKey =>
+  PublicKey.findProgramAddressSync(seeds, programId)[0]
+
+export const findConfig = (programId: PublicKey): PublicKey =>
+  derive(programId, [seed(SEEDS.config)])
+
+export const findProtocol = (programId: PublicKey, protocolId: PublicKey): PublicKey =>
+  derive(programId, [seed(SEEDS.protocol), protocolId.toBuffer()])
+
+export const findPool = (programId: PublicKey, protocol: PublicKey): PublicKey =>
+  derive(programId, [seed(SEEDS.pool), protocol.toBuffer()])
+
+export const findPosition = (programId: PublicKey, pool: PublicKey, owner: PublicKey): PublicKey =>
+  derive(programId, [seed(SEEDS.position), pool.toBuffer(), owner.toBuffer()])
+
+export const findPolicy = (
+  programId: PublicKey,
+  protocol: PublicKey,
+  seq: number | bigint,
+): PublicKey => derive(programId, [seed(SEEDS.policy), protocol.toBuffer(), seqSeed(seq)])
+
+export const findDeclarationEntry = (
+  programId: PublicKey,
+  protocol: PublicKey,
+  seq: number | bigint,
+): PublicKey => derive(programId, [seed(SEEDS.declaration), protocol.toBuffer(), seqSeed(seq)])
+
+export const findAttestor = (programId: PublicKey, authority: PublicKey): PublicKey =>
+  derive(programId, [seed(SEEDS.attestor), authority.toBuffer()])
+
+export const findIncident = (
+  programId: PublicKey,
+  protocol: PublicKey,
+  seq: number | bigint,
+): PublicKey => derive(programId, [seed(SEEDS.incident), protocol.toBuffer(), seqSeed(seq)])
+
+/**
+ * Both identities live in the seeds, which is what makes "one attestor, one
+ * attestation" (FR-009) a runtime guarantee rather than a check in our code.
+ */
+export const findAttestation = (
+  programId: PublicKey,
+  incident: PublicKey,
+  attestor: PublicKey,
+): PublicKey =>
+  derive(programId, [seed(SEEDS.attestation), incident.toBuffer(), attestor.toBuffer()])

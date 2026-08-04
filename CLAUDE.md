@@ -45,6 +45,17 @@ anchor build                                                      # IDL
 cargo build-sbf --manifest-path programs/drain-cover/Cargo.toml --arch v3
 ```
 
+**After every program change, sync the IDL into the SDK:**
+
+```bash
+pnpm --filter @drain-cover/sdk sync:idl
+```
+
+`target/` is gitignored, so `packages/sdk/src/idl/` holds a committed copy — that is
+what lets the CI `typescript` job typecheck without Rust. A drift guard compares the
+two whenever `target/` exists, so a forgotten sync fails locally rather than shipping
+a client built against an older program.
+
 Both `anchor` commands run inside WSL — see «Toolchain» below.
 
 **Two test suites, on purpose.** `*.test.ts` needs nothing but Node and belongs to

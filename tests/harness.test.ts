@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
-import { ASSET_DECIMALS, asset, assertLocalEndpoint, testRpcUrl } from './harness'
+import { ASSET_DECIMALS, assertLocalEndpoint, asset, testRpcUrl } from './harness'
 
 // The network parts of the harness are exercised by the integration suite
-// (`*.itest.ts`, run under `anchor test`). What is checked here is the logic that
-// must hold before a validator is involved at all.
+// (`*.itest.ts`, run against a validator — see CLAUDE.md → Commands). What is
+// checked here is the logic that must hold before a validator is involved at all.
 
 describe('asset amounts', () => {
   it('scales whole units by the asset decimals', () => {
