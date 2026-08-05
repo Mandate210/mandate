@@ -196,6 +196,27 @@ export const submitDeclaration = async (
   return { entry, seq }
 }
 
+/**
+ * Withdraws what an entry permits, effective at once (FR-032). `narrowTo` omitted
+ * revokes it outright; a timestamp shortens its window to end there.
+ */
+export const revokeDeclaration = async (
+  program: Program<DrainCover>,
+  target: RegisteredProtocol,
+  seq: number,
+  narrowTo?: number,
+): Promise<void> => {
+  await program.methods
+    .revokeDeclaration(new BN(seq), narrowTo === undefined ? null : new BN(narrowTo))
+    .accountsPartial({
+      protocol: target.protocol,
+      authority: target.authority.publicKey,
+      entry: findDeclarationEntry(program.programId, target.protocol, seq),
+    })
+    .signers([target.authority])
+    .rpc()
+}
+
 /** Capital in the pool without shares — the temporary service path (T014, gone in T036). */
 export const fundPool = async (
   program: Program<DrainCover>,

@@ -381,6 +381,61 @@ export type DrainCover = {
       ]
     },
     {
+      name: 'revokeDeclaration'
+      docs: [
+        'Withdraws what a declaration entry permits, with no delay (FR-032).',
+        '`narrow_to: None` revokes it; `Some(ts)` shortens its window to end at `ts`.',
+      ]
+      discriminator: [45, 84, 227, 180, 193, 110, 129, 74]
+      accounts: [
+        {
+          name: 'protocol'
+        },
+        {
+          name: 'authority'
+          signer: true
+          relations: ['protocol']
+        },
+        {
+          name: 'entry'
+          docs: [
+            'The entry carries no protocol field, so the seeds are what tie it to this',
+            "protocol — without them one protocol's authority could revoke another's",
+            'declaration, and revocation is the one operation nobody has to wait for.',
+          ]
+          writable: true
+          pda: {
+            seeds: [
+              {
+                kind: 'const'
+                value: [100, 101, 99, 108]
+              },
+              {
+                kind: 'account'
+                path: 'protocol'
+              },
+              {
+                kind: 'arg'
+                path: 'seq'
+              },
+            ]
+          }
+        },
+      ]
+      args: [
+        {
+          name: 'seq'
+          type: 'u64'
+        },
+        {
+          name: 'narrowTo'
+          type: {
+            option: 'i64'
+          }
+        },
+      ]
+    },
+    {
       name: 'serviceFundPool'
       docs: [
         'Puts capital in a pool without issuing shares. Temporary — removed in T036,',
@@ -688,6 +743,16 @@ export type DrainCover = {
       code: 6024
       name: 'declarationExpiresBeforeEffective'
       msg: 'Declaration window closes before the entry takes effect'
+    },
+    {
+      code: 6025
+      name: 'declarationWindowNotNarrower'
+      msg: 'A revised declaration window must be narrower than the one it replaces'
+    },
+    {
+      code: 6026
+      name: 'narrowedWindowEndsInThePast'
+      msg: 'A narrowed declaration window may not end in the past'
     },
   ]
   types: [

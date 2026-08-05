@@ -101,4 +101,14 @@ pub mod drain_cover {
             moves_funds,
         )
     }
+
+    /// Withdraws what a declaration entry permits, with no delay (FR-032).
+    /// `narrow_to: None` revokes it; `Some(ts)` shortens its window to end at `ts`.
+    pub fn revoke_declaration(
+        ctx: Context<RevokeDeclaration>,
+        seq: u64,
+        narrow_to: Option<i64>,
+    ) -> Result<()> {
+        instructions::revoke_declaration::handle_revoke_declaration(ctx, seq, narrow_to)
+    }
 }

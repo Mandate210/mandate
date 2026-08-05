@@ -12,6 +12,7 @@
 pub mod initialize;
 pub mod issue_policy;
 pub mod register_protocol;
+pub mod revoke_declaration;
 pub mod service_fund_pool;
 pub mod submit_declaration;
 
@@ -23,5 +24,6 @@ pub mod submit_declaration;
 pub use initialize::*;
 pub use issue_policy::*;
 pub use register_protocol::*;
+pub use revoke_declaration::*;
 pub use service_fund_pool::*;
 pub use submit_declaration::*;

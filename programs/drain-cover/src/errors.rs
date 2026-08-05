@@ -65,4 +65,13 @@ pub enum DrainCoverError {
     /// declared while every attestor sees it as undeclared.
     #[msg("Declaration window closes before the entry takes effect")]
     DeclarationExpiresBeforeEffective,
+    /// Widening is exactly what `declaration_delay` slows down, so it goes through
+    /// a new entry (FR-031) instead of an edit that lands at once.
+    #[msg("A revised declaration window must be narrower than the one it replaces")]
+    DeclarationWindowNotNarrower,
+    /// Narrowing applies from now on. A window pulled into the past would
+    /// un-declare operations already performed while the entry was effective —
+    /// an incident, and a payout, against a protocol that did nothing wrong.
+    #[msg("A narrowed declaration window may not end in the past")]
+    NarrowedWindowEndsInThePast,
 }
