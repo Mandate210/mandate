@@ -447,11 +447,108 @@ export type DrainCover = {
         },
       ]
     },
+    {
+      name: 'submitDeclaration'
+      docs: [
+        'Declares one permitted privileged operation (FR-006). Effective after',
+        '`Config.declaration_delay` (FR-031); a permanent window needs',
+        '`moves_funds == false` (FR-035).',
+      ]
+      discriminator: [126, 157, 76, 72, 36, 163, 171, 202]
+      accounts: [
+        {
+          name: 'config'
+          pda: {
+            seeds: [
+              {
+                kind: 'const'
+                value: [99, 111, 110, 102, 105, 103]
+              },
+            ]
+          }
+        },
+        {
+          name: 'protocol'
+          docs: [
+            "A declaration is the protocol's statement about its own operations, so the",
+            'admin has no part in it — unlike registration or issuance, which are service',
+            'operations in P1. `has_one` is the whole authorisation check.',
+          ]
+          writable: true
+        },
+        {
+          name: 'authority'
+          docs: [
+            'Pays for the entry as well as signing it: the protocol carries the cost of',
+            'its own declaration, and one signer is one fewer way for a caller to get the',
+            'accounts wrong.',
+          ]
+          writable: true
+          signer: true
+          relations: ['protocol']
+        },
+        {
+          name: 'entry'
+          writable: true
+          pda: {
+            seeds: [
+              {
+                kind: 'const'
+                value: [100, 101, 99, 108]
+              },
+              {
+                kind: 'account'
+                path: 'protocol'
+              },
+              {
+                kind: 'account'
+                path: 'protocol.next_declaration_seq'
+                account: 'protocol'
+              },
+            ]
+          }
+        },
+        {
+          name: 'systemProgram'
+          address: '11111111111111111111111111111111'
+        },
+      ]
+      args: [
+        {
+          name: 'declaredProgram'
+          type: 'pubkey'
+        },
+        {
+          name: 'ixDiscriminator'
+          type: {
+            array: ['u8', 8]
+          }
+        },
+        {
+          name: 'notBefore'
+          type: 'i64'
+        },
+        {
+          name: 'notAfter'
+          type: {
+            option: 'i64'
+          }
+        },
+        {
+          name: 'movesFunds'
+          type: 'bool'
+        },
+      ]
+    },
   ]
   accounts: [
     {
       name: 'config'
       discriminator: [155, 12, 170, 224, 30, 250, 204, 130]
+    },
+    {
+      name: 'declarationEntry'
+      discriminator: [220, 182, 175, 15, 201, 252, 185, 113]
     },
     {
       name: 'policy'
@@ -587,6 +684,11 @@ export type DrainCover = {
       name: 'premiumRequired'
       msg: 'Policy premium must be paid at issuance'
     },
+    {
+      code: 6024
+      name: 'declarationExpiresBeforeEffective'
+      msg: 'Declaration window closes before the entry takes effect'
+    },
   ]
   types: [
     {
@@ -651,6 +753,77 @@ export type DrainCover = {
               'deliberately unaffected (FR-028).',
             ]
             type: 'bool'
+          },
+        ]
+      }
+    },
+    {
+      name: 'declarationEntry'
+      docs: [
+        "One entry of a protocol's declaration of permitted privileged operations",
+        '(FR-006). A privileged transaction that matches no effective entry is what',
+        'opens an incident — nothing about how the transaction looks enters into it.',
+      ]
+      type: {
+        kind: 'struct'
+        fields: [
+          {
+            name: 'programId'
+            docs: [
+              'Program the declared instruction belongs to. Together with the',
+              'discriminator this is machine equality, not a heuristic — which is what',
+              'lets independent attestors reach the same verdict (docs/PLAN.md → R-2).',
+            ]
+            type: 'pubkey'
+          },
+          {
+            name: 'ixDiscriminator'
+            type: {
+              array: ['u8', 8]
+            }
+          },
+          {
+            name: 'notBefore'
+            type: 'i64'
+          },
+          {
+            name: 'notAfter'
+            docs: [
+              '`None` means a permanent entry: effective with no upper bound. Permitted',
+              'only when `moves_funds` is false (FR-035).',
+            ]
+            type: {
+              option: 'i64'
+            }
+          },
+          {
+            name: 'movesFunds'
+            docs: [
+              'Declared by the protocol, because the program cannot tell from a',
+              'discriminator whether the instruction moves funds. A false label buys',
+              'nothing: the entry is still new, so `declaration_delay` applies to it and',
+              'a revocation lands immediately (docs/PLAN.md → R-9).',
+            ]
+            type: 'bool'
+          },
+          {
+            name: 'submittedAt'
+            type: 'i64'
+          },
+          {
+            name: 'effectiveAt'
+            docs: [
+              '`submitted_at + Config::declaration_delay` (FR-031). An operation executed',
+              'before this counts as undeclared.',
+            ]
+            type: 'i64'
+          },
+          {
+            name: 'revokedAt'
+            docs: ['Revocation and narrowing take effect at once, with no delay (FR-032).']
+            type: {
+              option: 'i64'
+            }
           },
         ]
       }

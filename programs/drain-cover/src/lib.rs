@@ -80,4 +80,25 @@ pub mod drain_cover {
             premium,
         )
     }
+
+    /// Declares one permitted privileged operation (FR-006). Effective after
+    /// `Config.declaration_delay` (FR-031); a permanent window needs
+    /// `moves_funds == false` (FR-035).
+    pub fn submit_declaration(
+        ctx: Context<SubmitDeclaration>,
+        declared_program: Pubkey,
+        ix_discriminator: [u8; 8],
+        not_before: i64,
+        not_after: Option<i64>,
+        moves_funds: bool,
+    ) -> Result<()> {
+        instructions::submit_declaration::handle_submit_declaration(
+            ctx,
+            declared_program,
+            ix_discriminator,
+            not_before,
+            not_after,
+            moves_funds,
+        )
+    }
 }

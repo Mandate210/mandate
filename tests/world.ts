@@ -3,6 +3,7 @@ import {
   type DrainCover,
   PROGRAM_ID,
   findConfig,
+  findDeclarationEntry,
   findPolicy,
   findPool,
   findProtocol,
@@ -69,7 +70,10 @@ export interface RegisteredProtocol {
    * is not a seed, so Anchor's client cannot resolve it. */
   vault: PublicKey
   treasury: PublicKey
-  authority: PublicKey
+  /** A keypair, not an address: the authority signs declarations and pays for them,
+   * so a test protocol whose authority cannot sign is a protocol that can never
+   * declare anything. Funded here for the same reason. */
+  authority: Keypair
 }
 
 /** A freshly registered protocol with its own pool, unrelated to any other test's. */
@@ -79,11 +83,11 @@ export const registerProtocol = async (
   privileged: PublicKey[] = [Keypair.generate().publicKey],
 ): Promise<RegisteredProtocol> => {
   const protocolId = Keypair.generate().publicKey
-  const authority = Keypair.generate().publicKey
+  const authority = await env.fundedKeypair(1)
   const treasury = Keypair.generate().publicKey
 
   await program.methods
-    .registerProtocol(protocolId, authority, treasury, privileged)
+    .registerProtocol(protocolId, authority.publicKey, treasury, privileged)
     .accountsPartial({
       admin: env.payer.publicKey,
       assetMint: env.assetMint,
@@ -148,6 +152,48 @@ export const issuePolicy = async (
     .rpc()
 
   return { policy: findPolicy(program.programId, target.protocol, seq), seq, beneficiary }
+}
+
+export interface DeclarationTerms {
+  /** Program the declared instruction belongs to. */
+  declaredProgram?: PublicKey
+  /** Eight bytes, as on chain. Defaults to a marker that no real instruction has. */
+  ixDiscriminator?: number[]
+  notBefore?: number
+  /** `null` is a permanent entry — only legal when `movesFunds` is false (FR-035). */
+  notAfter?: number | null
+  movesFunds?: boolean
+}
+
+/** Declares one permitted privileged operation, signed and paid for by the protocol. */
+export const submitDeclaration = async (
+  program: Program<DrainCover>,
+  target: RegisteredProtocol,
+  terms: DeclarationTerms = {},
+): Promise<{ entry: PublicKey; seq: number }> => {
+  const now = Math.floor(Date.now() / 1000)
+  const notAfter = terms.notAfter === undefined ? now + 40 * 86_400 : terms.notAfter
+  const seq = (await program.account.protocol.fetch(target.protocol)).nextDeclarationSeq.toNumber()
+  const entry = findDeclarationEntry(program.programId, target.protocol, seq)
+
+  await program.methods
+    .submitDeclaration(
+      terms.declaredProgram ?? Keypair.generate().publicKey,
+      terms.ixDiscriminator ?? [1, 2, 3, 4, 5, 6, 7, 8],
+      new BN(terms.notBefore ?? now),
+      notAfter === null ? null : new BN(notAfter),
+      terms.movesFunds ?? true,
+    )
+    .accountsPartial({
+      protocol: target.protocol,
+      authority: target.authority.publicKey,
+      entry,
+      systemProgram: SystemProgram.programId,
+    })
+    .signers([target.authority])
+    .rpc()
+
+  return { entry, seq }
 }
 
 /** Capital in the pool without shares — the temporary service path (T014, gone in T036). */

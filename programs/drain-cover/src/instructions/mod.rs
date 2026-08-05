@@ -13,6 +13,7 @@ pub mod initialize;
 pub mod issue_policy;
 pub mod register_protocol;
 pub mod service_fund_pool;
+pub mod submit_declaration;
 
 // The globs are required, not stylistic: `#[derive(Accounts)]` also generates hidden
 // `__client_accounts_*` modules, and `#[program]` resolves them at the crate root.
@@ -23,3 +24,4 @@ pub use initialize::*;
 pub use issue_policy::*;
 pub use register_protocol::*;
 pub use service_fund_pool::*;
+pub use submit_declaration::*;

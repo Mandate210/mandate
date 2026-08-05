@@ -59,4 +59,10 @@ pub enum DrainCoverError {
     PolicyEndsInThePast,
     #[msg("Policy premium must be paid at issuance")]
     PremiumRequired,
+    /// The entry becomes effective only after `declaration_delay` (FR-031), so a
+    /// window that closes by then covers nothing at all. Refused at submission
+    /// rather than stored: the protocol would otherwise believe an operation is
+    /// declared while every attestor sees it as undeclared.
+    #[msg("Declaration window closes before the entry takes effect")]
+    DeclarationExpiresBeforeEffective,
 }
