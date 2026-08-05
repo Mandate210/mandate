@@ -1,7 +1,7 @@
 import { AnchorError, type Program } from '@coral-xyz/anchor'
 import { type DrainCover, createProgram, findPool, findProtocol } from '@drain-cover/sdk'
 import { getAccount } from '@solana/spl-token'
-import { Keypair, PublicKey, SystemProgram } from '@solana/web3.js'
+import { Keypair, type PublicKey, SystemProgram } from '@solana/web3.js'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { type TestEnv, setupTestEnv, validatorReachable } from './harness'
 import { ensureConfig } from './world'
@@ -18,7 +18,12 @@ describe.skipIf(!reachable)('register_protocol', () => {
     admin = env.payer,
   ): Promise<string> =>
     program.methods
-      .registerProtocol(protocolId, Keypair.generate().publicKey, PublicKey.unique(), privileged)
+      .registerProtocol(
+        protocolId,
+        Keypair.generate().publicKey,
+        Keypair.generate().publicKey,
+        privileged,
+      )
       .accountsPartial({
         admin: admin.publicKey,
         assetMint: env.assetMint,
@@ -34,8 +39,12 @@ describe.skipIf(!reachable)('register_protocol', () => {
   })
 
   it('creates the protocol, its pool and a vault the pool owns', async () => {
-    const protocolId = PublicKey.unique()
-    const privileged = [PublicKey.unique(), PublicKey.unique(), PublicKey.unique()]
+    const protocolId = Keypair.generate().publicKey
+    const privileged = [
+      Keypair.generate().publicKey,
+      Keypair.generate().publicKey,
+      Keypair.generate().publicKey,
+    ]
 
     await register(protocolId, privileged)
 
@@ -71,11 +80,11 @@ describe.skipIf(!reachable)('register_protocol', () => {
   })
 
   it('gives each protocol its own pool and vault', async () => {
-    const first = PublicKey.unique()
-    const second = PublicKey.unique()
+    const first = Keypair.generate().publicKey
+    const second = Keypair.generate().publicKey
 
-    await register(first, [PublicKey.unique()])
-    await register(second, [PublicKey.unique()])
+    await register(first, [Keypair.generate().publicKey])
+    await register(second, [Keypair.generate().publicKey])
 
     const firstPool = await program.account.pool.fetch(
       findPool(program.programId, findProtocol(program.programId, first)),
@@ -89,10 +98,10 @@ describe.skipIf(!reachable)('register_protocol', () => {
   })
 
   it('rejects a repeated privileged address', async () => {
-    const repeated = PublicKey.unique()
-    const error = await register(PublicKey.unique(), [
+    const repeated = Keypair.generate().publicKey
+    const error = await register(Keypair.generate().publicKey, [
       repeated,
-      PublicKey.unique(),
+      Keypair.generate().publicKey,
       repeated,
     ]).catch((thrown: unknown) => thrown)
 
@@ -101,7 +110,9 @@ describe.skipIf(!reachable)('register_protocol', () => {
   })
 
   it('rejects an empty privileged list', async () => {
-    const error = await register(PublicKey.unique(), []).catch((thrown: unknown) => thrown)
+    const error = await register(Keypair.generate().publicKey, []).catch(
+      (thrown: unknown) => thrown,
+    )
 
     expect(error).toBeInstanceOf(AnchorError)
     expect((error as AnchorError).error.errorCode.code).toBe('NoPrivilegedAddresses')
@@ -109,6 +120,8 @@ describe.skipIf(!reachable)('register_protocol', () => {
 
   it('refuses anyone but the admin', async () => {
     const stranger = await env.fundedKeypair(5)
-    await expect(register(PublicKey.unique(), [PublicKey.unique()], stranger)).rejects.toThrow()
+    await expect(
+      register(Keypair.generate().publicKey, [Keypair.generate().publicKey], stranger),
+    ).rejects.toThrow()
   })
 })

@@ -73,6 +73,118 @@ export type DrainCover = {
       ]
     },
     {
+      name: 'issuePolicy'
+      docs: ['Issues a policy against a pool and takes its premium (FR-003, FR-005).']
+      discriminator: [126, 159, 34, 92, 118, 55, 15, 196]
+      accounts: [
+        {
+          name: 'config'
+          pda: {
+            seeds: [
+              {
+                kind: 'const'
+                value: [99, 111, 110, 102, 105, 103]
+              },
+            ]
+          }
+        },
+        {
+          name: 'admin'
+          docs: [
+            'Issuance is a service operation in P1. US4 hands it to the protocol itself,',
+            'with a premium quote instead of an amount chosen by the caller (FR-025).',
+          ]
+          writable: true
+          signer: true
+          relations: ['config']
+        },
+        {
+          name: 'protocol'
+          writable: true
+        },
+        {
+          name: 'pool'
+          writable: true
+          pda: {
+            seeds: [
+              {
+                kind: 'const'
+                value: [112, 111, 111, 108]
+              },
+              {
+                kind: 'account'
+                path: 'protocol'
+              },
+            ]
+          }
+          relations: ['protocol']
+        },
+        {
+          name: 'policy'
+          writable: true
+          pda: {
+            seeds: [
+              {
+                kind: 'const'
+                value: [112, 111, 108, 105, 99, 121]
+              },
+              {
+                kind: 'account'
+                path: 'protocol'
+              },
+              {
+                kind: 'account'
+                path: 'protocol.next_policy_seq'
+                account: 'protocol'
+              },
+            ]
+          }
+        },
+        {
+          name: 'vault'
+          writable: true
+        },
+        {
+          name: 'premiumSource'
+          writable: true
+        },
+        {
+          name: 'tokenProgram'
+          address: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'
+        },
+        {
+          name: 'systemProgram'
+          address: '11111111111111111111111111111111'
+        },
+      ]
+      args: [
+        {
+          name: 'limit'
+          type: 'u64'
+        },
+        {
+          name: 'retention'
+          type: 'u64'
+        },
+        {
+          name: 'startTs'
+          type: 'i64'
+        },
+        {
+          name: 'endTs'
+          type: 'i64'
+        },
+        {
+          name: 'beneficiary'
+          type: 'pubkey'
+        },
+        {
+          name: 'premium'
+          type: 'u64'
+        },
+      ]
+    },
+    {
       name: 'registerProtocol'
       docs: ['Registers a covered protocol together with its pool and vault (FR-001).']
       discriminator: [63, 107, 156, 136, 249, 231, 183, 65]
@@ -268,11 +380,82 @@ export type DrainCover = {
         },
       ]
     },
+    {
+      name: 'serviceFundPool'
+      docs: [
+        'Puts capital in a pool without issuing shares. Temporary — removed in T036,',
+        'when the real `deposit` arrives with US2.',
+      ]
+      discriminator: [119, 70, 230, 33, 12, 78, 63, 35]
+      accounts: [
+        {
+          name: 'config'
+          pda: {
+            seeds: [
+              {
+                kind: 'const'
+                value: [99, 111, 110, 102, 105, 103]
+              },
+            ]
+          }
+        },
+        {
+          name: 'admin'
+          signer: true
+          relations: ['config']
+        },
+        {
+          name: 'protocol'
+          docs: [
+            'CHECK is unnecessary: the pool PDA is derived from this protocol, so a pool',
+            'that does not belong to it cannot be passed.',
+          ]
+        },
+        {
+          name: 'pool'
+          writable: true
+          pda: {
+            seeds: [
+              {
+                kind: 'const'
+                value: [112, 111, 111, 108]
+              },
+              {
+                kind: 'account'
+                path: 'protocol'
+              },
+            ]
+          }
+        },
+        {
+          name: 'vault'
+          writable: true
+        },
+        {
+          name: 'source'
+          writable: true
+        },
+        {
+          name: 'tokenProgram'
+          address: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'
+        },
+      ]
+      args: [
+        {
+          name: 'amount'
+          type: 'u64'
+        },
+      ]
+    },
   ]
   accounts: [
     {
       name: 'config'
       discriminator: [155, 12, 170, 224, 30, 250, 204, 130]
+    },
+    {
+      name: 'policy'
+      discriminator: [222, 135, 7, 163, 235, 177, 33, 68]
     },
     {
       name: 'pool'
@@ -379,6 +562,31 @@ export type DrainCover = {
       name: 'duplicatePrivilegedAddress'
       msg: 'Privileged address appears twice'
     },
+    {
+      code: 6019
+      name: 'amountMustBePositive'
+      msg: 'Amount must be positive'
+    },
+    {
+      code: 6020
+      name: 'invalidPolicyTerms'
+      msg: 'Policy limit and period must be positive and ordered'
+    },
+    {
+      code: 6021
+      name: 'retentionAtOrAboveLimit'
+      msg: 'Retention at or above the limit would make the cover nominal'
+    },
+    {
+      code: 6022
+      name: 'policyEndsInThePast'
+      msg: 'Policy period has already ended'
+    },
+    {
+      code: 6023
+      name: 'premiumRequired'
+      msg: 'Policy premium must be paid at issuance'
+    },
   ]
   types: [
     {
@@ -443,6 +651,82 @@ export type DrainCover = {
               'deliberately unaffected (FR-028).',
             ]
             type: 'bool'
+          },
+        ]
+      }
+    },
+    {
+      name: 'policy'
+      docs: ['A cover agreement between one covered protocol and its pool (FR-003).']
+      type: {
+        kind: 'struct'
+        fields: [
+          {
+            name: 'limit'
+            docs: [
+              'Cover limit. The payout is derived from this and `retention`, never from',
+              'the amount actually drained (FR-013).',
+            ]
+            type: 'u64'
+          },
+          {
+            name: 'retention'
+            docs: [
+              'Part of the limit that is never paid, under any circumstance. It makes a',
+              'self-staged incident lose money arithmetically, without anyone having to',
+              'judge intent (FR-033).',
+            ]
+            type: 'u64'
+          },
+          {
+            name: 'remainingLimit'
+            docs: ['What is left of the limit after previous payouts (FR-015).']
+            type: 'u64'
+          },
+          {
+            name: 'startTs'
+            type: 'i64'
+          },
+          {
+            name: 'endTs'
+            type: 'i64'
+          },
+          {
+            name: 'premiumPaid'
+            type: 'u64'
+          },
+          {
+            name: 'beneficiary'
+            docs: ['Fixed at issuance and immovable while an incident is open (FR-004).']
+            type: 'pubkey'
+          },
+          {
+            name: 'status'
+            type: {
+              defined: {
+                name: 'policyStatus'
+              }
+            }
+          },
+        ]
+      }
+    },
+    {
+      name: 'policyStatus'
+      type: {
+        kind: 'enum'
+        variants: [
+          {
+            name: 'pending'
+          },
+          {
+            name: 'active'
+          },
+          {
+            name: 'expired'
+          },
+          {
+            name: 'exhausted'
           },
         ]
       }

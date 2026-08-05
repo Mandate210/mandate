@@ -10,7 +10,9 @@
 // US4 (P4): open_policy, pause_new_policies
 
 pub mod initialize;
+pub mod issue_policy;
 pub mod register_protocol;
+pub mod service_fund_pool;
 
 // The globs are required, not stylistic: `#[derive(Accounts)]` also generates hidden
 // `__client_accounts_*` modules, and `#[program]` resolves them at the crate root.
@@ -18,4 +20,6 @@ pub mod register_protocol;
 // two globs re-exporting the same name is an ambiguity that `clippy -D warnings`
 // rejects in CI.
 pub use initialize::*;
+pub use issue_policy::*;
 pub use register_protocol::*;
+pub use service_fund_pool::*;

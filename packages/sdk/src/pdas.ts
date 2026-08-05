@@ -1,4 +1,5 @@
 import { BN } from '@coral-xyz/anchor'
+import { getAssociatedTokenAddressSync } from '@solana/spl-token'
 import { PublicKey } from '@solana/web3.js'
 
 /**
@@ -60,6 +61,16 @@ export const findIncident = (
   protocol: PublicKey,
   seq: number | bigint,
 ): PublicKey => derive(programId, [seed(SEEDS.incident), protocol.toBuffer(), seqSeed(seq)])
+
+/**
+ * A pool's vault: the associated token account of the pool PDA.
+ *
+ * Not derived from our own seeds, so no program instruction can resolve it for a
+ * caller — every client has to pass it. `allowOwnerOffCurve` is on because the owner
+ * is a PDA, which by construction is not a curve point.
+ */
+export const findVault = (assetMint: PublicKey, pool: PublicKey): PublicKey =>
+  getAssociatedTokenAddressSync(assetMint, pool, true)
 
 /**
  * Both identities live in the seeds, which is what makes "one attestor, one

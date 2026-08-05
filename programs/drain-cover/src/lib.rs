@@ -53,4 +53,31 @@ pub mod drain_cover {
             privileged,
         )
     }
+
+    /// Puts capital in a pool without issuing shares. Temporary — removed in T036,
+    /// when the real `deposit` arrives with US2.
+    pub fn service_fund_pool(ctx: Context<ServiceFundPool>, amount: u64) -> Result<()> {
+        instructions::service_fund_pool::handle_service_fund_pool(ctx, amount)
+    }
+
+    /// Issues a policy against a pool and takes its premium (FR-003, FR-005).
+    pub fn issue_policy(
+        ctx: Context<IssuePolicy>,
+        limit: u64,
+        retention: u64,
+        start_ts: i64,
+        end_ts: i64,
+        beneficiary: Pubkey,
+        premium: u64,
+    ) -> Result<()> {
+        instructions::issue_policy::handle_issue_policy(
+            ctx,
+            limit,
+            retention,
+            start_ts,
+            end_ts,
+            beneficiary,
+            premium,
+        )
+    }
 }

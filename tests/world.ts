@@ -1,6 +1,14 @@
 import { BN, type Program } from '@coral-xyz/anchor'
-import { type DrainCover, PROGRAM_ID, findConfig } from '@drain-cover/sdk'
-import { Connection, SystemProgram } from '@solana/web3.js'
+import {
+  type DrainCover,
+  PROGRAM_ID,
+  findConfig,
+  findPolicy,
+  findPool,
+  findProtocol,
+  findVault,
+} from '@drain-cover/sdk'
+import { Connection, Keypair, type PublicKey, SystemProgram } from '@solana/web3.js'
 import { type TestEnv, testRpcUrl } from './harness'
 
 /**
@@ -51,4 +59,114 @@ export const initializeConfig = (
 export const ensureConfig = async (program: Program<DrainCover>, env: TestEnv): Promise<void> => {
   if (await configPresent()) return
   await initializeConfig(program, env)
+}
+
+export interface RegisteredProtocol {
+  protocolId: PublicKey
+  protocol: PublicKey
+  pool: PublicKey
+  /** Passed explicitly to every instruction that touches it: `address = pool.vault`
+   * is not a seed, so Anchor's client cannot resolve it. */
+  vault: PublicKey
+  treasury: PublicKey
+  authority: PublicKey
+}
+
+/** A freshly registered protocol with its own pool, unrelated to any other test's. */
+export const registerProtocol = async (
+  program: Program<DrainCover>,
+  env: TestEnv,
+  privileged: PublicKey[] = [Keypair.generate().publicKey],
+): Promise<RegisteredProtocol> => {
+  const protocolId = Keypair.generate().publicKey
+  const authority = Keypair.generate().publicKey
+  const treasury = Keypair.generate().publicKey
+
+  await program.methods
+    .registerProtocol(protocolId, authority, treasury, privileged)
+    .accountsPartial({
+      admin: env.payer.publicKey,
+      assetMint: env.assetMint,
+      systemProgram: SystemProgram.programId,
+    })
+    .rpc()
+
+  const protocol = findProtocol(program.programId, protocolId)
+  const pool = findPool(program.programId, protocol)
+  return {
+    protocolId,
+    protocol,
+    pool,
+    vault: findVault(env.assetMint, pool),
+    treasury,
+    authority,
+  }
+}
+
+export interface PolicyTerms {
+  limit: bigint
+  retention: bigint
+  premium: bigint
+  startTs?: number
+  endTs?: number
+  beneficiary?: PublicKey
+}
+
+/** Issues a policy on `target`, taking the premium from the admin's asset account. */
+export const issuePolicy = async (
+  program: Program<DrainCover>,
+  env: TestEnv,
+  target: RegisteredProtocol,
+  terms: PolicyTerms,
+): Promise<{ policy: PublicKey; seq: number; beneficiary: PublicKey }> => {
+  const now = Math.floor(Date.now() / 1000)
+  const startTs = terms.startTs ?? now - 60
+  const endTs = terms.endTs ?? now + 30 * 86_400
+  const beneficiary = terms.beneficiary ?? target.treasury
+  const premiumSource = await env.assetAccount(env.payer.publicKey, terms.premium)
+
+  const seq = (await program.account.protocol.fetch(target.protocol)).nextPolicySeq.toNumber()
+
+  await program.methods
+    .issuePolicy(
+      new BN(terms.limit.toString()),
+      new BN(terms.retention.toString()),
+      new BN(startTs),
+      new BN(endTs),
+      beneficiary,
+      new BN(terms.premium.toString()),
+    )
+    .accountsPartial({
+      admin: env.payer.publicKey,
+      protocol: target.protocol,
+      pool: target.pool,
+      policy: findPolicy(program.programId, target.protocol, seq),
+      vault: target.vault,
+      premiumSource,
+      systemProgram: SystemProgram.programId,
+    })
+    .rpc()
+
+  return { policy: findPolicy(program.programId, target.protocol, seq), seq, beneficiary }
+}
+
+/** Capital in the pool without shares — the temporary service path (T014, gone in T036). */
+export const fundPool = async (
+  program: Program<DrainCover>,
+  env: TestEnv,
+  target: RegisteredProtocol,
+  amount: bigint,
+): Promise<void> => {
+  const source = await env.assetAccount(env.payer.publicKey, amount)
+
+  await program.methods
+    .serviceFundPool(new BN(amount.toString()))
+    .accountsPartial({
+      admin: env.payer.publicKey,
+      protocol: target.protocol,
+      pool: target.pool,
+      vault: target.vault,
+      source,
+    })
+    .rpc()
 }

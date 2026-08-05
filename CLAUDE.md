@@ -91,6 +91,20 @@ easy to undo by accident:
 runs — a flag assigned in `beforeAll` is still `undefined` there, and every test
 silently skips. Compute such conditions at module level with top-level `await`.
 
+**Never use `PublicKey.unique()` in an integration test.** It is a per-process
+counter, and each test file gets its own module registry — so two files hand out the
+same addresses and collide on a shared ledger ("account already in use"). Use
+`Keypair.generate().publicKey`. In unit tests, where nothing is written to a chain, the
+counter is fine.
+
+**Accounts constrained by `address = …` have to be passed explicitly.** A pool's vault
+is not derived from our seeds, so Anchor's client cannot resolve it and fails with
+"Account `vault` not provided". `findVault` in the SDK derives it.
+
+**Compute expected balances from chain state, not by hand.** Premiums become pool
+capital, so free capital is not "funded minus locked" — a test doing that arithmetic
+inline passed while asserting nothing.
+
 ## Hard rules
 
 - **No `any`.** Enforced by Biome, not by agreement. Use `unknown` + a guard.

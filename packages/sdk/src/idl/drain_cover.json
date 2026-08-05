@@ -85,6 +85,152 @@
       ]
     },
     {
+      "name": "issue_policy",
+      "docs": [
+        "Issues a policy against a pool and takes its premium (FR-003, FR-005)."
+      ],
+      "discriminator": [
+        126,
+        159,
+        34,
+        92,
+        118,
+        55,
+        15,
+        196
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "docs": [
+            "Issuance is a service operation in P1. US4 hands it to the protocol itself,",
+            "with a premium quote instead of an amount chosen by the caller (FR-025)."
+          ],
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "protocol",
+          "writable": true
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "protocol"
+              }
+            ]
+          },
+          "relations": [
+            "protocol"
+          ]
+        },
+        {
+          "name": "policy",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  108,
+                  105,
+                  99,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "protocol"
+              },
+              {
+                "kind": "account",
+                "path": "protocol.next_policy_seq",
+                "account": "Protocol"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "premium_source",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "limit",
+          "type": "u64"
+        },
+        {
+          "name": "retention",
+          "type": "u64"
+        },
+        {
+          "name": "start_ts",
+          "type": "i64"
+        },
+        {
+          "name": "end_ts",
+          "type": "i64"
+        },
+        {
+          "name": "beneficiary",
+          "type": "pubkey"
+        },
+        {
+          "name": "premium",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "register_protocol",
       "docs": [
         "Registers a covered protocol together with its pool and vault (FR-001)."
@@ -315,6 +461,96 @@
           }
         }
       ]
+    },
+    {
+      "name": "service_fund_pool",
+      "docs": [
+        "Puts capital in a pool without issuing shares. Temporary — removed in T036,",
+        "when the real `deposit` arrives with US2."
+      ],
+      "discriminator": [
+        119,
+        70,
+        230,
+        33,
+        12,
+        78,
+        63,
+        35
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "protocol",
+          "docs": [
+            "CHECK is unnecessary: the pool PDA is derived from this protocol, so a pool",
+            "that does not belong to it cannot be passed."
+          ]
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "protocol"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "source",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
     }
   ],
   "accounts": [
@@ -329,6 +565,19 @@
         250,
         204,
         130
+      ]
+    },
+    {
+      "name": "Policy",
+      "discriminator": [
+        222,
+        135,
+        7,
+        163,
+        235,
+        177,
+        33,
+        68
       ]
     },
     {
@@ -453,6 +702,31 @@
       "code": 6018,
       "name": "DuplicatePrivilegedAddress",
       "msg": "Privileged address appears twice"
+    },
+    {
+      "code": 6019,
+      "name": "AmountMustBePositive",
+      "msg": "Amount must be positive"
+    },
+    {
+      "code": 6020,
+      "name": "InvalidPolicyTerms",
+      "msg": "Policy limit and period must be positive and ordered"
+    },
+    {
+      "code": 6021,
+      "name": "RetentionAtOrAboveLimit",
+      "msg": "Retention at or above the limit would make the cover nominal"
+    },
+    {
+      "code": 6022,
+      "name": "PolicyEndsInThePast",
+      "msg": "Policy period has already ended"
+    },
+    {
+      "code": 6023,
+      "name": "PremiumRequired",
+      "msg": "Policy premium must be paid at issuance"
     }
   ],
   "types": [
@@ -522,6 +796,88 @@
               "deliberately unaffected (FR-028)."
             ],
             "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Policy",
+      "docs": [
+        "A cover agreement between one covered protocol and its pool (FR-003)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "limit",
+            "docs": [
+              "Cover limit. The payout is derived from this and `retention`, never from",
+              "the amount actually drained (FR-013)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "retention",
+            "docs": [
+              "Part of the limit that is never paid, under any circumstance. It makes a",
+              "self-staged incident lose money arithmetically, without anyone having to",
+              "judge intent (FR-033)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "remaining_limit",
+            "docs": [
+              "What is left of the limit after previous payouts (FR-015)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "start_ts",
+            "type": "i64"
+          },
+          {
+            "name": "end_ts",
+            "type": "i64"
+          },
+          {
+            "name": "premium_paid",
+            "type": "u64"
+          },
+          {
+            "name": "beneficiary",
+            "docs": [
+              "Fixed at issuance and immovable while an incident is open (FR-004)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "PolicyStatus"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "PolicyStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Pending"
+          },
+          {
+            "name": "Active"
+          },
+          {
+            "name": "Expired"
+          },
+          {
+            "name": "Exhausted"
           }
         ]
       }

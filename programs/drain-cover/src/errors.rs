@@ -49,4 +49,14 @@ pub enum DrainCoverError {
     NoPrivilegedAddresses,
     #[msg("Privileged address appears twice")]
     DuplicatePrivilegedAddress,
+    #[msg("Amount must be positive")]
+    AmountMustBePositive,
+    #[msg("Policy limit and period must be positive and ordered")]
+    InvalidPolicyTerms,
+    #[msg("Retention at or above the limit would make the cover nominal")]
+    RetentionAtOrAboveLimit,
+    #[msg("Policy period has already ended")]
+    PolicyEndsInThePast,
+    #[msg("Policy premium must be paid at issuance")]
+    PremiumRequired,
 }
