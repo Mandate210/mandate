@@ -72,11 +72,215 @@ export type DrainCover = {
         },
       ]
     },
+    {
+      name: 'registerProtocol'
+      docs: ['Registers a covered protocol together with its pool and vault (FR-001).']
+      discriminator: [63, 107, 156, 136, 249, 231, 183, 65]
+      accounts: [
+        {
+          name: 'config'
+          pda: {
+            seeds: [
+              {
+                kind: 'const'
+                value: [99, 111, 110, 102, 105, 103]
+              },
+            ]
+          }
+        },
+        {
+          name: 'admin'
+          docs: [
+            'Registration is a service operation in P1, like the attestor list (FR-008).',
+            'Self-service in US4 covers policies, not registration.',
+          ]
+          writable: true
+          signer: true
+          relations: ['config']
+        },
+        {
+          name: 'protocol'
+          writable: true
+          pda: {
+            seeds: [
+              {
+                kind: 'const'
+                value: [112, 114, 111, 116, 111, 99, 111, 108]
+              },
+              {
+                kind: 'arg'
+                path: 'protocolId'
+              },
+            ]
+          }
+        },
+        {
+          name: 'pool'
+          writable: true
+          pda: {
+            seeds: [
+              {
+                kind: 'const'
+                value: [112, 111, 111, 108]
+              },
+              {
+                kind: 'account'
+                path: 'protocol'
+              },
+            ]
+          }
+        },
+        {
+          name: 'vault'
+          docs: [
+            'Owned by the pool PDA, so nothing can move capital out without the program',
+            'signing for it. One vault per pool is what makes isolation structural rather',
+            'than a rule to be enforced (FR-002).',
+          ]
+          writable: true
+          pda: {
+            seeds: [
+              {
+                kind: 'account'
+                path: 'pool'
+              },
+              {
+                kind: 'const'
+                value: [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169,
+                ]
+              },
+              {
+                kind: 'account'
+                path: 'assetMint'
+              },
+            ]
+            program: {
+              kind: 'const'
+              value: [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89,
+              ]
+            }
+          }
+        },
+        {
+          name: 'assetMint'
+          docs: [
+            'Constrained to `Config.asset_mint` by `has_one` above: a pool holding some',
+            'other token could never pay a policy denominated in the settlement asset',
+            '(FR-014).',
+          ]
+          relations: ['config']
+        },
+        {
+          name: 'tokenProgram'
+          address: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'
+        },
+        {
+          name: 'associatedTokenProgram'
+          address: 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL'
+        },
+        {
+          name: 'systemProgram'
+          address: '11111111111111111111111111111111'
+        },
+      ]
+      args: [
+        {
+          name: 'protocolId'
+          type: 'pubkey'
+        },
+        {
+          name: 'authority'
+          type: 'pubkey'
+        },
+        {
+          name: 'treasury'
+          type: 'pubkey'
+        },
+        {
+          name: 'privileged'
+          type: {
+            vec: 'pubkey'
+          }
+        },
+      ]
+    },
   ]
   accounts: [
     {
       name: 'config'
       discriminator: [155, 12, 170, 224, 30, 250, 204, 130]
+    },
+    {
+      name: 'pool'
+      discriminator: [241, 154, 109, 4, 17, 177, 109, 188]
+    },
+    {
+      name: 'protocol'
+      discriminator: [45, 39, 101, 43, 115, 72, 131, 40]
     },
   ]
   errors: [
@@ -165,6 +369,16 @@ export type DrainCover = {
       name: 'invalidDuration'
       msg: 'Duration must be positive'
     },
+    {
+      code: 6017
+      name: 'noPrivilegedAddresses'
+      msg: 'A covered protocol needs at least one privileged address'
+    },
+    {
+      code: 6018
+      name: 'duplicatePrivilegedAddress'
+      msg: 'Privileged address appears twice'
+    },
   ]
   types: [
     {
@@ -229,6 +443,129 @@ export type DrainCover = {
               'deliberately unaffected (FR-028).',
             ]
             type: 'bool'
+          },
+        ]
+      }
+    },
+    {
+      name: 'pool'
+      docs: [
+        'Capital underwriting exactly one covered protocol, and the only source of its',
+        'payouts (FR-002). Isolation is structural: each pool owns its own vault, so',
+        'there is no shared store to draw from by mistake.',
+      ]
+      type: {
+        kind: 'struct'
+        fields: [
+          {
+            name: 'vault'
+            docs: ['Token account holding the capital, owned by this PDA.']
+            type: 'pubkey'
+          },
+          {
+            name: 'totalAssets'
+            type: 'u64'
+          },
+          {
+            name: 'totalShares'
+            type: 'u64'
+          },
+          {
+            name: 'lockedLimit'
+            docs: [
+              'Sum of the limits of active policies. Capital below this line cannot be',
+              'withdrawn (FR-020).',
+            ]
+            type: 'u64'
+          },
+          {
+            name: 'openIncidents'
+            docs: ['Withdrawals are blocked while this is non-zero (FR-019).']
+            type: 'u32'
+          },
+          {
+            name: 'accPremiumPerShare'
+            docs: [
+              'Premium per share, scaled by `PREMIUM_ACC_SCALE`. An underwriter earns',
+              'the difference against its own checkpoint, which makes time-in-pool',
+              'implicit: nothing accrued before the deposit is claimable (FR-018).',
+            ]
+            type: 'u128'
+          },
+          {
+            name: 'bump'
+            docs: [
+              'Stored rather than recomputed: the pool signs every transfer out of its',
+              'vault, and rederiving the bump on each of those costs compute for a value',
+              'that never changes.',
+            ]
+            type: 'u8'
+          },
+        ]
+      }
+    },
+    {
+      name: 'protocol'
+      docs: [
+        'A covered protocol and the privileged addresses whose actions are the subject',
+        'of the cover (FR-001).',
+      ]
+      type: {
+        kind: 'struct'
+        fields: [
+          {
+            name: 'authority'
+            docs: [
+              'Submits and revokes declaration entries. Compromising it does not by',
+              'itself produce a payout: a new entry still waits out `declaration_delay`.',
+            ]
+            type: 'pubkey'
+          },
+          {
+            name: 'treasury'
+            docs: [
+              'Treasury of the covered protocol. A policy fixes its own beneficiary at',
+              'issuance (FR-004); this is the default offered there.',
+            ]
+            type: 'pubkey'
+          },
+          {
+            name: 'privileged'
+            type: {
+              vec: 'pubkey'
+            }
+          },
+          {
+            name: 'pool'
+            docs: [
+              'The one pool that underwrites this protocol. Pools are never shared, so',
+              "capital cannot be spent on another protocol's incident (FR-002).",
+            ]
+            type: 'pubkey'
+          },
+          {
+            name: 'newPoliciesPaused'
+            docs: ['Stops new policies for this protocol only (FR-028).']
+            type: 'bool'
+          },
+          {
+            name: 'nextPolicySeq'
+            docs: [
+              'Policies, declaration entries and incidents are addressed by',
+              '`(protocol, seq)`, so the sequence needs a monotonic source. Keeping the',
+              'counters here rather than in `Config` keeps protocols independent: two',
+              'registrations never contend for the same number, and a busy protocol does',
+              "not push another one's addresses around.",
+            ]
+            type: 'u64'
+          },
+          {
+            name: 'nextDeclarationSeq'
+            type: 'u64'
+          },
+          {
+            name: 'nextIncidentSeq'
+            type: 'u64'
           },
         ]
       }

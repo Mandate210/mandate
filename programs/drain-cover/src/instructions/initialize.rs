@@ -48,7 +48,7 @@ pub fn validate_params(declaration_delay: i64, attest_window: i64, quorum_bps: u
     Ok(())
 }
 
-pub fn handler(
+pub fn handle_initialize(
     ctx: Context<Initialize>,
     declaration_delay: i64,
     attest_window: i64,

@@ -45,4 +45,8 @@ pub enum DrainCoverError {
     InvalidQuorum,
     #[msg("Duration must be positive")]
     InvalidDuration,
+    #[msg("A covered protocol needs at least one privileged address")]
+    NoPrivilegedAddresses,
+    #[msg("Privileged address appears twice")]
+    DuplicatePrivilegedAddress,
 }

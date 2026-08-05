@@ -73,10 +73,23 @@ wsl -e bash -lc "cd <repo in WSL> && anchor deploy"         # WSL
 pnpm --filter @drain-cover/tests test:integration           # Windows
 ```
 
-`--reset` is not optional. `Config` is a singleton PDA and other accounts key off
-constant seeds, so the suite cannot recreate what a previous run already created.
-Re-run against a used ledger and the tests fail on "account already in use" — the
-suites say so explicitly rather than letting you debug the wrong thing.
+`--reset` is not optional. `Config` is a singleton PDA, and the admin and settlement
+mint are fixed inside it forever, so a ledger carrying a config from an earlier run
+puts the suite in a state it cannot reproduce.
+
+Two conventions keep the integration files independent of each other, and both are
+easy to undo by accident:
+
+- **The admin and the asset mint come from constant seeds** (`tests/harness.ts`).
+  Whichever file runs first creates them; the rest find the same addresses. Generate
+  a keypair per file instead and only the first file to run has admin rights or the
+  mint that `Config` recorded — and Vitest promises nothing about file order.
+- **Shared starting state goes through `tests/world.ts`** (`ensureConfig`), never
+  through "the other file already did it".
+
+`it.skipIf(cond)` evaluates `cond` when the test is collected, before `beforeAll`
+runs — a flag assigned in `beforeAll` is still `undefined` there, and every test
+silently skips. Compute such conditions at module level with top-level `await`.
 
 ## Hard rules
 

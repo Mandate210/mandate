@@ -10,5 +10,12 @@
 // US4 (P4): open_policy, pause_new_policies
 
 pub mod initialize;
+pub mod register_protocol;
 
+// The globs are required, not stylistic: `#[derive(Accounts)]` also generates hidden
+// `__client_accounts_*` modules, and `#[program]` resolves them at the crate root.
+// Which is why each handler is named `handle_<instruction>` rather than `handler` —
+// two globs re-exporting the same name is an ambiguity that `clippy -D warnings`
+// rejects in CI.
 pub use initialize::*;
+pub use register_protocol::*;

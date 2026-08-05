@@ -62,6 +62,19 @@ export interface TestEnv {
   assetAccount(owner: PublicKey, amount?: bigint): Promise<PublicKey>
 }
 
+/**
+ * The admin and the settlement asset are fixed forever when `Config` is created, and
+ * `Config` is a singleton. If each test file generated its own keys, only the file
+ * that happened to run first would hold admin rights or own the right mint — every
+ * other one would fail `has_one`, and Vitest promises nothing about file order.
+ *
+ * So both are derived from constant seeds: whichever file runs first creates them,
+ * the rest find the same addresses. Test-only keys, and the endpoint guard already
+ * refuses anything but a local validator.
+ */
+export const adminKeypair = (): Keypair => Keypair.fromSeed(new Uint8Array(32).fill(7))
+export const assetMintKeypair = (): Keypair => Keypair.fromSeed(new Uint8Array(32).fill(9))
+
 export const setupTestEnv = async (): Promise<TestEnv> => {
   const endpoint = testRpcUrl()
   assertLocalEndpoint(endpoint)
@@ -71,22 +84,36 @@ export const setupTestEnv = async (): Promise<TestEnv> => {
   // yet produces failures that look like logic bugs.
   const connection = new Connection(endpoint, 'confirmed')
 
-  const fundedKeypair = async (sol = 10): Promise<Keypair> => {
-    const keypair = Keypair.generate()
+  const airdrop = async (keypair: Keypair, sol: number): Promise<void> => {
     const signature = await connection.requestAirdrop(keypair.publicKey, sol * LAMPORTS_PER_SOL)
     const status = await connection.confirmTransaction(signature, 'confirmed')
     if (status.value.err !== null) {
       throw new Error(`Airdrop failed: ${JSON.stringify(status.value.err)}`)
     }
+  }
+
+  const fundedKeypair = async (sol = 10): Promise<Keypair> => {
+    const keypair = Keypair.generate()
+    await airdrop(keypair, sol)
     return keypair
   }
 
-  const payer = await fundedKeypair(100)
+  const payer = adminKeypair()
+  // Topped up rather than funded once: several files share this key within a
+  // validator run, and each of them pays rent for the accounts it creates.
+  if ((await connection.getBalance(payer.publicKey)) < 50 * LAMPORTS_PER_SOL) {
+    await airdrop(payer, 500)
+  }
+
   const provider = new AnchorProvider(connection, new Wallet(payer), {
     commitment: 'confirmed',
   })
 
-  const assetMint = await createMint(connection, payer, payer.publicKey, null, ASSET_DECIMALS)
+  const mint = assetMintKeypair()
+  if ((await connection.getAccountInfo(mint.publicKey)) === null) {
+    await createMint(connection, payer, payer.publicKey, null, ASSET_DECIMALS, mint)
+  }
+  const assetMint = mint.publicKey
 
   const assetAccount = async (owner: PublicKey, amount = 0n): Promise<PublicKey> => {
     const account = await getOrCreateAssociatedTokenAccount(connection, payer, assetMint, owner)

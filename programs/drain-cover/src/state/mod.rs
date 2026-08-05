@@ -43,7 +43,8 @@ mod tests {
         // admin 32 + asset_mint 32 + delay 8 + window 8 + quorum 2 + bond 8 + paused 1
         assert_eq!(Config::INIT_SPACE, 91);
         // authority 32 + treasury 32 + privileged (4 + 16*32) + pool 32 + paused 1
-        assert_eq!(Protocol::INIT_SPACE, 613);
+        //   + three u64 sequence counters
+        assert_eq!(Protocol::INIT_SPACE, 637);
         // vault 32 + assets 8 + shares 8 + locked 8 + open 4 + acc 16 + bump 1
         assert_eq!(Pool::INIT_SPACE, 77);
         // shares 8 + checkpoint 16 + pending 8 + unlock 8

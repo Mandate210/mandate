@@ -28,12 +28,29 @@ pub mod drain_cover {
         quorum_bps: u16,
         open_bond: u64,
     ) -> Result<()> {
-        instructions::initialize::handler(
+        instructions::initialize::handle_initialize(
             ctx,
             declaration_delay,
             attest_window,
             quorum_bps,
             open_bond,
+        )
+    }
+
+    /// Registers a covered protocol together with its pool and vault (FR-001).
+    pub fn register_protocol(
+        ctx: Context<RegisterProtocol>,
+        protocol_id: Pubkey,
+        authority: Pubkey,
+        treasury: Pubkey,
+        privileged: Vec<Pubkey>,
+    ) -> Result<()> {
+        instructions::register_protocol::handle_register_protocol(
+            ctx,
+            protocol_id,
+            authority,
+            treasury,
+            privileged,
         )
     }
 }

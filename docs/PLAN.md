@@ -113,7 +113,7 @@ US1 (P1) потребує: програму, `attestor`, мінімальний 
 | Акаунт | Seeds | Поля |
 |---|---|---|
 | `Config` | `["config"]` | `admin`, `asset_mint`, `declaration_delay`, `attest_window`, `quorum_bps`, `open_bond`, `paused` |
-| `Protocol` | `["protocol", protocol_id]` | `authority`, `treasury`, `privileged: Vec<Pubkey>` (cap 16), `pool`, `new_policies_paused` |
+| `Protocol` | `["protocol", protocol_id]` | `authority`, `treasury`, `privileged: Vec<Pubkey>` (cap 16), `pool`, `new_policies_paused`, `next_policy_seq`, `next_declaration_seq`, `next_incident_seq` |
 | `Pool` | `["pool", protocol]` | `vault`, `total_assets`, `total_shares`, `locked_limit`, `open_incidents`, `acc_premium_per_share: u128`, `bump` |
 | `UnderwriterPosition` | `["position", pool, owner]` | `shares`, `premium_checkpoint: u128`, `pending_withdraw`, `unlock_ts` |
 | `Policy` | `["policy", protocol, seq]` | `limit`, `retention`, `remaining_limit`, `start_ts`, `end_ts`, `premium_paid`, `beneficiary`, `status` |
@@ -122,8 +122,14 @@ US1 (P1) потребує: програму, `attestor`, мінімальний 
 | `Incident` | `["incident", protocol, seq]` | `policy`, `trigger_sig: [u8;64]`, `opener`, `bond`, `opened_at`, `deadline`, `votes_unauthorized`, `votes_authorized`, `status`, `payout`, `shortfall` |
 | `Attestation` | `["attest", incident, attestor]` | `verdict`, `submitted_at` |
 
+**Лічильники послідовностей (T012).** `Policy`, `DeclarationEntry` та `Incident`
+адресуються як `(protocol, seq)`, тож номер потребує монотонного джерела. Три
+лічильники лежать на `Protocol`, а не в `Config`: інакше дві реєстрації змагалися б
+за один номер, і активний протокол зсував би адреси іншому. Ціна — 24 байти на
+протокол.
+
 **Розміри акаунтів (T008).** Виведені `#[derive(InitSpace)]`, зафіксовані тестом у
-`state/mod.rs`: `Config` 91, `Protocol` 613, `Pool` 77, `UnderwriterPosition` 40,
+`state/mod.rs`: `Config` 91, `Protocol` 637, `Pool` 77, `UnderwriterPosition` 40,
 `Policy` 81, `DeclarationEntry` 83, `Attestor` 56, `Incident` 173, `Attestation` 9
 байтів без дискримінатора. Один інцидент алокує `Incident` + `Attestation` =
 181 + 17 байтів разом із дискримінаторами — це вхідні для межі за `SC-008` (T064),
