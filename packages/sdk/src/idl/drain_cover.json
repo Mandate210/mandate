@@ -231,6 +231,180 @@
       ]
     },
     {
+      "name": "open_incident",
+      "docs": [
+        "Records a suspected unauthorized privileged action against a policy",
+        "(FR-006). The trigger signature is a claim; the bond is what it costs to",
+        "make one."
+      ],
+      "discriminator": [
+        141,
+        221,
+        28,
+        107,
+        87,
+        98,
+        35,
+        108
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "opener",
+          "docs": [
+            "Anyone may open an incident — that is what the bond is for. In practice it is",
+            "an attestor that has just seen an undeclared privileged transaction (T027),",
+            "but nothing in the program depends on who noticed."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocol",
+          "writable": true
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "protocol"
+              }
+            ]
+          },
+          "relations": [
+            "protocol"
+          ]
+        },
+        {
+          "name": "policy",
+          "docs": [
+            "Bound to this protocol by its seeds: an incident on someone else's policy",
+            "would lock capital in a pool that never underwrote it."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  108,
+                  105,
+                  99,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "protocol"
+              },
+              {
+                "kind": "arg",
+                "path": "policy_seq"
+              }
+            ]
+          }
+        },
+        {
+          "name": "incident",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  110,
+                  99,
+                  105,
+                  100,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "protocol"
+              },
+              {
+                "kind": "account",
+                "path": "protocol.next_incident_seq",
+                "account": "Protocol"
+              }
+            ]
+          }
+        },
+        {
+          "name": "bond_source",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "docs": [
+            "The bond rests in the pool's vault until the incident settles: refunded from",
+            "there if the quorum confirms, forfeited to the pool if it does not. It is",
+            "deliberately **not** added to `Pool::total_assets` — capital that may go back",
+            "to the opener must not count as capacity to underwrite. The vault therefore",
+            "holds `total_assets` plus the bonds of open incidents."
+          ],
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "policy_seq",
+          "type": "u64"
+        },
+        {
+          "name": "trigger_sig",
+          "type": {
+            "array": [
+              "u8",
+              64
+            ]
+          }
+        }
+      ]
+    },
+    {
       "name": "register_protocol",
       "docs": [
         "Registers a covered protocol together with its pool and vault (FR-001)."
@@ -882,6 +1056,19 @@
       ]
     },
     {
+      "name": "Incident",
+      "discriminator": [
+        144,
+        81,
+        144,
+        130,
+        200,
+        193,
+        26,
+        111
+      ]
+    },
+    {
       "name": "Policy",
       "discriminator": [
         222,
@@ -1066,6 +1253,11 @@
       "code": 6028,
       "name": "AttestorNotInSet",
       "msg": "Attestor is not in the set"
+    },
+    {
+      "code": 6029,
+      "name": "AttestorSetEmpty",
+      "msg": "The attestor set is empty, so no incident can reach quorum"
     }
   ],
   "types": [
@@ -1277,6 +1469,133 @@
             "type": {
               "option": "i64"
             }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Incident",
+      "docs": [
+        "A recorded suspicion of an unauthorized privileged action.",
+        "",
+        "The program cannot read another protocol's past transaction, so `trigger_sig`",
+        "enters as a *claim* by whoever opened the incident. What makes it evidence is",
+        "independent attestors agreeing (FR-007…FR-010).",
+        "",
+        "Every field here is paid for in rent and fees on each incident, which SC-008",
+        "caps at 1 USD — so this account carries no reserve fields."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "policy",
+            "type": "pubkey"
+          },
+          {
+            "name": "trigger_sig",
+            "docs": [
+              "The triggering transaction, kept in full so the public trail can be",
+              "replayed straight from an RPC node (FR-011, SC-007)."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
+          },
+          {
+            "name": "opener",
+            "docs": [
+              "Refunded if the quorum confirms the incident, forfeited to the pool if it",
+              "does not."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "bond",
+            "type": "u64"
+          },
+          {
+            "name": "opened_at",
+            "type": "i64"
+          },
+          {
+            "name": "opened_epoch",
+            "docs": [
+              "Epoch the incident opened in. FR-008 admits an attestation only from a",
+              "member of the set *as it stood when the incident opened*, so membership is",
+              "judged against this epoch and not against the one the attestation lands in —",
+              "otherwise an attestor admitted afterwards could vote on it."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "deadline",
+            "docs": [
+              "`opened_at + Config::attest_window`."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "set_size",
+            "docs": [
+              "Size of the attestor set at the moment of opening, and therefore the",
+              "denominator of this incident's quorum. Snapshotted so the bar cannot move",
+              "while attestations are being collected."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "votes_unauthorized",
+            "docs": [
+              "Attestations classifying the action as unauthorized, and as authorized.",
+              "Named for the classification rather than for/against, because a quorum is",
+              "counted on one specific verdict (FR-010)."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "votes_authorized",
+            "type": "u16"
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "IncidentStatus"
+              }
+            }
+          },
+          {
+            "name": "payout",
+            "type": "u64"
+          },
+          {
+            "name": "shortfall",
+            "docs": [
+              "Amount owed but unpayable because the pool ran short. Recorded rather than",
+              "carried forward: the trail has to state what was not paid (FR-013)."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "IncidentStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Open"
+          },
+          {
+            "name": "PaidOut"
+          },
+          {
+            "name": "ClosedNoPayout"
           }
         ]
       }

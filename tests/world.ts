@@ -5,6 +5,7 @@ import {
   findAttestor,
   findConfig,
   findDeclarationEntry,
+  findIncident,
   findPolicy,
   findPool,
   findProtocol,
@@ -238,6 +239,53 @@ export const setAttestor = async (
     .rpc()
 
   return findAttestor(program.programId, attestorAuthority)
+}
+
+/** Sixty-four bytes standing in for a transaction signature. */
+export const triggerSignature = (fill = 7): number[] => Array.from({ length: 64 }, () => fill)
+
+export interface OpenedIncident {
+  incident: PublicKey
+  seq: number
+  /** Funded, holds no more asset than the bond it just paid. */
+  opener: Keypair
+  bond: bigint
+  triggerSig: number[]
+}
+
+/** Opens an incident against `policySeq` of `target`, paying the bond from a fresh opener. */
+export const openIncident = async (
+  program: Program<DrainCover>,
+  env: TestEnv,
+  target: RegisteredProtocol,
+  policySeq: number,
+  options: { opener?: Keypair; triggerSig?: number[] } = {},
+): Promise<OpenedIncident> => {
+  const config = await program.account.config.fetch(findConfig(program.programId))
+  const bond = BigInt(config.openBond.toString())
+  const opener = options.opener ?? (await env.fundedKeypair(2))
+  const triggerSig = options.triggerSig ?? triggerSignature()
+  const bondSource = await env.assetAccount(opener.publicKey, bond)
+
+  const seq = (await program.account.protocol.fetch(target.protocol)).nextIncidentSeq.toNumber()
+  const incident = findIncident(program.programId, target.protocol, seq)
+
+  await program.methods
+    .openIncident(new BN(policySeq), triggerSig)
+    .accountsPartial({
+      opener: opener.publicKey,
+      protocol: target.protocol,
+      pool: target.pool,
+      policy: findPolicy(program.programId, target.protocol, policySeq),
+      incident,
+      bondSource,
+      vault: target.vault,
+      systemProgram: SystemProgram.programId,
+    })
+    .signers([opener])
+    .rpc()
+
+  return { incident, seq, opener, bond, triggerSig }
 }
 
 /** Capital in the pool without shares — the temporary service path (T014, gone in T036). */

@@ -102,6 +102,17 @@ pub mod drain_cover {
         )
     }
 
+    /// Records a suspected unauthorized privileged action against a policy
+    /// (FR-006). The trigger signature is a claim; the bond is what it costs to
+    /// make one.
+    pub fn open_incident(
+        ctx: Context<OpenIncident>,
+        policy_seq: u64,
+        trigger_sig: [u8; 64],
+    ) -> Result<()> {
+        instructions::open_incident::handle_open_incident(ctx, policy_seq, trigger_sig)
+    }
+
     /// Admits an attestor to the permissive set or removes one (FR-008).
     /// Admission takes effect with the next epoch; removal, at once.
     pub fn set_attestor(

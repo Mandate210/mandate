@@ -185,6 +185,138 @@ export type DrainCover = {
       ]
     },
     {
+      name: 'openIncident'
+      docs: [
+        'Records a suspected unauthorized privileged action against a policy',
+        '(FR-006). The trigger signature is a claim; the bond is what it costs to',
+        'make one.',
+      ]
+      discriminator: [141, 221, 28, 107, 87, 98, 35, 108]
+      accounts: [
+        {
+          name: 'config'
+          pda: {
+            seeds: [
+              {
+                kind: 'const'
+                value: [99, 111, 110, 102, 105, 103]
+              },
+            ]
+          }
+        },
+        {
+          name: 'opener'
+          docs: [
+            'Anyone may open an incident — that is what the bond is for. In practice it is',
+            'an attestor that has just seen an undeclared privileged transaction (T027),',
+            'but nothing in the program depends on who noticed.',
+          ]
+          writable: true
+          signer: true
+        },
+        {
+          name: 'protocol'
+          writable: true
+        },
+        {
+          name: 'pool'
+          writable: true
+          pda: {
+            seeds: [
+              {
+                kind: 'const'
+                value: [112, 111, 111, 108]
+              },
+              {
+                kind: 'account'
+                path: 'protocol'
+              },
+            ]
+          }
+          relations: ['protocol']
+        },
+        {
+          name: 'policy'
+          docs: [
+            "Bound to this protocol by its seeds: an incident on someone else's policy",
+            'would lock capital in a pool that never underwrote it.',
+          ]
+          pda: {
+            seeds: [
+              {
+                kind: 'const'
+                value: [112, 111, 108, 105, 99, 121]
+              },
+              {
+                kind: 'account'
+                path: 'protocol'
+              },
+              {
+                kind: 'arg'
+                path: 'policySeq'
+              },
+            ]
+          }
+        },
+        {
+          name: 'incident'
+          writable: true
+          pda: {
+            seeds: [
+              {
+                kind: 'const'
+                value: [105, 110, 99, 105, 100, 101, 110, 116]
+              },
+              {
+                kind: 'account'
+                path: 'protocol'
+              },
+              {
+                kind: 'account'
+                path: 'protocol.next_incident_seq'
+                account: 'protocol'
+              },
+            ]
+          }
+        },
+        {
+          name: 'bondSource'
+          writable: true
+        },
+        {
+          name: 'vault'
+          docs: [
+            "The bond rests in the pool's vault until the incident settles: refunded from",
+            'there if the quorum confirms, forfeited to the pool if it does not. It is',
+            'deliberately **not** added to `Pool::total_assets` — capital that may go back',
+            'to the opener must not count as capacity to underwrite. The vault therefore',
+            'holds `total_assets` plus the bonds of open incidents.',
+          ]
+          writable: true
+        },
+        {
+          name: 'tokenProgram'
+          address: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'
+        },
+        {
+          name: 'systemProgram'
+          address: '11111111111111111111111111111111'
+        },
+      ]
+      args: [
+        {
+          name: 'policySeq'
+          type: 'u64'
+        },
+        {
+          name: 'triggerSig'
+          type: {
+            array: ['u8', 64]
+          }
+        },
+      ]
+    },
+    {
       name: 'registerProtocol'
       docs: ['Registers a covered protocol together with its pool and vault (FR-001).']
       discriminator: [63, 107, 156, 136, 249, 231, 183, 65]
@@ -681,6 +813,10 @@ export type DrainCover = {
       discriminator: [220, 182, 175, 15, 201, 252, 185, 113]
     },
     {
+      name: 'incident'
+      discriminator: [144, 81, 144, 130, 200, 193, 26, 111]
+    },
+    {
       name: 'policy'
       discriminator: [222, 135, 7, 163, 235, 177, 33, 68]
     },
@@ -838,6 +974,11 @@ export type DrainCover = {
       code: 6028
       name: 'attestorNotInSet'
       msg: 'Attestor is not in the set'
+    },
+    {
+      code: 6029
+      name: 'attestorSetEmpty'
+      msg: 'The attestor set is empty, so no incident can reach quorum'
     },
   ]
   types: [
@@ -1040,6 +1181,128 @@ export type DrainCover = {
             type: {
               option: 'i64'
             }
+          },
+        ]
+      }
+    },
+    {
+      name: 'incident'
+      docs: [
+        'A recorded suspicion of an unauthorized privileged action.',
+        '',
+        "The program cannot read another protocol's past transaction, so `trigger_sig`",
+        'enters as a *claim* by whoever opened the incident. What makes it evidence is',
+        'independent attestors agreeing (FR-007…FR-010).',
+        '',
+        'Every field here is paid for in rent and fees on each incident, which SC-008',
+        'caps at 1 USD — so this account carries no reserve fields.',
+      ]
+      type: {
+        kind: 'struct'
+        fields: [
+          {
+            name: 'policy'
+            type: 'pubkey'
+          },
+          {
+            name: 'triggerSig'
+            docs: [
+              'The triggering transaction, kept in full so the public trail can be',
+              'replayed straight from an RPC node (FR-011, SC-007).',
+            ]
+            type: {
+              array: ['u8', 64]
+            }
+          },
+          {
+            name: 'opener'
+            docs: [
+              'Refunded if the quorum confirms the incident, forfeited to the pool if it',
+              'does not.',
+            ]
+            type: 'pubkey'
+          },
+          {
+            name: 'bond'
+            type: 'u64'
+          },
+          {
+            name: 'openedAt'
+            type: 'i64'
+          },
+          {
+            name: 'openedEpoch'
+            docs: [
+              'Epoch the incident opened in. FR-008 admits an attestation only from a',
+              'member of the set *as it stood when the incident opened*, so membership is',
+              'judged against this epoch and not against the one the attestation lands in —',
+              'otherwise an attestor admitted afterwards could vote on it.',
+            ]
+            type: 'u64'
+          },
+          {
+            name: 'deadline'
+            docs: ['`opened_at + Config::attest_window`.']
+            type: 'i64'
+          },
+          {
+            name: 'setSize'
+            docs: [
+              'Size of the attestor set at the moment of opening, and therefore the',
+              "denominator of this incident's quorum. Snapshotted so the bar cannot move",
+              'while attestations are being collected.',
+            ]
+            type: 'u16'
+          },
+          {
+            name: 'votesUnauthorized'
+            docs: [
+              'Attestations classifying the action as unauthorized, and as authorized.',
+              'Named for the classification rather than for/against, because a quorum is',
+              'counted on one specific verdict (FR-010).',
+            ]
+            type: 'u16'
+          },
+          {
+            name: 'votesAuthorized'
+            type: 'u16'
+          },
+          {
+            name: 'status'
+            type: {
+              defined: {
+                name: 'incidentStatus'
+              }
+            }
+          },
+          {
+            name: 'payout'
+            type: 'u64'
+          },
+          {
+            name: 'shortfall'
+            docs: [
+              'Amount owed but unpayable because the pool ran short. Recorded rather than',
+              'carried forward: the trail has to state what was not paid (FR-013).',
+            ]
+            type: 'u64'
+          },
+        ]
+      }
+    },
+    {
+      name: 'incidentStatus'
+      type: {
+        kind: 'enum'
+        variants: [
+          {
+            name: 'open'
+          },
+          {
+            name: 'paidOut'
+          },
+          {
+            name: 'closedNoPayout'
           },
         ]
       }

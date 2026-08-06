@@ -81,4 +81,9 @@ pub enum DrainCoverError {
     AttestorAlreadyInSet,
     #[msg("Attestor is not in the set")]
     AttestorNotInSet,
+    /// Quorum is a share of the set (FR-010), and a share of nothing is nothing —
+    /// an incident opened against an empty set would clear its bar with no
+    /// attestations at all.
+    #[msg("The attestor set is empty, so no incident can reach quorum")]
+    AttestorSetEmpty,
 }

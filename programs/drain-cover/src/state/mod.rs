@@ -60,9 +60,9 @@ mod tests {
         assert_eq!(DeclarationEntry::INIT_SPACE, 83);
         // authority 32 + epoch 8 + in_set 1 + stake 8 + agreed 4 + disagreed 4
         assert_eq!(Attestor::INIT_SPACE, 57);
-        // policy 32 + trigger_sig 64 + opener 32 + bond 8 + opened 8 + deadline 8
-        //   + votes 2+2 + status 1 + payout 8 + shortfall 8
-        assert_eq!(Incident::INIT_SPACE, 173);
+        // policy 32 + trigger_sig 64 + opener 32 + bond 8 + opened 8 + epoch 8
+        //   + deadline 8 + set_size 2 + votes 2+2 + status 1 + payout 8 + shortfall 8
+        assert_eq!(Incident::INIT_SPACE, 183);
         // verdict 1 + submitted_at 8
         assert_eq!(Attestation::INIT_SPACE, 9);
     }
@@ -72,7 +72,7 @@ mod tests {
     /// them changes the cost of every incident.
     #[test]
     fn an_incident_allocates_a_known_number_of_bytes() {
-        assert_eq!(on_chain_size::<Incident>(), 181);
+        assert_eq!(on_chain_size::<Incident>(), 191);
         assert_eq!(on_chain_size::<Attestation>(), 17);
     }
 }

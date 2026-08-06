@@ -11,6 +11,7 @@
 
 pub mod initialize;
 pub mod issue_policy;
+pub mod open_incident;
 pub mod register_protocol;
 pub mod revoke_declaration;
 pub mod service_fund_pool;
@@ -24,6 +25,7 @@ pub mod submit_declaration;
 // rejects in CI.
 pub use initialize::*;
 pub use issue_policy::*;
+pub use open_incident::*;
 pub use register_protocol::*;
 pub use revoke_declaration::*;
 pub use service_fund_pool::*;

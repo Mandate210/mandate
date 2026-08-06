@@ -37,8 +37,17 @@ pub struct Incident {
     pub opener: Pubkey,
     pub bond: u64,
     pub opened_at: i64,
+    /// Epoch the incident opened in. FR-008 admits an attestation only from a
+    /// member of the set *as it stood when the incident opened*, so membership is
+    /// judged against this epoch and not against the one the attestation lands in —
+    /// otherwise an attestor admitted afterwards could vote on it.
+    pub opened_epoch: u64,
     /// `opened_at + Config::attest_window`.
     pub deadline: i64,
+    /// Size of the attestor set at the moment of opening, and therefore the
+    /// denominator of this incident's quorum. Snapshotted so the bar cannot move
+    /// while attestations are being collected.
+    pub set_size: u16,
     /// Attestations classifying the action as unauthorized, and as authorized.
     /// Named for the classification rather than for/against, because a quorum is
     /// counted on one specific verdict (FR-010).
