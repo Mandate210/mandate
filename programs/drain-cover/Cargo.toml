@@ -28,5 +28,8 @@ custom-panic = []
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }
 
 [dependencies]
-anchor-lang = "0.32.1"
+# `init-if-needed` is on for one account: the attestor set is an upsert, since a
+# removed attestor keeps the account that records their agreements and can be
+# admitted again (instructions/set_attestor.rs).
+anchor-lang = { version = "0.32.1", features = ["init-if-needed"] }
 anchor-spl = "0.32.1"

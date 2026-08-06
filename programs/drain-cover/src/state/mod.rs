@@ -40,8 +40,9 @@ mod tests {
 
     #[test]
     fn layouts_are_the_size_they_are_meant_to_be() {
-        // admin 32 + asset_mint 32 + delay 8 + window 8 + quorum 2 + bond 8 + paused 1
-        assert_eq!(Config::INIT_SPACE, 91);
+        // admin 32 + asset_mint 32 + delay 8 + window 8 + quorum 2 + attestors 2
+        //   + bond 8 + paused 1
+        assert_eq!(Config::INIT_SPACE, 93);
         // authority 32 + treasury 32 + privileged (4 + 16*32) + pool 32 + paused 1
         //   + three u64 sequence counters
         assert_eq!(Protocol::INIT_SPACE, 637);
@@ -57,8 +58,8 @@ mod tests {
         // The two 9s are the point of this line: `Option<i64>` is a tag byte plus
         // the payload, so a permanent entry costs the same as a bounded one.
         assert_eq!(DeclarationEntry::INIT_SPACE, 83);
-        // authority 32 + epoch 8 + stake 8 + agreed 4 + disagreed 4
-        assert_eq!(Attestor::INIT_SPACE, 56);
+        // authority 32 + epoch 8 + in_set 1 + stake 8 + agreed 4 + disagreed 4
+        assert_eq!(Attestor::INIT_SPACE, 57);
         // policy 32 + trigger_sig 64 + opener 32 + bond 8 + opened 8 + deadline 8
         //   + votes 2+2 + status 1 + payout 8 + shortfall 8
         assert_eq!(Incident::INIT_SPACE, 173);

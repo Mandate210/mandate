@@ -25,6 +25,11 @@ pub struct Config {
     /// Share of the active set that must classify an incident as unauthorized
     /// for the payout to fire (FR-010), in basis points.
     pub quorum_bps: u16,
+    /// Size of the attestor set, and therefore the denominator of every quorum.
+    /// The program cannot enumerate PDAs, so the count has to be carried; it moves
+    /// with every `set_attestor`, and an incident snapshots it when it opens so the
+    /// bar cannot shift while attestations are being collected.
+    pub attestor_count: u16,
     /// Bond the opener of an incident locks against frivolous openings.
     pub open_bond: u64,
     /// Stops new policies across every pool. Payouts on active policies are

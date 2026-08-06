@@ -102,6 +102,16 @@ pub mod drain_cover {
         )
     }
 
+    /// Admits an attestor to the permissive set or removes one (FR-008).
+    /// Admission takes effect with the next epoch; removal, at once.
+    pub fn set_attestor(
+        ctx: Context<SetAttestor>,
+        attestor_authority: Pubkey,
+        in_set: bool,
+    ) -> Result<()> {
+        instructions::set_attestor::handle_set_attestor(ctx, attestor_authority, in_set)
+    }
+
     /// Withdraws what a declaration entry permits, with no delay (FR-032).
     /// `narrow_to: None` revokes it; `Some(ts)` shortens its window to end at `ts`.
     pub fn revoke_declaration(

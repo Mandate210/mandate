@@ -503,6 +503,77 @@ export type DrainCover = {
       ]
     },
     {
+      name: 'setAttestor'
+      docs: [
+        'Admits an attestor to the permissive set or removes one (FR-008).',
+        'Admission takes effect with the next epoch; removal, at once.',
+      ]
+      discriminator: [95, 11, 236, 157, 234, 146, 163, 237]
+      accounts: [
+        {
+          name: 'config'
+          writable: true
+          pda: {
+            seeds: [
+              {
+                kind: 'const'
+                value: [99, 111, 110, 102, 105, 103]
+              },
+            ]
+          }
+        },
+        {
+          name: 'admin'
+          docs: [
+            'The set is a permissive list in P1 (FR-008), so admitting and removing are',
+            'service operations. US3 replaces how the set is formed — stake instead of',
+            'this list (FR-021, T041) — and leaves everything downstream of it alone.',
+          ]
+          writable: true
+          signer: true
+          relations: ['config']
+        },
+        {
+          name: 'attestor'
+          docs: [
+            '`init_if_needed` because this is an upsert, not a creation: an attestor',
+            'removed by mistake has to be able to come back, and the account is where the',
+            'record of their agreements lives. The usual re-initialization hazard does not',
+            'apply — the handler writes membership and nothing else, so a second admission',
+            'cannot reset a history or, from US3, a stake. Only the admin can call it, and',
+            'the address is derived from the authority it is about.',
+          ]
+          writable: true
+          pda: {
+            seeds: [
+              {
+                kind: 'const'
+                value: [97, 116, 116, 101, 115, 116, 111, 114]
+              },
+              {
+                kind: 'arg'
+                path: 'attestorAuthority'
+              },
+            ]
+          }
+        },
+        {
+          name: 'systemProgram'
+          address: '11111111111111111111111111111111'
+        },
+      ]
+      args: [
+        {
+          name: 'attestorAuthority'
+          type: 'pubkey'
+        },
+        {
+          name: 'inSet'
+          type: 'bool'
+        },
+      ]
+    },
+    {
       name: 'submitDeclaration'
       docs: [
         'Declares one permitted privileged operation (FR-006). Effective after',
@@ -597,6 +668,10 @@ export type DrainCover = {
     },
   ]
   accounts: [
+    {
+      name: 'attestor'
+      discriminator: [253, 240, 76, 196, 16, 53, 239, 173]
+    },
     {
       name: 'config'
       discriminator: [155, 12, 170, 224, 30, 250, 204, 130]
@@ -754,8 +829,74 @@ export type DrainCover = {
       name: 'narrowedWindowEndsInThePast'
       msg: 'A narrowed declaration window may not end in the past'
     },
+    {
+      code: 6027
+      name: 'attestorAlreadyInSet'
+      msg: 'Attestor is already in the set'
+    },
+    {
+      code: 6028
+      name: 'attestorNotInSet'
+      msg: 'Attestor is not in the set'
+    },
   ]
   types: [
+    {
+      name: 'attestor'
+      docs: [
+        'An independent observer entitled to classify privileged transactions. The',
+        'authority is in the PDA seeds; the field repeats it so the account can be read',
+        'without rederiving the address.',
+      ]
+      type: {
+        kind: 'struct'
+        fields: [
+          {
+            name: 'authority'
+            type: 'pubkey'
+          },
+          {
+            name: 'activeFromEpoch'
+            docs: [
+              'Membership starts with the next epoch, never mid-incident: an attestation',
+              'is only accepted from a member of the set as it stood when the incident',
+              'opened (FR-008).',
+            ]
+            type: 'u64'
+          },
+          {
+            name: 'inSet'
+            docs: [
+              'In the set right now. A fresh account reads `false`, which is what it is:',
+              'an address nobody has admitted. Removal clears the flag rather than closing',
+              'the account, so `agreed`/`disagreed` — and, from US3, the stake — survive a',
+              'removal and a later re-admission.',
+            ]
+            type: 'bool'
+          },
+          {
+            name: 'stake'
+            docs: [
+              'Zero while the set is a permissive list. Stake, rewards and slashing',
+              'arrive with US3 and change only how the set is formed (FR-021).',
+            ]
+            type: 'u64'
+          },
+          {
+            name: 'agreed'
+            docs: [
+              'Agreements and disagreements with settled decisions. Public record now,',
+              'input to slashing later (FR-022, FR-023).',
+            ]
+            type: 'u32'
+          },
+          {
+            name: 'disagreed'
+            type: 'u32'
+          },
+        ]
+      }
+    },
     {
       name: 'config'
       docs: ['Protocol-wide parameters. Exactly one per deployment.']
@@ -803,6 +944,16 @@ export type DrainCover = {
             docs: [
               'Share of the active set that must classify an incident as unauthorized',
               'for the payout to fire (FR-010), in basis points.',
+            ]
+            type: 'u16'
+          },
+          {
+            name: 'attestorCount'
+            docs: [
+              'Size of the attestor set, and therefore the denominator of every quorum.',
+              'The program cannot enumerate PDAs, so the count has to be carried; it moves',
+              'with every `set_attestor`, and an incident snapshots it when it opens so the',
+              'bar cannot shift while attestations are being collected.',
             ]
             type: 'u16'
           },

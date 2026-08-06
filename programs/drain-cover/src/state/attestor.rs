@@ -13,6 +13,11 @@ pub struct Attestor {
     /// is only accepted from a member of the set as it stood when the incident
     /// opened (FR-008).
     pub active_from_epoch: u64,
+    /// In the set right now. A fresh account reads `false`, which is what it is:
+    /// an address nobody has admitted. Removal clears the flag rather than closing
+    /// the account, so `agreed`/`disagreed` — and, from US3, the stake — survive a
+    /// removal and a later re-admission.
+    pub in_set: bool,
     /// Zero while the set is a permissive list. Stake, rewards and slashing
     /// arrive with US3 and change only how the set is formed (FR-021).
     pub stake: u64,

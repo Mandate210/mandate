@@ -2,6 +2,7 @@ import { BN, type Program } from '@coral-xyz/anchor'
 import {
   type DrainCover,
   PROGRAM_ID,
+  findAttestor,
   findConfig,
   findDeclarationEntry,
   findPolicy,
@@ -215,6 +216,28 @@ export const revokeDeclaration = async (
     })
     .signers([target.authority])
     .rpc()
+}
+
+/**
+ * Admits an attestor to the permissive set, or removes one (FR-008). Returns the
+ * account so a caller can read back when membership starts.
+ */
+export const setAttestor = async (
+  program: Program<DrainCover>,
+  env: TestEnv,
+  attestorAuthority: PublicKey,
+  inSet = true,
+): Promise<PublicKey> => {
+  await program.methods
+    .setAttestor(attestorAuthority, inSet)
+    .accountsPartial({
+      admin: env.payer.publicKey,
+      attestor: findAttestor(program.programId, attestorAuthority),
+      systemProgram: SystemProgram.programId,
+    })
+    .rpc()
+
+  return findAttestor(program.programId, attestorAuthority)
 }
 
 /** Capital in the pool without shares — the temporary service path (T014, gone in T036). */

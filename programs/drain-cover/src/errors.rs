@@ -74,4 +74,11 @@ pub enum DrainCoverError {
     /// an incident, and a payout, against a protocol that did nothing wrong.
     #[msg("A narrowed declaration window may not end in the past")]
     NarrowedWindowEndsInThePast,
+    /// Refused rather than treated as a no-op: a second admission would push
+    /// `active_from_epoch` forward and silently disarm an attestor the admin
+    /// believes is voting.
+    #[msg("Attestor is already in the set")]
+    AttestorAlreadyInSet,
+    #[msg("Attestor is not in the set")]
+    AttestorNotInSet,
 }

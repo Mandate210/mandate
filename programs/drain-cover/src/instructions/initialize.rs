@@ -63,6 +63,7 @@ pub fn handle_initialize(
         declaration_delay,
         attest_window,
         quorum_bps,
+        attestor_count: 0,
         open_bond,
         paused: false,
     });

@@ -14,6 +14,7 @@ pub mod issue_policy;
 pub mod register_protocol;
 pub mod revoke_declaration;
 pub mod service_fund_pool;
+pub mod set_attestor;
 pub mod submit_declaration;
 
 // The globs are required, not stylistic: `#[derive(Accounts)]` also generates hidden
@@ -26,4 +27,5 @@ pub use issue_policy::*;
 pub use register_protocol::*;
 pub use revoke_declaration::*;
 pub use service_fund_pool::*;
+pub use set_attestor::*;
 pub use submit_declaration::*;

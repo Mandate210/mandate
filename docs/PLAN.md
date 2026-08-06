@@ -112,13 +112,13 @@ US1 (P1) потребує: програму, `attestor`, мінімальний 
 
 | Акаунт | Seeds | Поля |
 |---|---|---|
-| `Config` | `["config"]` | `admin`, `asset_mint`, `declaration_delay`, `attest_window`, `quorum_bps`, `open_bond`, `paused` |
+| `Config` | `["config"]` | `admin`, `asset_mint`, `declaration_delay`, `attest_window`, `quorum_bps`, `attestor_count`, `open_bond`, `paused` |
 | `Protocol` | `["protocol", protocol_id]` | `authority`, `treasury`, `privileged: Vec<Pubkey>` (cap 16), `pool`, `new_policies_paused`, `next_policy_seq`, `next_declaration_seq`, `next_incident_seq` |
 | `Pool` | `["pool", protocol]` | `vault`, `total_assets`, `total_shares`, `locked_limit`, `open_incidents`, `acc_premium_per_share: u128`, `bump` |
 | `UnderwriterPosition` | `["position", pool, owner]` | `shares`, `premium_checkpoint: u128`, `pending_withdraw`, `unlock_ts` |
 | `Policy` | `["policy", protocol, seq]` | `limit`, `retention`, `remaining_limit`, `start_ts`, `end_ts`, `premium_paid`, `beneficiary`, `status` |
 | `DeclarationEntry` | `["decl", protocol, seq]` | `program_id`, `ix_discriminator: [u8;8]`, `not_before`, `not_after: Option<i64>`, `moves_funds: bool`, `submitted_at`, `effective_at`, `revoked_at` |
-| `Attestor` | `["attestor", authority]` | `authority`, `active_from_epoch`, `stake` (0 у P1), `agreed`, `disagreed` |
+| `Attestor` | `["attestor", authority]` | `authority`, `active_from_epoch`, `in_set`, `stake` (0 у P1), `agreed`, `disagreed` |
 | `Incident` | `["incident", protocol, seq]` | `policy`, `trigger_sig: [u8;64]`, `opener`, `bond`, `opened_at`, `deadline`, `votes_unauthorized`, `votes_authorized`, `status`, `payout`, `shortfall` |
 | `Attestation` | `["attest", incident, attestor]` | `verdict`, `submitted_at` |
 
@@ -142,8 +142,8 @@ US1 (P1) потребує: програму, `attestor`, мінімальний 
 протокол.
 
 **Розміри акаунтів (T008).** Виведені `#[derive(InitSpace)]`, зафіксовані тестом у
-`state/mod.rs`: `Config` 91, `Protocol` 637, `Pool` 77, `UnderwriterPosition` 40,
-`Policy` 81, `DeclarationEntry` 83, `Attestor` 56, `Incident` 173, `Attestation` 9
+`state/mod.rs`: `Config` 93, `Protocol` 637, `Pool` 77, `UnderwriterPosition` 40,
+`Policy` 81, `DeclarationEntry` 83, `Attestor` 57, `Incident` 173, `Attestation` 9
 байтів без дискримінатора. Один інцидент алокує `Incident` + `Attestation` =
 181 + 17 байтів разом із дискримінаторами — це вхідні для межі за `SC-008` (T064),
 тому обидва акаунти тримаються без полів «про запас».
@@ -153,6 +153,12 @@ US1 (P1) потребує: програму, `attestor`, мінімальний 
 CU; `yes`/`no` в `Incident` названі `votes_unauthorized`/`votes_authorized`, бо
 кворум рахується за однією конкретною класифікацією (FR-010), і «yes» на питання
 «санкціонована чи ні» читається двояко там, де від цього залежать гроші.
+
+**Набір атестаторів і знаменник кворуму (T017).** Кворум — це частка **активного набору** (FR-010), а програма не вміє перелічувати PDA, тож розмір набору доводиться нести: `Config.attestor_count` рухається кожним `set_attestor`, а інцидент знімає з нього знімок при відкритті, щоб планка не поїхала посеред збору свідчень.
+
+Асиметрія входу і виходу свідома. **Вихід — негайний**: прапорець `in_set` і лічильник рухаються разом, тож знаменник ніколи не більший за набір, який реально може голосувати. **Вхід — з наступної епохи** (`active_from_epoch = epoch + 1`, FR-008): епоха набагато довша за вікно атестації, тож набір, який вирішує інцидент, застигає ще до того, як інцидент виникає — інакше адмін (або той, хто забрав адмін-ключ) добирав би учасників уже під час збору свідчень. Ціна: протягом однієї епохи новачок уже врахований у знаменнику, але ще не голосує, тобто кворум трохи важчий — помилка **в безпечний бік**, ніколи в бік зайвої виплати. У `T065` (`SC-004`) це означає: набір формується епохою раніше за відкриття інциденту.
+
+Акаунт атестатора при виключенні **не закривається**, а помічається (`in_set = false`) — у ньому лежить публічний облік збігів і розбіжностей, а з US3 ще й стейк; повторне приймання не має їх стирати. Тому інструкція — upsert (`init_if_needed` на єдиному акаунті в програмі), і вона пише лише членство: `stake`, `agreed`, `disagreed` не чіпаються ні за яких обставин. Повторне приймання того, хто вже в наборі, — помилка, а не no-op: інакше воно б непомітно посунуло `active_from_epoch` і роззброїло атестатора, якого адмін вважає чинним.
 
 **FR-009 («один атестатор — одне свідчення») забезпечується самою схемою PDA:** адреса виводиться з `(incident, attestor)`, тож друге створення провалюється на рівні рантайму, без окремої перевірки в коді.
 
