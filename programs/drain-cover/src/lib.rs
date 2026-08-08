@@ -129,6 +129,15 @@ pub mod drain_cover {
         instructions::resolve::handle_resolve(ctx, incident_seq)
     }
 
+    /// Closes an incident whose window ran out without a quorum: no payout, the
+    /// capital it froze is released and the bond becomes pool capital (FR-011).
+    pub fn close_expired_incident(
+        ctx: Context<CloseExpiredIncident>,
+        incident_seq: u64,
+    ) -> Result<()> {
+        instructions::close_expired_incident::handle_close_expired_incident(ctx, incident_seq)
+    }
+
     /// Admits an attestor to the permissive set or removes one (FR-008).
     /// Admission takes effect with the next epoch; removal, at once.
     pub fn set_attestor(

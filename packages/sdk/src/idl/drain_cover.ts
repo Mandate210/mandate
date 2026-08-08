@@ -5,496 +5,786 @@
  * IDL can be found at `target/idl/drain_cover.json`.
  */
 export type DrainCover = {
-  address: 'DsRdHv4QRYQ7teVhwuLVttktF792gvDFQdiuraQ4eF4P'
-  metadata: {
-    name: 'drainCover'
-    version: '0.1.0'
-    spec: '0.1.0'
-    description: "Parametric cover against unauthorized use of a protocol's privileged admin access"
-  }
-  instructions: [
+  "address": "DsRdHv4QRYQ7teVhwuLVttktF792gvDFQdiuraQ4eF4P",
+  "metadata": {
+    "name": "drainCover",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Parametric cover against unauthorized use of a protocol's privileged admin access"
+  },
+  "instructions": [
     {
-      name: 'attest'
-      docs: [
+      "name": "attest",
+      "docs": [
         "Records one attestor's verdict on an open incident (FR-007). One attestor,",
-        'one attestation — held by the address itself (FR-009).',
-      ]
-      discriminator: [83, 148, 120, 119, 144, 139, 117, 160]
-      accounts: [
+        "one attestation — held by the address itself (FR-009)."
+      ],
+      "discriminator": [
+        83,
+        148,
+        120,
+        119,
+        144,
+        139,
+        117,
+        160
+      ],
+      "accounts": [
         {
-          name: 'protocol'
+          "name": "protocol"
         },
         {
-          name: 'incident'
-          writable: true
-          pda: {
-            seeds: [
+          "name": "incident",
+          "writable": true,
+          "pda": {
+            "seeds": [
               {
-                kind: 'const'
-                value: [105, 110, 99, 105, 100, 101, 110, 116]
+                "kind": "const",
+                "value": [
+                  105,
+                  110,
+                  99,
+                  105,
+                  100,
+                  101,
+                  110,
+                  116
+                ]
               },
               {
-                kind: 'account'
-                path: 'protocol'
+                "kind": "account",
+                "path": "protocol"
               },
               {
-                kind: 'arg'
-                path: 'incidentSeq'
-              },
+                "kind": "arg",
+                "path": "incidentSeq"
+              }
             ]
           }
         },
         {
-          name: 'attestorAuthority'
-          docs: [
-            'Signs and pays for its own attestation. Nothing else in the program can',
-            'create one, so the record is a statement by the attestor and by nobody else.',
-          ]
-          writable: true
-          signer: true
+          "name": "attestorAuthority",
+          "docs": [
+            "Signs and pays for its own attestation. Nothing else in the program can",
+            "create one, so the record is a statement by the attestor and by nobody else."
+          ],
+          "writable": true,
+          "signer": true
         },
         {
-          name: 'attestor'
-          docs: [
-            'Derived from the signer, so the seeds are the whole binding: there is no way',
-            "to present someone else's membership.",
-          ]
-          pda: {
-            seeds: [
+          "name": "attestor",
+          "docs": [
+            "Derived from the signer, so the seeds are the whole binding: there is no way",
+            "to present someone else's membership."
+          ],
+          "pda": {
+            "seeds": [
               {
-                kind: 'const'
-                value: [97, 116, 116, 101, 115, 116, 111, 114]
+                "kind": "const",
+                "value": [
+                  97,
+                  116,
+                  116,
+                  101,
+                  115,
+                  116,
+                  111,
+                  114
+                ]
               },
               {
-                kind: 'account'
-                path: 'attestorAuthority'
-              },
+                "kind": "account",
+                "path": "attestorAuthority"
+              }
             ]
           }
         },
         {
-          name: 'attestation'
-          docs: [
-            'FR-009 is the address itself: `(incident, attestor)` derives one account, so a',
-            'second attestation from the same attestor fails in the runtime before any of',
-            'this code runs. No counter, no list, nothing to get wrong.',
-          ]
-          writable: true
-          pda: {
-            seeds: [
+          "name": "attestation",
+          "docs": [
+            "FR-009 is the address itself: `(incident, attestor)` derives one account, so a",
+            "second attestation from the same attestor fails in the runtime before any of",
+            "this code runs. No counter, no list, nothing to get wrong."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
               {
-                kind: 'const'
-                value: [97, 116, 116, 101, 115, 116]
+                "kind": "const",
+                "value": [
+                  97,
+                  116,
+                  116,
+                  101,
+                  115,
+                  116
+                ]
               },
               {
-                kind: 'account'
-                path: 'incident'
+                "kind": "account",
+                "path": "incident"
               },
               {
-                kind: 'account'
-                path: 'attestorAuthority'
-              },
+                "kind": "account",
+                "path": "attestorAuthority"
+              }
             ]
           }
         },
         {
-          name: 'systemProgram'
-          address: '11111111111111111111111111111111'
-        },
-      ]
-      args: [
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
         {
-          name: 'incidentSeq'
-          type: 'u64'
+          "name": "incidentSeq",
+          "type": "u64"
         },
         {
-          name: 'verdict'
-          type: {
-            defined: {
-              name: 'verdict'
+          "name": "verdict",
+          "type": {
+            "defined": {
+              "name": "verdict"
             }
           }
-        },
+        }
       ]
     },
     {
-      name: 'initialize'
-      docs: ['Creates the one Config account for this deployment.']
-      discriminator: [175, 175, 109, 31, 13, 152, 155, 237]
-      accounts: [
+      "name": "closeExpiredIncident",
+      "docs": [
+        "Closes an incident whose window ran out without a quorum: no payout, the",
+        "capital it froze is released and the bond becomes pool capital (FR-011)."
+      ],
+      "discriminator": [
+        32,
+        253,
+        40,
+        240,
+        99,
+        24,
+        111,
+        145
+      ],
+      "accounts": [
         {
-          name: 'config'
-          writable: true
-          pda: {
-            seeds: [
+          "name": "config",
+          "pda": {
+            "seeds": [
               {
-                kind: 'const'
-                value: [99, 111, 110, 102, 105, 103]
-              },
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
             ]
           }
         },
         {
-          name: 'admin'
-          docs: [
-            'Pays for the account and becomes the admin. Whoever runs this owns the',
-            'service operations, so on a real deployment it is not a personal key —',
-            'see R-1 on the same problem with the upgrade authority.',
+          "name": "protocol"
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "protocol"
+              }
+            ]
+          },
+          "relations": [
+            "protocol"
           ]
-          writable: true
-          signer: true
         },
         {
-          name: 'assetMint'
-          docs: [
-            'Typed as a mint so a wrong account cannot be installed as the settlement',
-            'asset. Decimals are deliberately not constrained: amounts are stored in',
-            "this asset's base units and never converted (FR-014).",
+          "name": "policy",
+          "docs": [
+            "Read, never written: closing without a payout leaves the cover exactly as it",
+            "was. It is here because whether `resolve` could still pay this incident",
+            "depends on it (FR-016)."
+          ],
+          "relations": [
+            "incident"
           ]
         },
         {
-          name: 'systemProgram'
-          address: '11111111111111111111111111111111'
+          "name": "incident",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  110,
+                  99,
+                  105,
+                  100,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "protocol"
+              },
+              {
+                "kind": "arg",
+                "path": "incidentSeq"
+              }
+            ]
+          }
         },
-      ]
-      args: [
         {
-          name: 'declarationDelay'
-          type: 'i64'
+          "name": "vault",
+          "writable": true
         },
         {
-          name: 'attestWindow'
-          type: 'i64'
+          "name": "openerToken",
+          "docs": [
+            "Only paid when the quorum confirmed the incident, but required in both cases:",
+            "an instruction whose account list depends on a tally is one a caller can get",
+            "wrong, and the runtime would then refuse the transaction rather than the",
+            "program refusing the operation."
+          ],
+          "writable": true
         },
         {
-          name: 'quorumBps'
-          type: 'u16'
-        },
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
         {
-          name: 'openBond'
-          type: 'u64'
-        },
+          "name": "incidentSeq",
+          "type": "u64"
+        }
       ]
     },
     {
-      name: 'issuePolicy'
-      docs: ['Issues a policy against a pool and takes its premium (FR-003, FR-005).']
-      discriminator: [126, 159, 34, 92, 118, 55, 15, 196]
-      accounts: [
+      "name": "initialize",
+      "docs": [
+        "Creates the one Config account for this deployment."
+      ],
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "accounts": [
         {
-          name: 'config'
-          pda: {
-            seeds: [
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
               {
-                kind: 'const'
-                value: [99, 111, 110, 102, 105, 103]
-              },
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
             ]
           }
         },
         {
-          name: 'admin'
-          docs: [
-            'Issuance is a service operation in P1. US4 hands it to the protocol itself,',
-            'with a premium quote instead of an amount chosen by the caller (FR-025).',
+          "name": "admin",
+          "docs": [
+            "Pays for the account and becomes the admin. Whoever runs this owns the",
+            "service operations, so on a real deployment it is not a personal key —",
+            "see R-1 on the same problem with the upgrade authority."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "assetMint",
+          "docs": [
+            "Typed as a mint so a wrong account cannot be installed as the settlement",
+            "asset. Decimals are deliberately not constrained: amounts are stored in",
+            "this asset's base units and never converted (FR-014)."
           ]
-          writable: true
-          signer: true
-          relations: ['config']
         },
         {
-          name: 'protocol'
-          writable: true
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "declarationDelay",
+          "type": "i64"
         },
         {
-          name: 'pool'
-          writable: true
-          pda: {
-            seeds: [
-              {
-                kind: 'const'
-                value: [112, 111, 111, 108]
-              },
-              {
-                kind: 'account'
-                path: 'protocol'
-              },
-            ]
-          }
-          relations: ['protocol']
+          "name": "attestWindow",
+          "type": "i64"
         },
         {
-          name: 'policy'
-          writable: true
-          pda: {
-            seeds: [
-              {
-                kind: 'const'
-                value: [112, 111, 108, 105, 99, 121]
-              },
-              {
-                kind: 'account'
-                path: 'protocol'
-              },
-              {
-                kind: 'account'
-                path: 'protocol.next_policy_seq'
-                account: 'protocol'
-              },
-            ]
-          }
+          "name": "quorumBps",
+          "type": "u16"
         },
         {
-          name: 'vault'
-          writable: true
-        },
-        {
-          name: 'premiumSource'
-          writable: true
-        },
-        {
-          name: 'tokenProgram'
-          address: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'
-        },
-        {
-          name: 'systemProgram'
-          address: '11111111111111111111111111111111'
-        },
-      ]
-      args: [
-        {
-          name: 'limit'
-          type: 'u64'
-        },
-        {
-          name: 'retention'
-          type: 'u64'
-        },
-        {
-          name: 'startTs'
-          type: 'i64'
-        },
-        {
-          name: 'endTs'
-          type: 'i64'
-        },
-        {
-          name: 'beneficiary'
-          type: 'pubkey'
-        },
-        {
-          name: 'premium'
-          type: 'u64'
-        },
+          "name": "openBond",
+          "type": "u64"
+        }
       ]
     },
     {
-      name: 'openIncident'
-      docs: [
-        'Records a suspected unauthorized privileged action against a policy',
-        '(FR-006). The trigger signature is a claim; the bond is what it costs to',
-        'make one.',
-      ]
-      discriminator: [141, 221, 28, 107, 87, 98, 35, 108]
-      accounts: [
+      "name": "issuePolicy",
+      "docs": [
+        "Issues a policy against a pool and takes its premium (FR-003, FR-005)."
+      ],
+      "discriminator": [
+        126,
+        159,
+        34,
+        92,
+        118,
+        55,
+        15,
+        196
+      ],
+      "accounts": [
         {
-          name: 'config'
-          pda: {
-            seeds: [
+          "name": "config",
+          "pda": {
+            "seeds": [
               {
-                kind: 'const'
-                value: [99, 111, 110, 102, 105, 103]
-              },
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
             ]
           }
         },
         {
-          name: 'opener'
-          docs: [
-            'Anyone may open an incident — that is what the bond is for. In practice it is',
-            'an attestor that has just seen an undeclared privileged transaction (T027),',
-            'but nothing in the program depends on who noticed.',
+          "name": "admin",
+          "docs": [
+            "Issuance is a service operation in P1. US4 hands it to the protocol itself,",
+            "with a premium quote instead of an amount chosen by the caller (FR-025)."
+          ],
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "config"
           ]
-          writable: true
-          signer: true
         },
         {
-          name: 'protocol'
-          writable: true
+          "name": "protocol",
+          "writable": true
         },
         {
-          name: 'pool'
-          writable: true
-          pda: {
-            seeds: [
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
               {
-                kind: 'const'
-                value: [112, 111, 111, 108]
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               },
               {
-                kind: 'account'
-                path: 'protocol'
+                "kind": "account",
+                "path": "protocol"
+              }
+            ]
+          },
+          "relations": [
+            "protocol"
+          ]
+        },
+        {
+          "name": "policy",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  108,
+                  105,
+                  99,
+                  121
+                ]
               },
+              {
+                "kind": "account",
+                "path": "protocol"
+              },
+              {
+                "kind": "account",
+                "path": "protocol.next_policy_seq",
+                "account": "protocol"
+              }
             ]
           }
-          relations: ['protocol']
         },
         {
-          name: 'policy'
-          docs: [
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "premiumSource",
+          "writable": true
+        },
+        {
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "limit",
+          "type": "u64"
+        },
+        {
+          "name": "retention",
+          "type": "u64"
+        },
+        {
+          "name": "startTs",
+          "type": "i64"
+        },
+        {
+          "name": "endTs",
+          "type": "i64"
+        },
+        {
+          "name": "beneficiary",
+          "type": "pubkey"
+        },
+        {
+          "name": "premium",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "openIncident",
+      "docs": [
+        "Records a suspected unauthorized privileged action against a policy",
+        "(FR-006). The trigger signature is a claim; the bond is what it costs to",
+        "make one."
+      ],
+      "discriminator": [
+        141,
+        221,
+        28,
+        107,
+        87,
+        98,
+        35,
+        108
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "opener",
+          "docs": [
+            "Anyone may open an incident — that is what the bond is for. In practice it is",
+            "an attestor that has just seen an undeclared privileged transaction (T027),",
+            "but nothing in the program depends on who noticed."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocol",
+          "writable": true
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "protocol"
+              }
+            ]
+          },
+          "relations": [
+            "protocol"
+          ]
+        },
+        {
+          "name": "policy",
+          "docs": [
             "Bound to this protocol by its seeds: an incident on someone else's policy",
-            'would lock capital in a pool that never underwrote it.',
-          ]
-          pda: {
-            seeds: [
+            "would lock capital in a pool that never underwrote it."
+          ],
+          "pda": {
+            "seeds": [
               {
-                kind: 'const'
-                value: [112, 111, 108, 105, 99, 121]
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  108,
+                  105,
+                  99,
+                  121
+                ]
               },
               {
-                kind: 'account'
-                path: 'protocol'
+                "kind": "account",
+                "path": "protocol"
               },
               {
-                kind: 'arg'
-                path: 'policySeq'
-              },
+                "kind": "arg",
+                "path": "policySeq"
+              }
             ]
           }
         },
         {
-          name: 'incident'
-          writable: true
-          pda: {
-            seeds: [
+          "name": "incident",
+          "writable": true,
+          "pda": {
+            "seeds": [
               {
-                kind: 'const'
-                value: [105, 110, 99, 105, 100, 101, 110, 116]
+                "kind": "const",
+                "value": [
+                  105,
+                  110,
+                  99,
+                  105,
+                  100,
+                  101,
+                  110,
+                  116
+                ]
               },
               {
-                kind: 'account'
-                path: 'protocol'
+                "kind": "account",
+                "path": "protocol"
               },
               {
-                kind: 'account'
-                path: 'protocol.next_incident_seq'
-                account: 'protocol'
-              },
+                "kind": "account",
+                "path": "protocol.next_incident_seq",
+                "account": "protocol"
+              }
             ]
           }
         },
         {
-          name: 'bondSource'
-          writable: true
+          "name": "bondSource",
+          "writable": true
         },
         {
-          name: 'vault'
-          docs: [
+          "name": "vault",
+          "docs": [
             "The bond rests in the pool's vault until the incident settles: refunded from",
-            'there if the quorum confirms, forfeited to the pool if it does not. It is',
-            'deliberately **not** added to `Pool::total_assets` — capital that may go back',
-            'to the opener must not count as capacity to underwrite. The vault therefore',
-            'holds `total_assets` plus the bonds of open incidents.',
-          ]
-          writable: true
+            "there if the quorum confirms, forfeited to the pool if it does not. It is",
+            "deliberately **not** added to `Pool::total_assets` — capital that may go back",
+            "to the opener must not count as capacity to underwrite. The vault therefore",
+            "holds `total_assets` plus the bonds of open incidents."
+          ],
+          "writable": true
         },
         {
-          name: 'tokenProgram'
-          address: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         },
         {
-          name: 'systemProgram'
-          address: '11111111111111111111111111111111'
-        },
-      ]
-      args: [
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
         {
-          name: 'policySeq'
-          type: 'u64'
+          "name": "policySeq",
+          "type": "u64"
         },
         {
-          name: 'triggerSig'
-          type: {
-            array: ['u8', 64]
+          "name": "triggerSig",
+          "type": {
+            "array": [
+              "u8",
+              64
+            ]
           }
-        },
+        }
       ]
     },
     {
-      name: 'registerProtocol'
-      docs: ['Registers a covered protocol together with its pool and vault (FR-001).']
-      discriminator: [63, 107, 156, 136, 249, 231, 183, 65]
-      accounts: [
+      "name": "registerProtocol",
+      "docs": [
+        "Registers a covered protocol together with its pool and vault (FR-001)."
+      ],
+      "discriminator": [
+        63,
+        107,
+        156,
+        136,
+        249,
+        231,
+        183,
+        65
+      ],
+      "accounts": [
         {
-          name: 'config'
-          pda: {
-            seeds: [
+          "name": "config",
+          "pda": {
+            "seeds": [
               {
-                kind: 'const'
-                value: [99, 111, 110, 102, 105, 103]
-              },
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
             ]
           }
         },
         {
-          name: 'admin'
-          docs: [
-            'Registration is a service operation in P1, like the attestor list (FR-008).',
-            'Self-service in US4 covers policies, not registration.',
+          "name": "admin",
+          "docs": [
+            "Registration is a service operation in P1, like the attestor list (FR-008).",
+            "Self-service in US4 covers policies, not registration."
+          ],
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "config"
           ]
-          writable: true
-          signer: true
-          relations: ['config']
         },
         {
-          name: 'protocol'
-          writable: true
-          pda: {
-            seeds: [
+          "name": "protocol",
+          "writable": true,
+          "pda": {
+            "seeds": [
               {
-                kind: 'const'
-                value: [112, 114, 111, 116, 111, 99, 111, 108]
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108
+                ]
               },
               {
-                kind: 'arg'
-                path: 'protocolId'
-              },
+                "kind": "arg",
+                "path": "protocolId"
+              }
             ]
           }
         },
         {
-          name: 'pool'
-          writable: true
-          pda: {
-            seeds: [
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
               {
-                kind: 'const'
-                value: [112, 111, 111, 108]
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               },
               {
-                kind: 'account'
-                path: 'protocol'
-              },
+                "kind": "account",
+                "path": "protocol"
+              }
             ]
           }
         },
         {
-          name: 'vault'
-          docs: [
-            'Owned by the pool PDA, so nothing can move capital out without the program',
-            'signing for it. One vault per pool is what makes isolation structural rather',
-            'than a rule to be enforced (FR-002).',
-          ]
-          writable: true
-          pda: {
-            seeds: [
+          "name": "vault",
+          "docs": [
+            "Owned by the pool PDA, so nothing can move capital out without the program",
+            "signing for it. One vault per pool is what makes isolation structural rather",
+            "than a rule to be enforced (FR-002)."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
               {
-                kind: 'account'
-                path: 'pool'
+                "kind": "account",
+                "path": "pool"
               },
               {
-                kind: 'const'
-                value: [
+                "kind": "const",
+                "value": [
                   6,
                   221,
                   246,
@@ -526,17 +816,17 @@ export type DrainCover = {
                   126,
                   255,
                   0,
-                  169,
+                  169
                 ]
               },
               {
-                kind: 'account'
-                path: 'assetMint'
-              },
-            ]
-            program: {
-              kind: 'const'
-              value: [
+                "kind": "account",
+                "path": "assetMint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
                 140,
                 151,
                 37,
@@ -568,1194 +858,1430 @@ export type DrainCover = {
                 219,
                 233,
                 248,
-                89,
+                89
               ]
             }
           }
         },
         {
-          name: 'assetMint'
-          docs: [
-            'Constrained to `Config.asset_mint` by `has_one` above: a pool holding some',
-            'other token could never pay a policy denominated in the settlement asset',
-            '(FR-014).',
+          "name": "assetMint",
+          "docs": [
+            "Constrained to `Config.asset_mint` by `has_one` above: a pool holding some",
+            "other token could never pay a policy denominated in the settlement asset",
+            "(FR-014)."
+          ],
+          "relations": [
+            "config"
           ]
-          relations: ['config']
         },
         {
-          name: 'tokenProgram'
-          address: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         },
         {
-          name: 'associatedTokenProgram'
-          address: 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL'
+          "name": "associatedTokenProgram",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
         },
         {
-          name: 'systemProgram'
-          address: '11111111111111111111111111111111'
-        },
-      ]
-      args: [
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
         {
-          name: 'protocolId'
-          type: 'pubkey'
-        },
-        {
-          name: 'authority'
-          type: 'pubkey'
+          "name": "protocolId",
+          "type": "pubkey"
         },
         {
-          name: 'treasury'
-          type: 'pubkey'
+          "name": "authority",
+          "type": "pubkey"
         },
         {
-          name: 'privileged'
-          type: {
-            vec: 'pubkey'
+          "name": "treasury",
+          "type": "pubkey"
+        },
+        {
+          "name": "privileged",
+          "type": {
+            "vec": "pubkey"
           }
-        },
+        }
       ]
     },
     {
-      name: 'resolve'
-      docs: [
-        'Settles an incident whose quorum has been reached: pays the beneficiary and',
-        'returns the bond, in the same operation that establishes the quorum (FR-010,',
-        'FR-012, FR-013).',
-      ]
-      discriminator: [246, 150, 236, 206, 108, 63, 58, 10]
-      accounts: [
+      "name": "resolve",
+      "docs": [
+        "Settles an incident whose quorum has been reached: pays the beneficiary and",
+        "returns the bond, in the same operation that establishes the quorum (FR-010,",
+        "FR-012, FR-013)."
+      ],
+      "discriminator": [
+        246,
+        150,
+        236,
+        206,
+        108,
+        63,
+        58,
+        10
+      ],
+      "accounts": [
         {
-          name: 'config'
-          pda: {
-            seeds: [
+          "name": "config",
+          "pda": {
+            "seeds": [
               {
-                kind: 'const'
-                value: [99, 111, 110, 102, 105, 103]
-              },
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
             ]
           }
         },
         {
-          name: 'protocol'
+          "name": "protocol"
         },
         {
-          name: 'pool'
-          writable: true
-          pda: {
-            seeds: [
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
               {
-                kind: 'const'
-                value: [112, 111, 111, 108]
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               },
               {
-                kind: 'account'
-                path: 'protocol'
+                "kind": "account",
+                "path": "protocol"
+              }
+            ]
+          },
+          "relations": [
+            "protocol"
+          ]
+        },
+        {
+          "name": "policy",
+          "docs": [
+            "Bound to the incident by `has_one`: the incident recorded which policy it was",
+            "about when it opened, and that is not up for revision at settlement."
+          ],
+          "writable": true,
+          "relations": [
+            "incident"
+          ]
+        },
+        {
+          "name": "incident",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  110,
+                  99,
+                  105,
+                  100,
+                  101,
+                  110,
+                  116
+                ]
               },
+              {
+                "kind": "account",
+                "path": "protocol"
+              },
+              {
+                "kind": "arg",
+                "path": "incidentSeq"
+              }
             ]
           }
-          relations: ['protocol']
         },
         {
-          name: 'policy'
-          docs: [
-            'Bound to the incident by `has_one`: the incident recorded which policy it was',
-            'about when it opened, and that is not up for revision at settlement.',
-          ]
-          writable: true
-          relations: ['incident']
+          "name": "vault",
+          "writable": true
         },
         {
-          name: 'incident'
-          writable: true
-          pda: {
-            seeds: [
-              {
-                kind: 'const'
-                value: [105, 110, 99, 105, 100, 101, 110, 116]
-              },
-              {
-                kind: 'account'
-                path: 'protocol'
-              },
-              {
-                kind: 'arg'
-                path: 'incidentSeq'
-              },
-            ]
-          }
+          "name": "beneficiaryToken",
+          "docs": [
+            "Owned by the beneficiary the policy fixed at issuance (FR-004), so nobody can",
+            "redirect a payout by presenting a different account here."
+          ],
+          "writable": true
         },
         {
-          name: 'vault'
-          writable: true
+          "name": "openerToken",
+          "docs": [
+            "The bond goes back to whoever opened the incident, because the quorum",
+            "confirmed it."
+          ],
+          "writable": true
         },
         {
-          name: 'beneficiaryToken'
-          docs: [
-            'Owned by the beneficiary the policy fixed at issuance (FR-004), so nobody can',
-            'redirect a payout by presenting a different account here.',
-          ]
-          writable: true
-        },
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
         {
-          name: 'openerToken'
-          docs: [
-            'The bond goes back to whoever opened the incident, because the quorum',
-            'confirmed it.',
-          ]
-          writable: true
-        },
-        {
-          name: 'tokenProgram'
-          address: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'
-        },
-      ]
-      args: [
-        {
-          name: 'incidentSeq'
-          type: 'u64'
-        },
+          "name": "incidentSeq",
+          "type": "u64"
+        }
       ]
     },
     {
-      name: 'revokeDeclaration'
-      docs: [
-        'Withdraws what a declaration entry permits, with no delay (FR-032).',
-        '`narrow_to: None` revokes it; `Some(ts)` shortens its window to end at `ts`.',
-      ]
-      discriminator: [45, 84, 227, 180, 193, 110, 129, 74]
-      accounts: [
+      "name": "revokeDeclaration",
+      "docs": [
+        "Withdraws what a declaration entry permits, with no delay (FR-032).",
+        "`narrow_to: None` revokes it; `Some(ts)` shortens its window to end at `ts`."
+      ],
+      "discriminator": [
+        45,
+        84,
+        227,
+        180,
+        193,
+        110,
+        129,
+        74
+      ],
+      "accounts": [
         {
-          name: 'protocol'
+          "name": "protocol"
         },
         {
-          name: 'authority'
-          signer: true
-          relations: ['protocol']
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "protocol"
+          ]
         },
         {
-          name: 'entry'
-          docs: [
-            'The entry carries no protocol field, so the seeds are what tie it to this',
+          "name": "entry",
+          "docs": [
+            "The entry carries no protocol field, so the seeds are what tie it to this",
             "protocol — without them one protocol's authority could revoke another's",
-            'declaration, and revocation is the one operation nobody has to wait for.',
-          ]
-          writable: true
-          pda: {
-            seeds: [
+            "declaration, and revocation is the one operation nobody has to wait for."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
               {
-                kind: 'const'
-                value: [100, 101, 99, 108]
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  99,
+                  108
+                ]
               },
               {
-                kind: 'account'
-                path: 'protocol'
+                "kind": "account",
+                "path": "protocol"
               },
               {
-                kind: 'arg'
-                path: 'seq'
-              },
+                "kind": "arg",
+                "path": "seq"
+              }
             ]
           }
-        },
-      ]
-      args: [
+        }
+      ],
+      "args": [
         {
-          name: 'seq'
-          type: 'u64'
+          "name": "seq",
+          "type": "u64"
         },
         {
-          name: 'narrowTo'
-          type: {
-            option: 'i64'
+          "name": "narrowTo",
+          "type": {
+            "option": "i64"
           }
-        },
+        }
       ]
     },
     {
-      name: 'serviceFundPool'
-      docs: [
-        'Puts capital in a pool without issuing shares. Temporary — removed in T036,',
-        'when the real `deposit` arrives with US2.',
-      ]
-      discriminator: [119, 70, 230, 33, 12, 78, 63, 35]
-      accounts: [
+      "name": "serviceFundPool",
+      "docs": [
+        "Puts capital in a pool without issuing shares. Temporary — removed in T036,",
+        "when the real `deposit` arrives with US2."
+      ],
+      "discriminator": [
+        119,
+        70,
+        230,
+        33,
+        12,
+        78,
+        63,
+        35
+      ],
+      "accounts": [
         {
-          name: 'config'
-          pda: {
-            seeds: [
+          "name": "config",
+          "pda": {
+            "seeds": [
               {
-                kind: 'const'
-                value: [99, 111, 110, 102, 105, 103]
-              },
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
             ]
           }
         },
         {
-          name: 'admin'
-          signer: true
-          relations: ['config']
-        },
-        {
-          name: 'protocol'
-          docs: [
-            'CHECK is unnecessary: the pool PDA is derived from this protocol, so a pool',
-            'that does not belong to it cannot be passed.',
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "config"
           ]
         },
         {
-          name: 'pool'
-          writable: true
-          pda: {
-            seeds: [
+          "name": "protocol",
+          "docs": [
+            "CHECK is unnecessary: the pool PDA is derived from this protocol, so a pool",
+            "that does not belong to it cannot be passed."
+          ]
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
               {
-                kind: 'const'
-                value: [112, 111, 111, 108]
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
               },
               {
-                kind: 'account'
-                path: 'protocol'
-              },
+                "kind": "account",
+                "path": "protocol"
+              }
             ]
           }
         },
         {
-          name: 'vault'
-          writable: true
+          "name": "vault",
+          "writable": true
         },
         {
-          name: 'source'
-          writable: true
+          "name": "source",
+          "writable": true
         },
         {
-          name: 'tokenProgram'
-          address: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'
-        },
-      ]
-      args: [
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
         {
-          name: 'amount'
-          type: 'u64'
-        },
+          "name": "amount",
+          "type": "u64"
+        }
       ]
     },
     {
-      name: 'setAttestor'
-      docs: [
-        'Admits an attestor to the permissive set or removes one (FR-008).',
-        'Admission takes effect with the next epoch; removal, at once.',
-      ]
-      discriminator: [95, 11, 236, 157, 234, 146, 163, 237]
-      accounts: [
+      "name": "setAttestor",
+      "docs": [
+        "Admits an attestor to the permissive set or removes one (FR-008).",
+        "Admission takes effect with the next epoch; removal, at once."
+      ],
+      "discriminator": [
+        95,
+        11,
+        236,
+        157,
+        234,
+        146,
+        163,
+        237
+      ],
+      "accounts": [
         {
-          name: 'config'
-          writable: true
-          pda: {
-            seeds: [
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
               {
-                kind: 'const'
-                value: [99, 111, 110, 102, 105, 103]
-              },
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
             ]
           }
         },
         {
-          name: 'admin'
-          docs: [
-            'The set is a permissive list in P1 (FR-008), so admitting and removing are',
-            'service operations. US3 replaces how the set is formed — stake instead of',
-            'this list (FR-021, T041) — and leaves everything downstream of it alone.',
+          "name": "admin",
+          "docs": [
+            "The set is a permissive list in P1 (FR-008), so admitting and removing are",
+            "service operations. US3 replaces how the set is formed — stake instead of",
+            "this list (FR-021, T041) — and leaves everything downstream of it alone."
+          ],
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "config"
           ]
-          writable: true
-          signer: true
-          relations: ['config']
         },
         {
-          name: 'attestor'
-          docs: [
-            '`init_if_needed` because this is an upsert, not a creation: an attestor',
-            'removed by mistake has to be able to come back, and the account is where the',
-            'record of their agreements lives. The usual re-initialization hazard does not',
-            'apply — the handler writes membership and nothing else, so a second admission',
-            'cannot reset a history or, from US3, a stake. Only the admin can call it, and',
-            'the address is derived from the authority it is about.',
-          ]
-          writable: true
-          pda: {
-            seeds: [
+          "name": "attestor",
+          "docs": [
+            "`init_if_needed` because this is an upsert, not a creation: an attestor",
+            "removed by mistake has to be able to come back, and the account is where the",
+            "record of their agreements lives. The usual re-initialization hazard does not",
+            "apply — the handler writes membership and nothing else, so a second admission",
+            "cannot reset a history or, from US3, a stake. Only the admin can call it, and",
+            "the address is derived from the authority it is about."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
               {
-                kind: 'const'
-                value: [97, 116, 116, 101, 115, 116, 111, 114]
+                "kind": "const",
+                "value": [
+                  97,
+                  116,
+                  116,
+                  101,
+                  115,
+                  116,
+                  111,
+                  114
+                ]
               },
               {
-                kind: 'arg'
-                path: 'attestorAuthority'
-              },
+                "kind": "arg",
+                "path": "attestorAuthority"
+              }
             ]
           }
         },
         {
-          name: 'systemProgram'
-          address: '11111111111111111111111111111111'
-        },
-      ]
-      args: [
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
         {
-          name: 'attestorAuthority'
-          type: 'pubkey'
+          "name": "attestorAuthority",
+          "type": "pubkey"
         },
         {
-          name: 'inSet'
-          type: 'bool'
-        },
+          "name": "inSet",
+          "type": "bool"
+        }
       ]
     },
     {
-      name: 'submitDeclaration'
-      docs: [
-        'Declares one permitted privileged operation (FR-006). Effective after',
-        '`Config.declaration_delay` (FR-031); a permanent window needs',
-        '`moves_funds == false` (FR-035).',
-      ]
-      discriminator: [126, 157, 76, 72, 36, 163, 171, 202]
-      accounts: [
+      "name": "submitDeclaration",
+      "docs": [
+        "Declares one permitted privileged operation (FR-006). Effective after",
+        "`Config.declaration_delay` (FR-031); a permanent window needs",
+        "`moves_funds == false` (FR-035)."
+      ],
+      "discriminator": [
+        126,
+        157,
+        76,
+        72,
+        36,
+        163,
+        171,
+        202
+      ],
+      "accounts": [
         {
-          name: 'config'
-          pda: {
-            seeds: [
+          "name": "config",
+          "pda": {
+            "seeds": [
               {
-                kind: 'const'
-                value: [99, 111, 110, 102, 105, 103]
-              },
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
             ]
           }
         },
         {
-          name: 'protocol'
-          docs: [
+          "name": "protocol",
+          "docs": [
             "A declaration is the protocol's statement about its own operations, so the",
-            'admin has no part in it — unlike registration or issuance, which are service',
-            'operations in P1. `has_one` is the whole authorisation check.',
-          ]
-          writable: true
+            "admin has no part in it — unlike registration or issuance, which are service",
+            "operations in P1. `has_one` is the whole authorisation check."
+          ],
+          "writable": true
         },
         {
-          name: 'authority'
-          docs: [
-            'Pays for the entry as well as signing it: the protocol carries the cost of',
-            'its own declaration, and one signer is one fewer way for a caller to get the',
-            'accounts wrong.',
+          "name": "authority",
+          "docs": [
+            "Pays for the entry as well as signing it: the protocol carries the cost of",
+            "its own declaration, and one signer is one fewer way for a caller to get the",
+            "accounts wrong."
+          ],
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "protocol"
           ]
-          writable: true
-          signer: true
-          relations: ['protocol']
         },
         {
-          name: 'entry'
-          writable: true
-          pda: {
-            seeds: [
+          "name": "entry",
+          "writable": true,
+          "pda": {
+            "seeds": [
               {
-                kind: 'const'
-                value: [100, 101, 99, 108]
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  99,
+                  108
+                ]
               },
               {
-                kind: 'account'
-                path: 'protocol'
+                "kind": "account",
+                "path": "protocol"
               },
               {
-                kind: 'account'
-                path: 'protocol.next_declaration_seq'
-                account: 'protocol'
-              },
+                "kind": "account",
+                "path": "protocol.next_declaration_seq",
+                "account": "protocol"
+              }
             ]
           }
         },
         {
-          name: 'systemProgram'
-          address: '11111111111111111111111111111111'
-        },
-      ]
-      args: [
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
         {
-          name: 'declaredProgram'
-          type: 'pubkey'
+          "name": "declaredProgram",
+          "type": "pubkey"
         },
         {
-          name: 'ixDiscriminator'
-          type: {
-            array: ['u8', 8]
+          "name": "ixDiscriminator",
+          "type": {
+            "array": [
+              "u8",
+              8
+            ]
           }
         },
         {
-          name: 'notBefore'
-          type: 'i64'
+          "name": "notBefore",
+          "type": "i64"
         },
         {
-          name: 'notAfter'
-          type: {
-            option: 'i64'
+          "name": "notAfter",
+          "type": {
+            "option": "i64"
           }
         },
         {
-          name: 'movesFunds'
-          type: 'bool'
-        },
+          "name": "movesFunds",
+          "type": "bool"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "attestation",
+      "discriminator": [
+        152,
+        125,
+        183,
+        86,
+        36,
+        146,
+        121,
+        73
       ]
     },
-  ]
-  accounts: [
     {
-      name: 'attestation'
-      discriminator: [152, 125, 183, 86, 36, 146, 121, 73]
+      "name": "attestor",
+      "discriminator": [
+        253,
+        240,
+        76,
+        196,
+        16,
+        53,
+        239,
+        173
+      ]
     },
     {
-      name: 'attestor'
-      discriminator: [253, 240, 76, 196, 16, 53, 239, 173]
+      "name": "config",
+      "discriminator": [
+        155,
+        12,
+        170,
+        224,
+        30,
+        250,
+        204,
+        130
+      ]
     },
     {
-      name: 'config'
-      discriminator: [155, 12, 170, 224, 30, 250, 204, 130]
+      "name": "declarationEntry",
+      "discriminator": [
+        220,
+        182,
+        175,
+        15,
+        201,
+        252,
+        185,
+        113
+      ]
     },
     {
-      name: 'declarationEntry'
-      discriminator: [220, 182, 175, 15, 201, 252, 185, 113]
+      "name": "incident",
+      "discriminator": [
+        144,
+        81,
+        144,
+        130,
+        200,
+        193,
+        26,
+        111
+      ]
     },
     {
-      name: 'incident'
-      discriminator: [144, 81, 144, 130, 200, 193, 26, 111]
+      "name": "policy",
+      "discriminator": [
+        222,
+        135,
+        7,
+        163,
+        235,
+        177,
+        33,
+        68
+      ]
     },
     {
-      name: 'policy'
-      discriminator: [222, 135, 7, 163, 235, 177, 33, 68]
+      "name": "pool",
+      "discriminator": [
+        241,
+        154,
+        109,
+        4,
+        17,
+        177,
+        109,
+        188
+      ]
     },
     {
-      name: 'pool'
-      discriminator: [241, 154, 109, 4, 17, 177, 109, 188]
+      "name": "protocol",
+      "discriminator": [
+        45,
+        39,
+        101,
+        43,
+        115,
+        72,
+        131,
+        40
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "declarationNotEffective",
+      "msg": "Declaration entry is not yet effective"
     },
     {
-      name: 'protocol'
-      discriminator: [45, 39, 101, 43, 115, 72, 131, 40]
-    },
-  ]
-  errors: [
-    {
-      code: 6000
-      name: 'declarationNotEffective'
-      msg: 'Declaration entry is not yet effective'
+      "code": 6001,
+      "name": "attestorNotActive",
+      "msg": "Attestor is not in the active set for this incident"
     },
     {
-      code: 6001
-      name: 'attestorNotActive'
-      msg: 'Attestor is not in the active set for this incident'
+      "code": 6002,
+      "name": "attestationWindowClosed",
+      "msg": "Attestation window for this incident has closed"
     },
     {
-      code: 6002
-      name: 'attestationWindowClosed'
-      msg: 'Attestation window for this incident has closed'
+      "code": 6003,
+      "name": "policyNotActive",
+      "msg": "Policy is not active"
     },
     {
-      code: 6003
-      name: 'policyNotActive'
-      msg: 'Policy is not active'
+      "code": 6004,
+      "name": "capitalLocked",
+      "msg": "Pool capital is locked by active policies"
     },
     {
-      code: 6004
-      name: 'capitalLocked'
-      msg: 'Pool capital is locked by active policies'
+      "code": 6005,
+      "name": "withdrawalBlockedByIncident",
+      "msg": "Withdrawal is blocked while the pool has an open incident"
     },
     {
-      code: 6005
-      name: 'withdrawalBlockedByIncident'
-      msg: 'Withdrawal is blocked while the pool has an open incident'
+      "code": 6006,
+      "name": "permanentWindowNotAllowed",
+      "msg": "A permanent declaration entry is only allowed for operations that move no funds"
     },
     {
-      code: 6006
-      name: 'permanentWindowNotAllowed'
-      msg: 'A permanent declaration entry is only allowed for operations that move no funds'
+      "code": 6007,
+      "name": "invalidDeclarationWindow",
+      "msg": "Declaration window ends before it begins"
     },
     {
-      code: 6007
-      name: 'invalidDeclarationWindow'
-      msg: 'Declaration window ends before it begins'
+      "code": 6008,
+      "name": "declarationRevoked",
+      "msg": "Declaration entry has been revoked"
     },
     {
-      code: 6008
-      name: 'declarationRevoked'
-      msg: 'Declaration entry has been revoked'
+      "code": 6009,
+      "name": "tooManyPrivilegedAddresses",
+      "msg": "Privileged address list is full"
     },
     {
-      code: 6009
-      name: 'tooManyPrivilegedAddresses'
-      msg: 'Privileged address list is full'
+      "code": 6010,
+      "name": "incidentNotOpen",
+      "msg": "Incident is not open"
     },
     {
-      code: 6010
-      name: 'incidentNotOpen'
-      msg: 'Incident is not open'
+      "code": 6011,
+      "name": "quorumNotReached",
+      "msg": "Quorum has not been reached"
     },
     {
-      code: 6011
-      name: 'quorumNotReached'
-      msg: 'Quorum has not been reached'
+      "code": 6012,
+      "name": "limitExceedsFreeCapital",
+      "msg": "Requested limit exceeds the pool's free capital"
     },
     {
-      code: 6012
-      name: 'limitExceedsFreeCapital'
-      msg: "Requested limit exceeds the pool's free capital"
+      "code": 6013,
+      "name": "newPoliciesPaused",
+      "msg": "New policies are paused"
     },
     {
-      code: 6013
-      name: 'newPoliciesPaused'
-      msg: 'New policies are paused'
+      "code": 6014,
+      "name": "mathOverflow",
+      "msg": "Arithmetic overflow"
     },
     {
-      code: 6014
-      name: 'mathOverflow'
-      msg: 'Arithmetic overflow'
+      "code": 6015,
+      "name": "invalidQuorum",
+      "msg": "Quorum must be above zero and at most 10000 basis points"
     },
     {
-      code: 6015
-      name: 'invalidQuorum'
-      msg: 'Quorum must be above zero and at most 10000 basis points'
+      "code": 6016,
+      "name": "invalidDuration",
+      "msg": "Duration must be positive"
     },
     {
-      code: 6016
-      name: 'invalidDuration'
-      msg: 'Duration must be positive'
+      "code": 6017,
+      "name": "noPrivilegedAddresses",
+      "msg": "A covered protocol needs at least one privileged address"
     },
     {
-      code: 6017
-      name: 'noPrivilegedAddresses'
-      msg: 'A covered protocol needs at least one privileged address'
+      "code": 6018,
+      "name": "duplicatePrivilegedAddress",
+      "msg": "Privileged address appears twice"
     },
     {
-      code: 6018
-      name: 'duplicatePrivilegedAddress'
-      msg: 'Privileged address appears twice'
+      "code": 6019,
+      "name": "amountMustBePositive",
+      "msg": "Amount must be positive"
     },
     {
-      code: 6019
-      name: 'amountMustBePositive'
-      msg: 'Amount must be positive'
+      "code": 6020,
+      "name": "invalidPolicyTerms",
+      "msg": "Policy limit and period must be positive and ordered"
     },
     {
-      code: 6020
-      name: 'invalidPolicyTerms'
-      msg: 'Policy limit and period must be positive and ordered'
+      "code": 6021,
+      "name": "retentionAtOrAboveLimit",
+      "msg": "Retention at or above the limit would make the cover nominal"
     },
     {
-      code: 6021
-      name: 'retentionAtOrAboveLimit'
-      msg: 'Retention at or above the limit would make the cover nominal'
+      "code": 6022,
+      "name": "policyEndsInThePast",
+      "msg": "Policy period has already ended"
     },
     {
-      code: 6022
-      name: 'policyEndsInThePast'
-      msg: 'Policy period has already ended'
+      "code": 6023,
+      "name": "premiumRequired",
+      "msg": "Policy premium must be paid at issuance"
     },
     {
-      code: 6023
-      name: 'premiumRequired'
-      msg: 'Policy premium must be paid at issuance'
+      "code": 6024,
+      "name": "declarationExpiresBeforeEffective",
+      "msg": "Declaration window closes before the entry takes effect"
     },
     {
-      code: 6024
-      name: 'declarationExpiresBeforeEffective'
-      msg: 'Declaration window closes before the entry takes effect'
+      "code": 6025,
+      "name": "declarationWindowNotNarrower",
+      "msg": "A revised declaration window must be narrower than the one it replaces"
     },
     {
-      code: 6025
-      name: 'declarationWindowNotNarrower'
-      msg: 'A revised declaration window must be narrower than the one it replaces'
+      "code": 6026,
+      "name": "narrowedWindowEndsInThePast",
+      "msg": "A narrowed declaration window may not end in the past"
     },
     {
-      code: 6026
-      name: 'narrowedWindowEndsInThePast'
-      msg: 'A narrowed declaration window may not end in the past'
+      "code": 6027,
+      "name": "attestorAlreadyInSet",
+      "msg": "Attestor is already in the set"
     },
     {
-      code: 6027
-      name: 'attestorAlreadyInSet'
-      msg: 'Attestor is already in the set'
+      "code": 6028,
+      "name": "attestorNotInSet",
+      "msg": "Attestor is not in the set"
     },
     {
-      code: 6028
-      name: 'attestorNotInSet'
-      msg: 'Attestor is not in the set'
+      "code": 6029,
+      "name": "attestorSetEmpty",
+      "msg": "The attestor set is empty, so no incident can reach quorum"
     },
     {
-      code: 6029
-      name: 'attestorSetEmpty'
-      msg: 'The attestor set is empty, so no incident can reach quorum'
+      "code": 6030,
+      "name": "incidentDeadlineNotReached",
+      "msg": "Incident deadline has not passed yet"
     },
-  ]
-  types: [
     {
-      name: 'attestation'
-      docs: [
+      "code": 6031,
+      "name": "incidentPayable",
+      "msg": "Quorum was reached on a policy in force, so this incident settles rather than expires"
+    }
+  ],
+  "types": [
+    {
+      "name": "attestation",
+      "docs": [
         "One attestor's statement about one incident (FR-007).",
-        '',
-        '"One attestor, one attestation" (FR-009) is enforced by the PDA itself: the',
-        'address derives from `(incident, attestor)`, so a second attempt fails in the',
-        'runtime before any of our code runs. Both identities live in the seeds, which',
-        'is why this account holds neither.',
-      ]
-      type: {
-        kind: 'struct'
-        fields: [
+        "",
+        "\"One attestor, one attestation\" (FR-009) is enforced by the PDA itself: the",
+        "address derives from `(incident, attestor)`, so a second attempt fails in the",
+        "runtime before any of our code runs. Both identities live in the seeds, which",
+        "is why this account holds neither."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
           {
-            name: 'verdict'
-            type: {
-              defined: {
-                name: 'verdict'
+            "name": "verdict",
+            "type": {
+              "defined": {
+                "name": "verdict"
               }
             }
           },
           {
-            name: 'submittedAt'
-            type: 'i64'
-          },
+            "name": "submittedAt",
+            "type": "i64"
+          }
         ]
       }
     },
     {
-      name: 'attestor'
-      docs: [
-        'An independent observer entitled to classify privileged transactions. The',
-        'authority is in the PDA seeds; the field repeats it so the account can be read',
-        'without rederiving the address.',
-      ]
-      type: {
-        kind: 'struct'
-        fields: [
+      "name": "attestor",
+      "docs": [
+        "An independent observer entitled to classify privileged transactions. The",
+        "authority is in the PDA seeds; the field repeats it so the account can be read",
+        "without rederiving the address."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
           {
-            name: 'authority'
-            type: 'pubkey'
+            "name": "authority",
+            "type": "pubkey"
           },
           {
-            name: 'activeFromEpoch'
-            docs: [
-              'Membership starts with the next epoch, never mid-incident: an attestation',
-              'is only accepted from a member of the set as it stood when the incident',
-              'opened (FR-008).',
-            ]
-            type: 'u64'
+            "name": "activeFromEpoch",
+            "docs": [
+              "Membership starts with the next epoch, never mid-incident: an attestation",
+              "is only accepted from a member of the set as it stood when the incident",
+              "opened (FR-008)."
+            ],
+            "type": "u64"
           },
           {
-            name: 'inSet'
-            docs: [
-              'In the set right now. A fresh account reads `false`, which is what it is:',
-              'an address nobody has admitted. Removal clears the flag rather than closing',
-              'the account, so `agreed`/`disagreed` — and, from US3, the stake — survive a',
-              'removal and a later re-admission.',
-            ]
-            type: 'bool'
+            "name": "inSet",
+            "docs": [
+              "In the set right now. A fresh account reads `false`, which is what it is:",
+              "an address nobody has admitted. Removal clears the flag rather than closing",
+              "the account, so `agreed`/`disagreed` — and, from US3, the stake — survive a",
+              "removal and a later re-admission."
+            ],
+            "type": "bool"
           },
           {
-            name: 'stake'
-            docs: [
-              'Zero while the set is a permissive list. Stake, rewards and slashing',
-              'arrive with US3 and change only how the set is formed (FR-021).',
-            ]
-            type: 'u64'
+            "name": "stake",
+            "docs": [
+              "Zero while the set is a permissive list. Stake, rewards and slashing",
+              "arrive with US3 and change only how the set is formed (FR-021)."
+            ],
+            "type": "u64"
           },
           {
-            name: 'agreed'
-            docs: [
-              'Agreements and disagreements with settled decisions. Public record now,',
-              'input to slashing later (FR-022, FR-023).',
-            ]
-            type: 'u32'
+            "name": "agreed",
+            "docs": [
+              "Agreements and disagreements with settled decisions. Public record now,",
+              "input to slashing later (FR-022, FR-023)."
+            ],
+            "type": "u32"
           },
           {
-            name: 'disagreed'
-            type: 'u32'
-          },
+            "name": "disagreed",
+            "type": "u32"
+          }
         ]
       }
     },
     {
-      name: 'config'
-      docs: ['Protocol-wide parameters. Exactly one per deployment.']
-      type: {
-        kind: 'struct'
-        fields: [
+      "name": "config",
+      "docs": [
+        "Protocol-wide parameters. Exactly one per deployment."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
           {
-            name: 'admin'
-            docs: [
-              'Manages the attestor set while it is permissive (FR-008) and holds the',
-              'service operations of US1. Not a party to any payout decision.',
-            ]
-            type: 'pubkey'
+            "name": "admin",
+            "docs": [
+              "Manages the attestor set while it is permissive (FR-008) and holds the",
+              "service operations of US1. Not a party to any payout decision."
+            ],
+            "type": "pubkey"
           },
           {
-            name: 'assetMint'
-            docs: [
-              'The single dollar-denominated asset every pool, limit, premium and payout',
-              'is expressed in (FR-014). There is no second asset and no conversion, so',
-              'no price oracle exists anywhere in the program.',
-            ]
-            type: 'pubkey'
+            "name": "assetMint",
+            "docs": [
+              "The single dollar-denominated asset every pool, limit, premium and payout",
+              "is expressed in (FR-014). There is no second asset and no conversion, so",
+              "no price oracle exists anywhere in the program."
+            ],
+            "type": "pubkey"
           },
           {
-            name: 'declarationDelay'
-            docs: [
-              'Seconds between submitting a declaration entry and it taking effect',
-              '(FR-031). This delay is the whole defence against a compromised admin',
-              'declaring its own operation and executing it before the team notices, so',
-              'shortening it trades away the guarantee, not just latency.',
-            ]
-            type: 'i64'
+            "name": "declarationDelay",
+            "docs": [
+              "Seconds between submitting a declaration entry and it taking effect",
+              "(FR-031). This delay is the whole defence against a compromised admin",
+              "declaring its own operation and executing it before the team notices, so",
+              "shortening it trades away the guarantee, not just latency."
+            ],
+            "type": "i64"
           },
           {
-            name: 'attestWindow'
-            docs: [
-              'Seconds an incident collects attestations before it closes without a',
-              'payout. Without a deadline a frivolous incident would freeze the pool for',
-              'good, because FR-019 blocks withdrawals while one is open.',
-            ]
-            type: 'i64'
+            "name": "attestWindow",
+            "docs": [
+              "Seconds an incident collects attestations before it closes without a",
+              "payout. Without a deadline a frivolous incident would freeze the pool for",
+              "good, because FR-019 blocks withdrawals while one is open."
+            ],
+            "type": "i64"
           },
           {
-            name: 'quorumBps'
-            docs: [
-              'Share of the active set that must classify an incident as unauthorized',
-              'for the payout to fire (FR-010), in basis points.',
-            ]
-            type: 'u16'
+            "name": "quorumBps",
+            "docs": [
+              "Share of the active set that must classify an incident as unauthorized",
+              "for the payout to fire (FR-010), in basis points."
+            ],
+            "type": "u16"
           },
           {
-            name: 'attestorCount'
-            docs: [
-              'Size of the attestor set, and therefore the denominator of every quorum.',
-              'The program cannot enumerate PDAs, so the count has to be carried; it moves',
-              'with every `set_attestor`, and an incident snapshots it when it opens so the',
-              'bar cannot shift while attestations are being collected.',
-            ]
-            type: 'u16'
+            "name": "attestorCount",
+            "docs": [
+              "Size of the attestor set, and therefore the denominator of every quorum.",
+              "The program cannot enumerate PDAs, so the count has to be carried; it moves",
+              "with every `set_attestor`, and an incident snapshots it when it opens so the",
+              "bar cannot shift while attestations are being collected."
+            ],
+            "type": "u16"
           },
           {
-            name: 'openBond'
-            docs: ['Bond the opener of an incident locks against frivolous openings.']
-            type: 'u64'
+            "name": "openBond",
+            "docs": [
+              "Bond the opener of an incident locks against frivolous openings."
+            ],
+            "type": "u64"
           },
           {
-            name: 'paused'
-            docs: [
-              'Stops new policies across every pool. Payouts on active policies are',
-              'deliberately unaffected (FR-028).',
-            ]
-            type: 'bool'
-          },
+            "name": "paused",
+            "docs": [
+              "Stops new policies across every pool. Payouts on active policies are",
+              "deliberately unaffected (FR-028)."
+            ],
+            "type": "bool"
+          }
         ]
       }
     },
     {
-      name: 'declarationEntry'
-      docs: [
+      "name": "declarationEntry",
+      "docs": [
         "One entry of a protocol's declaration of permitted privileged operations",
-        '(FR-006). A privileged transaction that matches no effective entry is what',
-        'opens an incident — nothing about how the transaction looks enters into it.',
-      ]
-      type: {
-        kind: 'struct'
-        fields: [
+        "(FR-006). A privileged transaction that matches no effective entry is what",
+        "opens an incident — nothing about how the transaction looks enters into it."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
           {
-            name: 'programId'
-            docs: [
-              'Program the declared instruction belongs to. Together with the',
-              'discriminator this is machine equality, not a heuristic — which is what',
-              'lets independent attestors reach the same verdict (docs/PLAN.md → R-2).',
-            ]
-            type: 'pubkey'
+            "name": "programId",
+            "docs": [
+              "Program the declared instruction belongs to. Together with the",
+              "discriminator this is machine equality, not a heuristic — which is what",
+              "lets independent attestors reach the same verdict (docs/PLAN.md → R-2)."
+            ],
+            "type": "pubkey"
           },
           {
-            name: 'ixDiscriminator'
-            type: {
-              array: ['u8', 8]
+            "name": "ixDiscriminator",
+            "type": {
+              "array": [
+                "u8",
+                8
+              ]
             }
           },
           {
-            name: 'notBefore'
-            type: 'i64'
+            "name": "notBefore",
+            "type": "i64"
           },
           {
-            name: 'notAfter'
-            docs: [
-              '`None` means a permanent entry: effective with no upper bound. Permitted',
-              'only when `moves_funds` is false (FR-035).',
-            ]
-            type: {
-              option: 'i64'
+            "name": "notAfter",
+            "docs": [
+              "`None` means a permanent entry: effective with no upper bound. Permitted",
+              "only when `moves_funds` is false (FR-035)."
+            ],
+            "type": {
+              "option": "i64"
             }
           },
           {
-            name: 'movesFunds'
-            docs: [
-              'Declared by the protocol, because the program cannot tell from a',
-              'discriminator whether the instruction moves funds. A false label buys',
-              'nothing: the entry is still new, so `declaration_delay` applies to it and',
-              'a revocation lands immediately (docs/PLAN.md → R-9).',
-            ]
-            type: 'bool'
+            "name": "movesFunds",
+            "docs": [
+              "Declared by the protocol, because the program cannot tell from a",
+              "discriminator whether the instruction moves funds. A false label buys",
+              "nothing: the entry is still new, so `declaration_delay` applies to it and",
+              "a revocation lands immediately (docs/PLAN.md → R-9)."
+            ],
+            "type": "bool"
           },
           {
-            name: 'submittedAt'
-            type: 'i64'
+            "name": "submittedAt",
+            "type": "i64"
           },
           {
-            name: 'effectiveAt'
-            docs: [
-              '`submitted_at + Config::declaration_delay` (FR-031). An operation executed',
-              'before this counts as undeclared.',
-            ]
-            type: 'i64'
+            "name": "effectiveAt",
+            "docs": [
+              "`submitted_at + Config::declaration_delay` (FR-031). An operation executed",
+              "before this counts as undeclared."
+            ],
+            "type": "i64"
           },
           {
-            name: 'revokedAt'
-            docs: ['Revocation and narrowing take effect at once, with no delay (FR-032).']
-            type: {
-              option: 'i64'
+            "name": "revokedAt",
+            "docs": [
+              "Revocation and narrowing take effect at once, with no delay (FR-032)."
+            ],
+            "type": {
+              "option": "i64"
             }
-          },
+          }
         ]
       }
     },
     {
-      name: 'incident'
-      docs: [
-        'A recorded suspicion of an unauthorized privileged action.',
-        '',
+      "name": "incident",
+      "docs": [
+        "A recorded suspicion of an unauthorized privileged action.",
+        "",
         "The program cannot read another protocol's past transaction, so `trigger_sig`",
-        'enters as a *claim* by whoever opened the incident. What makes it evidence is',
-        'independent attestors agreeing (FR-007…FR-010).',
-        '',
-        'Every field here is paid for in rent and fees on each incident, which SC-008',
-        'caps at 1 USD — so this account carries no reserve fields.',
-      ]
-      type: {
-        kind: 'struct'
-        fields: [
+        "enters as a *claim* by whoever opened the incident. What makes it evidence is",
+        "independent attestors agreeing (FR-007…FR-010).",
+        "",
+        "Every field here is paid for in rent and fees on each incident, which SC-008",
+        "caps at 1 USD — so this account carries no reserve fields."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
           {
-            name: 'policy'
-            type: 'pubkey'
+            "name": "policy",
+            "type": "pubkey"
           },
           {
-            name: 'triggerSig'
-            docs: [
-              'The triggering transaction, kept in full so the public trail can be',
-              'replayed straight from an RPC node (FR-011, SC-007).',
-            ]
-            type: {
-              array: ['u8', 64]
+            "name": "triggerSig",
+            "docs": [
+              "The triggering transaction, kept in full so the public trail can be",
+              "replayed straight from an RPC node (FR-011, SC-007)."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
             }
           },
           {
-            name: 'opener'
-            docs: [
-              'Refunded if the quorum confirms the incident, forfeited to the pool if it',
-              'does not.',
-            ]
-            type: 'pubkey'
+            "name": "opener",
+            "docs": [
+              "Refunded if the quorum confirms the incident, forfeited to the pool if it",
+              "does not."
+            ],
+            "type": "pubkey"
           },
           {
-            name: 'bond'
-            type: 'u64'
+            "name": "bond",
+            "type": "u64"
           },
           {
-            name: 'openedAt'
-            type: 'i64'
+            "name": "openedAt",
+            "type": "i64"
           },
           {
-            name: 'openedEpoch'
-            docs: [
-              'Epoch the incident opened in. FR-008 admits an attestation only from a',
-              'member of the set *as it stood when the incident opened*, so membership is',
-              'judged against this epoch and not against the one the attestation lands in —',
-              'otherwise an attestor admitted afterwards could vote on it.',
-            ]
-            type: 'u64'
+            "name": "openedEpoch",
+            "docs": [
+              "Epoch the incident opened in. FR-008 admits an attestation only from a",
+              "member of the set *as it stood when the incident opened*, so membership is",
+              "judged against this epoch and not against the one the attestation lands in —",
+              "otherwise an attestor admitted afterwards could vote on it."
+            ],
+            "type": "u64"
           },
           {
-            name: 'deadline'
-            docs: ['`opened_at + Config::attest_window`.']
-            type: 'i64'
+            "name": "deadline",
+            "docs": [
+              "`opened_at + Config::attest_window`."
+            ],
+            "type": "i64"
           },
           {
-            name: 'setSize'
-            docs: [
-              'Size of the attestor set at the moment of opening, and therefore the',
+            "name": "setSize",
+            "docs": [
+              "Size of the attestor set at the moment of opening, and therefore the",
               "denominator of this incident's quorum. Snapshotted so the bar cannot move",
-              'while attestations are being collected.',
-            ]
-            type: 'u16'
+              "while attestations are being collected."
+            ],
+            "type": "u16"
           },
           {
-            name: 'votesUnauthorized'
-            docs: [
-              'Attestations classifying the action as unauthorized, and as authorized.',
-              'Named for the classification rather than for/against, because a quorum is',
-              'counted on one specific verdict (FR-010).',
-            ]
-            type: 'u16'
+            "name": "votesUnauthorized",
+            "docs": [
+              "Attestations classifying the action as unauthorized, and as authorized.",
+              "Named for the classification rather than for/against, because a quorum is",
+              "counted on one specific verdict (FR-010)."
+            ],
+            "type": "u16"
           },
           {
-            name: 'votesAuthorized'
-            type: 'u16'
+            "name": "votesAuthorized",
+            "type": "u16"
           },
           {
-            name: 'status'
-            type: {
-              defined: {
-                name: 'incidentStatus'
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "incidentStatus"
               }
             }
           },
           {
-            name: 'payout'
-            type: 'u64'
+            "name": "payout",
+            "type": "u64"
           },
           {
-            name: 'shortfall'
-            docs: [
-              'Amount owed but unpayable because the pool ran short. Recorded rather than',
-              'carried forward: the trail has to state what was not paid (FR-013).',
-            ]
-            type: 'u64'
-          },
+            "name": "shortfall",
+            "docs": [
+              "Amount owed but unpayable because the pool ran short. Recorded rather than",
+              "carried forward: the trail has to state what was not paid (FR-013)."
+            ],
+            "type": "u64"
+          }
         ]
       }
     },
     {
-      name: 'incidentStatus'
-      type: {
-        kind: 'enum'
-        variants: [
+      "name": "incidentStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
           {
-            name: 'open'
+            "name": "open"
           },
           {
-            name: 'paidOut'
+            "name": "paidOut"
           },
           {
-            name: 'closedNoPayout'
-          },
+            "name": "closedNoPayout"
+          }
         ]
       }
     },
     {
-      name: 'policy'
-      docs: ['A cover agreement between one covered protocol and its pool (FR-003).']
-      type: {
-        kind: 'struct'
-        fields: [
+      "name": "policy",
+      "docs": [
+        "A cover agreement between one covered protocol and its pool (FR-003)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
           {
-            name: 'limit'
-            docs: [
-              'Cover limit. The payout is derived from this and `retention`, never from',
-              'the amount actually drained (FR-013).',
-            ]
-            type: 'u64'
+            "name": "limit",
+            "docs": [
+              "Cover limit. The payout is derived from this and `retention`, never from",
+              "the amount actually drained (FR-013)."
+            ],
+            "type": "u64"
           },
           {
-            name: 'retention'
-            docs: [
-              'Part of the limit that is never paid, under any circumstance. It makes a',
-              'self-staged incident lose money arithmetically, without anyone having to',
-              'judge intent (FR-033).',
-            ]
-            type: 'u64'
+            "name": "retention",
+            "docs": [
+              "Part of the limit that is never paid, under any circumstance. It makes a",
+              "self-staged incident lose money arithmetically, without anyone having to",
+              "judge intent (FR-033)."
+            ],
+            "type": "u64"
           },
           {
-            name: 'remainingLimit'
-            docs: ['What is left of the limit after previous payouts (FR-015).']
-            type: 'u64'
+            "name": "remainingLimit",
+            "docs": [
+              "What is left of the limit after previous payouts (FR-015)."
+            ],
+            "type": "u64"
           },
           {
-            name: 'startTs'
-            type: 'i64'
+            "name": "startTs",
+            "type": "i64"
           },
           {
-            name: 'endTs'
-            type: 'i64'
+            "name": "endTs",
+            "type": "i64"
           },
           {
-            name: 'premiumPaid'
-            type: 'u64'
+            "name": "premiumPaid",
+            "type": "u64"
           },
           {
-            name: 'beneficiary'
-            docs: ['Fixed at issuance and immovable while an incident is open (FR-004).']
-            type: 'pubkey'
+            "name": "beneficiary",
+            "docs": [
+              "Fixed at issuance and immovable while an incident is open (FR-004)."
+            ],
+            "type": "pubkey"
           },
           {
-            name: 'status'
-            type: {
-              defined: {
-                name: 'policyStatus'
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "policyStatus"
               }
             }
-          },
+          }
         ]
       }
     },
     {
-      name: 'policyStatus'
-      type: {
-        kind: 'enum'
-        variants: [
+      "name": "policyStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
           {
-            name: 'pending'
+            "name": "pending"
           },
           {
-            name: 'active'
+            "name": "active"
           },
           {
-            name: 'expired'
+            "name": "expired"
           },
           {
-            name: 'exhausted'
-          },
+            "name": "exhausted"
+          }
         ]
       }
     },
     {
-      name: 'pool'
-      docs: [
-        'Capital underwriting exactly one covered protocol, and the only source of its',
-        'payouts (FR-002). Isolation is structural: each pool owns its own vault, so',
-        'there is no shared store to draw from by mistake.',
-      ]
-      type: {
-        kind: 'struct'
-        fields: [
+      "name": "pool",
+      "docs": [
+        "Capital underwriting exactly one covered protocol, and the only source of its",
+        "payouts (FR-002). Isolation is structural: each pool owns its own vault, so",
+        "there is no shared store to draw from by mistake."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
           {
-            name: 'vault'
-            docs: ['Token account holding the capital, owned by this PDA.']
-            type: 'pubkey'
+            "name": "vault",
+            "docs": [
+              "Token account holding the capital, owned by this PDA."
+            ],
+            "type": "pubkey"
           },
           {
-            name: 'totalAssets'
-            type: 'u64'
+            "name": "totalAssets",
+            "type": "u64"
           },
           {
-            name: 'totalShares'
-            type: 'u64'
+            "name": "totalShares",
+            "type": "u64"
           },
           {
-            name: 'lockedLimit'
-            docs: [
-              'Sum of the limits of active policies. Capital below this line cannot be',
-              'withdrawn (FR-020).',
-            ]
-            type: 'u64'
+            "name": "lockedLimit",
+            "docs": [
+              "Sum of the limits of active policies. Capital below this line cannot be",
+              "withdrawn (FR-020)."
+            ],
+            "type": "u64"
           },
           {
-            name: 'openIncidents'
-            docs: ['Withdrawals are blocked while this is non-zero (FR-019).']
-            type: 'u32'
+            "name": "openIncidents",
+            "docs": [
+              "Withdrawals are blocked while this is non-zero (FR-019)."
+            ],
+            "type": "u32"
           },
           {
-            name: 'accPremiumPerShare'
-            docs: [
-              'Premium per share, scaled by `PREMIUM_ACC_SCALE`. An underwriter earns',
-              'the difference against its own checkpoint, which makes time-in-pool',
-              'implicit: nothing accrued before the deposit is claimable (FR-018).',
-            ]
-            type: 'u128'
+            "name": "accPremiumPerShare",
+            "docs": [
+              "Premium per share, scaled by `PREMIUM_ACC_SCALE`. An underwriter earns",
+              "the difference against its own checkpoint, which makes time-in-pool",
+              "implicit: nothing accrued before the deposit is claimable (FR-018)."
+            ],
+            "type": "u128"
           },
           {
-            name: 'bump'
-            docs: [
-              'Stored rather than recomputed: the pool signs every transfer out of its',
-              'vault, and rederiving the bump on each of those costs compute for a value',
-              'that never changes.',
-            ]
-            type: 'u8'
-          },
+            "name": "bump",
+            "docs": [
+              "Stored rather than recomputed: the pool signs every transfer out of its",
+              "vault, and rederiving the bump on each of those costs compute for a value",
+              "that never changes."
+            ],
+            "type": "u8"
+          }
         ]
       }
     },
     {
-      name: 'protocol'
-      docs: [
-        'A covered protocol and the privileged addresses whose actions are the subject',
-        'of the cover (FR-001).',
-      ]
-      type: {
-        kind: 'struct'
-        fields: [
+      "name": "protocol",
+      "docs": [
+        "A covered protocol and the privileged addresses whose actions are the subject",
+        "of the cover (FR-001)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
           {
-            name: 'authority'
-            docs: [
-              'Submits and revokes declaration entries. Compromising it does not by',
-              'itself produce a payout: a new entry still waits out `declaration_delay`.',
-            ]
-            type: 'pubkey'
+            "name": "authority",
+            "docs": [
+              "Submits and revokes declaration entries. Compromising it does not by",
+              "itself produce a payout: a new entry still waits out `declaration_delay`."
+            ],
+            "type": "pubkey"
           },
           {
-            name: 'treasury'
-            docs: [
-              'Treasury of the covered protocol. A policy fixes its own beneficiary at',
-              'issuance (FR-004); this is the default offered there.',
-            ]
-            type: 'pubkey'
+            "name": "treasury",
+            "docs": [
+              "Treasury of the covered protocol. A policy fixes its own beneficiary at",
+              "issuance (FR-004); this is the default offered there."
+            ],
+            "type": "pubkey"
           },
           {
-            name: 'privileged'
-            type: {
-              vec: 'pubkey'
+            "name": "privileged",
+            "type": {
+              "vec": "pubkey"
             }
           },
           {
-            name: 'pool'
-            docs: [
-              'The one pool that underwrites this protocol. Pools are never shared, so',
-              "capital cannot be spent on another protocol's incident (FR-002).",
-            ]
-            type: 'pubkey'
+            "name": "pool",
+            "docs": [
+              "The one pool that underwrites this protocol. Pools are never shared, so",
+              "capital cannot be spent on another protocol's incident (FR-002)."
+            ],
+            "type": "pubkey"
           },
           {
-            name: 'newPoliciesPaused'
-            docs: ['Stops new policies for this protocol only (FR-028).']
-            type: 'bool'
+            "name": "newPoliciesPaused",
+            "docs": [
+              "Stops new policies for this protocol only (FR-028)."
+            ],
+            "type": "bool"
           },
           {
-            name: 'nextPolicySeq'
-            docs: [
-              'Policies, declaration entries and incidents are addressed by',
-              '`(protocol, seq)`, so the sequence needs a monotonic source. Keeping the',
-              'counters here rather than in `Config` keeps protocols independent: two',
-              'registrations never contend for the same number, and a busy protocol does',
-              "not push another one's addresses around.",
-            ]
-            type: 'u64'
+            "name": "nextPolicySeq",
+            "docs": [
+              "Policies, declaration entries and incidents are addressed by",
+              "`(protocol, seq)`, so the sequence needs a monotonic source. Keeping the",
+              "counters here rather than in `Config` keeps protocols independent: two",
+              "registrations never contend for the same number, and a busy protocol does",
+              "not push another one's addresses around."
+            ],
+            "type": "u64"
           },
           {
-            name: 'nextDeclarationSeq'
-            type: 'u64'
+            "name": "nextDeclarationSeq",
+            "type": "u64"
           },
           {
-            name: 'nextIncidentSeq'
-            type: 'u64'
-          },
+            "name": "nextIncidentSeq",
+            "type": "u64"
+          }
         ]
       }
     },
     {
-      name: 'verdict'
-      type: {
-        kind: 'enum'
-        variants: [
+      "name": "verdict",
+      "type": {
+        "kind": "enum",
+        "variants": [
           {
-            name: 'unauthorized'
+            "name": "unauthorized"
           },
           {
-            name: 'authorized'
-          },
+            "name": "authorized"
+          }
         ]
       }
-    },
+    }
   ]
-}
+};

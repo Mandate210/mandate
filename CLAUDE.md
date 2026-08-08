@@ -75,7 +75,11 @@ pnpm --filter @drain-cover/tests test:integration           # Windows
 
 `--reset` is not optional. `Config` is a singleton PDA, and the admin and settlement
 mint are fixed inside it forever, so a ledger carrying a config from an earlier run
-puts the suite in a state it cannot reproduce.
+puts the suite in a state it cannot reproduce. Its attestation window is one of those
+fixed values, and the tests set it to 90 seconds (`tests/world.ts`) because
+`close_expired_incident` can only act once a deadline has passed and no RPC moves the
+cluster clock — a ledger whose config predates that value makes
+`close_expired_incident.itest.ts` fail in `beforeAll` and say so.
 
 **`--slots-per-epoch 32` is not optional either.** An attestor admitted in one epoch
 votes from the next (FR-008), and the default epoch is 432 000 slots — about two days —

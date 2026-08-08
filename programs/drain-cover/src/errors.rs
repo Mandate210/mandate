@@ -86,4 +86,12 @@ pub enum DrainCoverError {
     /// attestations at all.
     #[msg("The attestor set is empty, so no incident can reach quorum")]
     AttestorSetEmpty,
+    /// The deadline second itself still belongs to the attestation window
+    /// (`validate_attest`), so expiry starts the second after it.
+    #[msg("Incident deadline has not passed yet")]
+    IncidentDeadlineNotReached,
+    /// Refused so that closing an incident can never be raced ahead of a payout the
+    /// quorum has already decided (FR-012).
+    #[msg("Quorum was reached on a policy in force, so this incident settles rather than expires")]
+    IncidentPayable,
 }

@@ -1,6 +1,12 @@
 import { AnchorProvider, Wallet } from '@coral-xyz/anchor'
 import { createMint, getOrCreateAssociatedTokenAccount, mintTo } from '@solana/spl-token'
-import { Connection, Keypair, LAMPORTS_PER_SOL, type PublicKey } from '@solana/web3.js'
+import {
+  Connection,
+  Keypair,
+  LAMPORTS_PER_SOL,
+  type PublicKey,
+  SYSVAR_CLOCK_PUBKEY,
+} from '@solana/web3.js'
 
 /// Decimals of the settlement asset. USDC has six, and the program handles one
 /// dollar-denominated asset only (FR-014), so every test amount is in these units.
@@ -62,6 +68,38 @@ export const waitForNextEpoch = async (connection: Connection): Promise<number> 
       )
     }
     await new Promise((resolve) => setTimeout(resolve, 500))
+  }
+}
+
+/**
+ * The `unix_timestamp` the program itself would read from `Clock::get()`.
+ *
+ * Taken from the sysvar rather than from `Date.now()`: every deadline in the program
+ * is compared against the cluster's clock, which drifts from the host's — a test that
+ * timed its waits by the wall clock would be off by that drift, in whichever direction
+ * happened to make it flaky.
+ */
+export const clusterTimestamp = async (connection: Connection): Promise<number> => {
+  const clock = await connection.getAccountInfo(SYSVAR_CLOCK_PUBKEY)
+  if (clock === null) throw new Error('Clock sysvar is missing — is this a real validator?')
+
+  // Clock lays out slot, epoch_start_timestamp, epoch, leader_schedule_epoch,
+  // unix_timestamp — five little-endian 64-bit fields, the last one at offset 32.
+  const view = new DataView(clock.data.buffer, clock.data.byteOffset, clock.data.byteLength)
+  return Number(view.getBigInt64(32, true))
+}
+
+/** Blocks until the cluster clock is past `timestamp` (seconds). */
+export const waitPastClusterTime = async (
+  connection: Connection,
+  timestamp: number,
+): Promise<void> => {
+  for (;;) {
+    const now = await clusterTimestamp(connection)
+    if (now > timestamp) return
+    // Long enough not to hammer the RPC, short enough to overshoot a deadline by
+    // little: the caller is holding a test open for the whole wait.
+    await new Promise((resolve) => setTimeout(resolve, 1_000))
   }
 }
 

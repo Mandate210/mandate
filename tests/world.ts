@@ -25,7 +25,17 @@ import { type TestEnv, testRpcUrl, waitForNextEpoch } from './harness'
  */
 export const CONFIG_PARAMS = {
   declarationDelay: 86_400,
-  attestWindow: 2 * 3600,
+  /**
+   * Ninety seconds, where the product parameter is hours.
+   *
+   * `close_expired_incident` only acts once a deadline has passed, and the deadline
+   * comes from this window — there is no way to fast-forward the cluster clock, so a
+   * realistic window would put that path out of reach of any test. Squeezed from the
+   * other side by every suite that opens an incident and attests on it: those
+   * sequences cross an epoch boundary (~13s) and run several transactions, so the
+   * window has to stay several times longer than that.
+   */
+  attestWindow: 90,
   quorumBps: 6_000,
   openBond: 1_000_000,
 } as const
@@ -407,6 +417,32 @@ export const resolve = async (
       incident,
       vault: target.vault,
       beneficiaryToken: await env.assetAccount(policy.beneficiary),
+      openerToken: await env.assetAccount(stored.opener),
+    })
+    .rpc()
+}
+
+/**
+ * Closes an incident whose window ran out without a quorum (FR-011). Permissionless
+ * like `resolve`, so the caller is only paying the fee.
+ */
+export const closeExpiredIncident = async (
+  program: Program<DrainCover>,
+  env: TestEnv,
+  target: RegisteredProtocol,
+  incidentSeq: number,
+): Promise<void> => {
+  const incident = findIncident(program.programId, target.protocol, incidentSeq)
+  const stored = await program.account.incident.fetch(incident)
+
+  await program.methods
+    .closeExpiredIncident(new BN(incidentSeq))
+    .accountsPartial({
+      protocol: target.protocol,
+      pool: target.pool,
+      policy: stored.policy,
+      incident,
+      vault: target.vault,
       openerToken: await env.assetAccount(stored.opener),
     })
     .rpc()

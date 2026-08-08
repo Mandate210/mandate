@@ -146,6 +146,134 @@
       ]
     },
     {
+      "name": "close_expired_incident",
+      "docs": [
+        "Closes an incident whose window ran out without a quorum: no payout, the",
+        "capital it froze is released and the bond becomes pool capital (FR-011)."
+      ],
+      "discriminator": [
+        32,
+        253,
+        40,
+        240,
+        99,
+        24,
+        111,
+        145
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "protocol"
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "protocol"
+              }
+            ]
+          },
+          "relations": [
+            "protocol"
+          ]
+        },
+        {
+          "name": "policy",
+          "docs": [
+            "Read, never written: closing without a payout leaves the cover exactly as it",
+            "was. It is here because whether `resolve` could still pay this incident",
+            "depends on it (FR-016)."
+          ],
+          "relations": [
+            "incident"
+          ]
+        },
+        {
+          "name": "incident",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  110,
+                  99,
+                  105,
+                  100,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "protocol"
+              },
+              {
+                "kind": "arg",
+                "path": "incident_seq"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "opener_token",
+          "docs": [
+            "Only paid when the quorum confirmed the incident, but required in both cases:",
+            "an instruction whose account list depends on a tally is one a caller can get",
+            "wrong, and the runtime would then refuse the transaction rather than the",
+            "program refusing the operation."
+          ],
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "incident_seq",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "initialize",
       "docs": [
         "Creates the one Config account for this deployment."
@@ -1544,6 +1672,16 @@
       "code": 6029,
       "name": "AttestorSetEmpty",
       "msg": "The attestor set is empty, so no incident can reach quorum"
+    },
+    {
+      "code": 6030,
+      "name": "IncidentDeadlineNotReached",
+      "msg": "Incident deadline has not passed yet"
+    },
+    {
+      "code": 6031,
+      "name": "IncidentPayable",
+      "msg": "Quorum was reached on a policy in force, so this incident settles rather than expires"
     }
   ],
   "types": [

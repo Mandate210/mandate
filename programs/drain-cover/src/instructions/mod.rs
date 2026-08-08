@@ -10,6 +10,7 @@
 // US4 (P4): open_policy, pause_new_policies
 
 pub mod attest;
+pub mod close_expired_incident;
 pub mod initialize;
 pub mod issue_policy;
 pub mod open_incident;
@@ -26,6 +27,7 @@ pub mod submit_declaration;
 // two globs re-exporting the same name is an ambiguity that `clippy -D warnings`
 // rejects in CI.
 pub use attest::*;
+pub use close_expired_incident::*;
 pub use initialize::*;
 pub use issue_policy::*;
 pub use open_incident::*;
