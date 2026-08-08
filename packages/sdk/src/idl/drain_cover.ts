@@ -617,6 +617,107 @@ export type DrainCover = {
       ]
     },
     {
+      name: 'resolve'
+      docs: [
+        'Settles an incident whose quorum has been reached: pays the beneficiary and',
+        'returns the bond, in the same operation that establishes the quorum (FR-010,',
+        'FR-012, FR-013).',
+      ]
+      discriminator: [246, 150, 236, 206, 108, 63, 58, 10]
+      accounts: [
+        {
+          name: 'config'
+          pda: {
+            seeds: [
+              {
+                kind: 'const'
+                value: [99, 111, 110, 102, 105, 103]
+              },
+            ]
+          }
+        },
+        {
+          name: 'protocol'
+        },
+        {
+          name: 'pool'
+          writable: true
+          pda: {
+            seeds: [
+              {
+                kind: 'const'
+                value: [112, 111, 111, 108]
+              },
+              {
+                kind: 'account'
+                path: 'protocol'
+              },
+            ]
+          }
+          relations: ['protocol']
+        },
+        {
+          name: 'policy'
+          docs: [
+            'Bound to the incident by `has_one`: the incident recorded which policy it was',
+            'about when it opened, and that is not up for revision at settlement.',
+          ]
+          writable: true
+          relations: ['incident']
+        },
+        {
+          name: 'incident'
+          writable: true
+          pda: {
+            seeds: [
+              {
+                kind: 'const'
+                value: [105, 110, 99, 105, 100, 101, 110, 116]
+              },
+              {
+                kind: 'account'
+                path: 'protocol'
+              },
+              {
+                kind: 'arg'
+                path: 'incidentSeq'
+              },
+            ]
+          }
+        },
+        {
+          name: 'vault'
+          writable: true
+        },
+        {
+          name: 'beneficiaryToken'
+          docs: [
+            'Owned by the beneficiary the policy fixed at issuance (FR-004), so nobody can',
+            'redirect a payout by presenting a different account here.',
+          ]
+          writable: true
+        },
+        {
+          name: 'openerToken'
+          docs: [
+            'The bond goes back to whoever opened the incident, because the quorum',
+            'confirmed it.',
+          ]
+          writable: true
+        },
+        {
+          name: 'tokenProgram'
+          address: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'
+        },
+      ]
+      args: [
+        {
+          name: 'incidentSeq'
+          type: 'u64'
+        },
+      ]
+    },
+    {
       name: 'revokeDeclaration'
       docs: [
         'Withdraws what a declaration entry permits, with no delay (FR-032).',

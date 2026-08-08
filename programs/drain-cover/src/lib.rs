@@ -122,6 +122,13 @@ pub mod drain_cover {
         instructions::open_incident::handle_open_incident(ctx, policy_seq, trigger_sig)
     }
 
+    /// Settles an incident whose quorum has been reached: pays the beneficiary and
+    /// returns the bond, in the same operation that establishes the quorum (FR-010,
+    /// FR-012, FR-013).
+    pub fn resolve(ctx: Context<Resolve>, incident_seq: u64) -> Result<()> {
+        instructions::resolve::handle_resolve(ctx, incident_seq)
+    }
+
     /// Admits an attestor to the permissive set or removes one (FR-008).
     /// Admission takes effect with the next epoch; removal, at once.
     pub fn set_attestor(

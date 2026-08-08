@@ -13,7 +13,7 @@ import {
   findVault,
 } from '@drain-cover/sdk'
 import { Connection, Keypair, type PublicKey, SystemProgram } from '@solana/web3.js'
-import { type TestEnv, testRpcUrl } from './harness'
+import { type TestEnv, testRpcUrl, waitForNextEpoch } from './harness'
 
 /**
  * Shared starting state for integration files.
@@ -260,6 +260,53 @@ export const admitAttestor = async (
   return keypair
 }
 
+/**
+ * Attestations an incident of this set size needs, mirroring `quorum_threshold` in
+ * `instructions/resolve.rs`. Rounded up in both places — a test that rounded the
+ * other way would agree with itself and disagree with the program.
+ */
+export const quorumNeeded = (setSize: number, quorumBps: number): number =>
+  Math.ceil((setSize * quorumBps) / 10_000)
+
+/**
+ * Admits as many attestors as it takes for this file's own votes to carry a quorum,
+ * and crosses the epoch boundary once so they can all vote.
+ *
+ * The set is global to the deployment and other files admit into it, so a suite
+ * cannot assume it starts from nothing: the quorum denominator is whatever the count
+ * happens to be when the incident opens. Hence the smallest `k` with
+ * `quorumNeeded(existing + k) <= k`, computed rather than guessed.
+ */
+export const admitQuorumSet = async (
+  program: Program<DrainCover>,
+  env: TestEnv,
+): Promise<Keypair[]> => {
+  const config = await program.account.config.fetch(findConfig(program.programId))
+  const existing = config.attestorCount
+
+  let needed = 1
+  while (quorumNeeded(existing + needed, config.quorumBps) > needed) needed += 1
+
+  const attestors = await Promise.all(Array.from({ length: needed }, () => env.fundedKeypair(1)))
+  for (const attestor of attestors) {
+    await setAttestor(program, env, attestor.publicKey)
+  }
+  await waitForNextEpoch(env.connection)
+
+  return attestors
+}
+
+/** Takes a file's attestors back out of the set, so the next file starts smaller. */
+export const releaseAttestors = async (
+  program: Program<DrainCover>,
+  env: TestEnv,
+  attestors: Keypair[],
+): Promise<void> => {
+  for (const attestor of attestors) {
+    await setAttestor(program, env, attestor.publicKey, false)
+  }
+}
+
 /** Sixty-four bytes standing in for a transaction signature. */
 export const triggerSignature = (fill = 7): number[] => Array.from({ length: 64 }, () => fill)
 
@@ -335,6 +382,34 @@ export const attest = async (
     .rpc()
 
   return attestation
+}
+
+/**
+ * Settles an incident whose quorum has been reached. Permissionless by design, so
+ * the caller here is just the provider's wallet paying the fee.
+ */
+export const resolve = async (
+  program: Program<DrainCover>,
+  env: TestEnv,
+  target: RegisteredProtocol,
+  incidentSeq: number,
+): Promise<void> => {
+  const incident = findIncident(program.programId, target.protocol, incidentSeq)
+  const stored = await program.account.incident.fetch(incident)
+  const policy = await program.account.policy.fetch(stored.policy)
+
+  await program.methods
+    .resolve(new BN(incidentSeq))
+    .accountsPartial({
+      protocol: target.protocol,
+      pool: target.pool,
+      policy: stored.policy,
+      incident,
+      vault: target.vault,
+      beneficiaryToken: await env.assetAccount(policy.beneficiary),
+      openerToken: await env.assetAccount(stored.opener),
+    })
+    .rpc()
 }
 
 /** Capital in the pool without shares — the temporary service path (T014, gone in T036). */
