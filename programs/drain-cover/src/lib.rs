@@ -5,6 +5,9 @@ pub mod instructions;
 pub mod state;
 
 pub use instructions::*;
+/// The one state type an instruction takes as an argument, so it has to resolve at
+/// the crate root where `#[program]` looks for it.
+pub use state::Verdict;
 
 // Derived from target/deploy/drain_cover-keypair.json by `anchor keys sync`, and
 // duplicated in Anchor.toml (both clusters) and .env.example, where nothing
@@ -100,6 +103,12 @@ pub mod drain_cover {
             not_after,
             moves_funds,
         )
+    }
+
+    /// Records one attestor's verdict on an open incident (FR-007). One attestor,
+    /// one attestation — held by the address itself (FR-009).
+    pub fn attest(ctx: Context<Attest>, incident_seq: u64, verdict: Verdict) -> Result<()> {
+        instructions::attest::handle_attest(ctx, incident_seq, verdict)
     }
 
     /// Records a suspected unauthorized privileged action against a policy

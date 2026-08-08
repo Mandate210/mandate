@@ -41,6 +41,30 @@ export const assertLocalEndpoint = (endpoint: string): void => {
 // wrappers express "unset", and an empty string is not a URL either way.
 export const testRpcUrl = (): string => process.env.TEST_RPC_URL || 'http://127.0.0.1:8899'
 
+/**
+ * Blocks until the cluster enters a new epoch.
+ *
+ * An attestor admitted in one epoch votes from the next (FR-008), so anything that
+ * needs an attestation has to cross a boundary. That is only feasible on a validator
+ * started with `--slots-per-epoch 32`, where an epoch is about thirteen seconds
+ * rather than two days — see `CLAUDE.md` → Commands.
+ */
+export const waitForNextEpoch = async (connection: Connection): Promise<number> => {
+  const started = (await connection.getEpochInfo()).epoch
+  const giveUpAt = Date.now() + 45_000
+
+  for (;;) {
+    const { epoch } = await connection.getEpochInfo()
+    if (epoch > started) return epoch
+    if (Date.now() > giveUpAt) {
+      throw new Error(
+        `Still in epoch ${epoch} after 45s. Start the validator with --slots-per-epoch 32; the default epoch is two days long and no attestor would ever become active.`,
+      )
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500))
+  }
+}
+
 export const validatorReachable = async (): Promise<boolean> => {
   try {
     await new Connection(testRpcUrl(), 'confirmed').getVersion()

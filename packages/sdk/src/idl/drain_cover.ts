@@ -14,6 +14,110 @@ export type DrainCover = {
   }
   instructions: [
     {
+      name: 'attest'
+      docs: [
+        "Records one attestor's verdict on an open incident (FR-007). One attestor,",
+        'one attestation — held by the address itself (FR-009).',
+      ]
+      discriminator: [83, 148, 120, 119, 144, 139, 117, 160]
+      accounts: [
+        {
+          name: 'protocol'
+        },
+        {
+          name: 'incident'
+          writable: true
+          pda: {
+            seeds: [
+              {
+                kind: 'const'
+                value: [105, 110, 99, 105, 100, 101, 110, 116]
+              },
+              {
+                kind: 'account'
+                path: 'protocol'
+              },
+              {
+                kind: 'arg'
+                path: 'incidentSeq'
+              },
+            ]
+          }
+        },
+        {
+          name: 'attestorAuthority'
+          docs: [
+            'Signs and pays for its own attestation. Nothing else in the program can',
+            'create one, so the record is a statement by the attestor and by nobody else.',
+          ]
+          writable: true
+          signer: true
+        },
+        {
+          name: 'attestor'
+          docs: [
+            'Derived from the signer, so the seeds are the whole binding: there is no way',
+            "to present someone else's membership.",
+          ]
+          pda: {
+            seeds: [
+              {
+                kind: 'const'
+                value: [97, 116, 116, 101, 115, 116, 111, 114]
+              },
+              {
+                kind: 'account'
+                path: 'attestorAuthority'
+              },
+            ]
+          }
+        },
+        {
+          name: 'attestation'
+          docs: [
+            'FR-009 is the address itself: `(incident, attestor)` derives one account, so a',
+            'second attestation from the same attestor fails in the runtime before any of',
+            'this code runs. No counter, no list, nothing to get wrong.',
+          ]
+          writable: true
+          pda: {
+            seeds: [
+              {
+                kind: 'const'
+                value: [97, 116, 116, 101, 115, 116]
+              },
+              {
+                kind: 'account'
+                path: 'incident'
+              },
+              {
+                kind: 'account'
+                path: 'attestorAuthority'
+              },
+            ]
+          }
+        },
+        {
+          name: 'systemProgram'
+          address: '11111111111111111111111111111111'
+        },
+      ]
+      args: [
+        {
+          name: 'incidentSeq'
+          type: 'u64'
+        },
+        {
+          name: 'verdict'
+          type: {
+            defined: {
+              name: 'verdict'
+            }
+          }
+        },
+      ]
+    },
+    {
       name: 'initialize'
       docs: ['Creates the one Config account for this deployment.']
       discriminator: [175, 175, 109, 31, 13, 152, 155, 237]
@@ -801,6 +905,10 @@ export type DrainCover = {
   ]
   accounts: [
     {
+      name: 'attestation'
+      discriminator: [152, 125, 183, 86, 36, 146, 121, 73]
+    },
+    {
       name: 'attestor'
       discriminator: [253, 240, 76, 196, 16, 53, 239, 173]
     },
@@ -982,6 +1090,34 @@ export type DrainCover = {
     },
   ]
   types: [
+    {
+      name: 'attestation'
+      docs: [
+        "One attestor's statement about one incident (FR-007).",
+        '',
+        '"One attestor, one attestation" (FR-009) is enforced by the PDA itself: the',
+        'address derives from `(incident, attestor)`, so a second attempt fails in the',
+        'runtime before any of our code runs. Both identities live in the seeds, which',
+        'is why this account holds neither.',
+      ]
+      type: {
+        kind: 'struct'
+        fields: [
+          {
+            name: 'verdict'
+            type: {
+              defined: {
+                name: 'verdict'
+              }
+            }
+          },
+          {
+            name: 'submittedAt'
+            type: 'i64'
+          },
+        ]
+      }
+    },
     {
       name: 'attestor'
       docs: [
@@ -1502,6 +1638,20 @@ export type DrainCover = {
           {
             name: 'nextIncidentSeq'
             type: 'u64'
+          },
+        ]
+      }
+    },
+    {
+      name: 'verdict'
+      type: {
+        kind: 'enum'
+        variants: [
+          {
+            name: 'unauthorized'
+          },
+          {
+            name: 'authorized'
           },
         ]
       }

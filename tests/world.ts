@@ -2,6 +2,7 @@ import { BN, type Program } from '@coral-xyz/anchor'
 import {
   type DrainCover,
   PROGRAM_ID,
+  findAttestation,
   findAttestor,
   findConfig,
   findDeclarationEntry,
@@ -241,6 +242,24 @@ export const setAttestor = async (
   return findAttestor(program.programId, attestorAuthority)
 }
 
+/**
+ * A funded attestor that can vote on incidents opened from the next epoch on.
+ *
+ * The wait is not incidental: membership starts with the following epoch (FR-008),
+ * so an attestor admitted and used in the same epoch would be refused by the program.
+ * Admit everyone first and cross the boundary once — the wait is per epoch, not per
+ * attestor.
+ */
+export const admitAttestor = async (
+  program: Program<DrainCover>,
+  env: TestEnv,
+  sol = 2,
+): Promise<Keypair> => {
+  const keypair = await env.fundedKeypair(sol)
+  await setAttestor(program, env, keypair.publicKey)
+  return keypair
+}
+
 /** Sixty-four bytes standing in for a transaction signature. */
 export const triggerSignature = (fill = 7): number[] => Array.from({ length: 64 }, () => fill)
 
@@ -286,6 +305,36 @@ export const openIncident = async (
     .rpc()
 
   return { incident, seq, opener, bond, triggerSig }
+}
+
+/** One attestor's verdict on an open incident (FR-007). */
+export const attest = async (
+  program: Program<DrainCover>,
+  target: RegisteredProtocol,
+  incidentSeq: number,
+  attestor: Keypair,
+  verdict: 'unauthorized' | 'authorized' = 'unauthorized',
+): Promise<PublicKey> => {
+  const incident = findIncident(program.programId, target.protocol, incidentSeq)
+  const attestation = findAttestation(program.programId, incident, attestor.publicKey)
+
+  await program.methods
+    .attest(
+      new BN(incidentSeq),
+      verdict === 'unauthorized' ? { unauthorized: {} } : { authorized: {} },
+    )
+    .accountsPartial({
+      protocol: target.protocol,
+      incident,
+      attestorAuthority: attestor.publicKey,
+      attestor: findAttestor(program.programId, attestor.publicKey),
+      attestation,
+      systemProgram: SystemProgram.programId,
+    })
+    .signers([attestor])
+    .rpc()
+
+  return attestation
 }
 
 /** Capital in the pool without shares — the temporary service path (T014, gone in T036). */

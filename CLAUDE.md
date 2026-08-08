@@ -68,7 +68,7 @@ is what the CI `typescript` job is. Integration tests build their world through
 Anchor runs its scripts inside WSL, which has no node. Three steps instead:
 
 ```bash
-wsl -e bash -lc "solana-test-validator --reset"             # WSL, keep running
+wsl -e bash -lc "solana-test-validator --reset --slots-per-epoch 32"   # WSL, keep running
 wsl -e bash -lc "cd <repo in WSL> && anchor deploy"         # WSL
 pnpm --filter @drain-cover/tests test:integration           # Windows
 ```
@@ -76,6 +76,12 @@ pnpm --filter @drain-cover/tests test:integration           # Windows
 `--reset` is not optional. `Config` is a singleton PDA, and the admin and settlement
 mint are fixed inside it forever, so a ledger carrying a config from an earlier run
 puts the suite in a state it cannot reproduce.
+
+**`--slots-per-epoch 32` is not optional either.** An attestor admitted in one epoch
+votes from the next (FR-008), and the default epoch is 432 000 slots — about two days —
+so on a default validator no attestor ever becomes active and nothing can be attested,
+resolved or paid out. At 32 slots an epoch passes in roughly thirteen seconds, which is
+what `waitForNextEpoch` in `tests/harness.ts` waits for.
 
 Two conventions keep the integration files independent of each other, and both are
 easy to undo by accident:

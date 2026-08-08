@@ -8,6 +8,144 @@
   },
   "instructions": [
     {
+      "name": "attest",
+      "docs": [
+        "Records one attestor's verdict on an open incident (FR-007). One attestor,",
+        "one attestation — held by the address itself (FR-009)."
+      ],
+      "discriminator": [
+        83,
+        148,
+        120,
+        119,
+        144,
+        139,
+        117,
+        160
+      ],
+      "accounts": [
+        {
+          "name": "protocol"
+        },
+        {
+          "name": "incident",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  110,
+                  99,
+                  105,
+                  100,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "protocol"
+              },
+              {
+                "kind": "arg",
+                "path": "incident_seq"
+              }
+            ]
+          }
+        },
+        {
+          "name": "attestor_authority",
+          "docs": [
+            "Signs and pays for its own attestation. Nothing else in the program can",
+            "create one, so the record is a statement by the attestor and by nobody else."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "attestor",
+          "docs": [
+            "Derived from the signer, so the seeds are the whole binding: there is no way",
+            "to present someone else's membership."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  116,
+                  116,
+                  101,
+                  115,
+                  116,
+                  111,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "attestor_authority"
+              }
+            ]
+          }
+        },
+        {
+          "name": "attestation",
+          "docs": [
+            "FR-009 is the address itself: `(incident, attestor)` derives one account, so a",
+            "second attestation from the same attestor fails in the runtime before any of",
+            "this code runs. No counter, no list, nothing to get wrong."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  116,
+                  116,
+                  101,
+                  115,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "incident"
+              },
+              {
+                "kind": "account",
+                "path": "attestor_authority"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "incident_seq",
+          "type": "u64"
+        },
+        {
+          "name": "verdict",
+          "type": {
+            "defined": {
+              "name": "Verdict"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "initialize",
       "docs": [
         "Creates the one Config account for this deployment."
@@ -1017,6 +1155,19 @@
   ],
   "accounts": [
     {
+      "name": "Attestation",
+      "discriminator": [
+        152,
+        125,
+        183,
+        86,
+        36,
+        146,
+        121,
+        73
+      ]
+    },
+    {
       "name": "Attestor",
       "discriminator": [
         253,
@@ -1261,6 +1412,34 @@
     }
   ],
   "types": [
+    {
+      "name": "Attestation",
+      "docs": [
+        "One attestor's statement about one incident (FR-007).",
+        "",
+        "\"One attestor, one attestation\" (FR-009) is enforced by the PDA itself: the",
+        "address derives from `(incident, attestor)`, so a second attempt fails in the",
+        "runtime before any of our code runs. Both identities live in the seeds, which",
+        "is why this account holds neither."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "verdict",
+            "type": {
+              "defined": {
+                "name": "Verdict"
+              }
+            }
+          },
+          {
+            "name": "submitted_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
     {
       "name": "Attestor",
       "docs": [
@@ -1807,6 +1986,20 @@
           {
             "name": "next_incident_seq",
             "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Verdict",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Unauthorized"
+          },
+          {
+            "name": "Authorized"
           }
         ]
       }

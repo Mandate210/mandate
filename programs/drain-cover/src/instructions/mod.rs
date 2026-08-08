@@ -9,6 +9,7 @@
 // US3 (P3): register_attestor, sweep_attestors
 // US4 (P4): open_policy, pause_new_policies
 
+pub mod attest;
 pub mod initialize;
 pub mod issue_policy;
 pub mod open_incident;
@@ -23,6 +24,7 @@ pub mod submit_declaration;
 // Which is why each handler is named `handle_<instruction>` rather than `handler` —
 // two globs re-exporting the same name is an ambiguity that `clippy -D warnings`
 // rejects in CI.
+pub use attest::*;
 pub use initialize::*;
 pub use issue_policy::*;
 pub use open_incident::*;
