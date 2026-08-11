@@ -1,7 +1,14 @@
 {
   "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
   "files": {
-    "ignore": ["dist", "target", ".turbo", "node_modules", "**/idl/*.json"]
+    "ignore": [
+      "dist",
+      "target",
+      ".turbo",
+      "node_modules",
+      "**/idl/*",
+      "**/__fixtures__/**/*.json"
+    ]
   },
   "formatter": {
     "enabled": true,
