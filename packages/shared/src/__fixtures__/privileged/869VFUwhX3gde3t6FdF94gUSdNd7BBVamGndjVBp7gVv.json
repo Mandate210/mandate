@@ -1,0 +1,62 @@
+{
+  "provenance": {
+    "cluster": "mainnet-beta",
+    "rpc": "https://solana-rpc.publicnode.com",
+    "fetchedAt": "2026-08-12T17:38:57.671Z",
+    "derivedFrom": "upgrade authority of program 3RWLeScYhxvdywAcFWxoVBb88eBDspskcHEX1Q55v3eX, read from its ProgramData account"
+  },
+  "authority": "869VFUwhX3gde3t6FdF94gUSdNd7BBVamGndjVBp7gVv",
+  "programId": "3RWLeScYhxvdywAcFWxoVBb88eBDspskcHEX1Q55v3eX",
+  "transactions": [
+    {
+      "signature": "3ZYQA7MWnuriCJbWnntvSRAuDVfHgQgk3rKJWCVFQ8xFDe525roaXaW8AmXRzEGMJUszhUTPqcFcMRrZxSoeQEpa",
+      "slot": 438856384,
+      "blockTime": 1786556434,
+      "signers": [
+        "869VFUwhX3gde3t6FdF94gUSdNd7BBVamGndjVBp7gVv"
+      ],
+      "instructions": [
+        {
+          "programId": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+          "data": "A"
+        }
+      ]
+    },
+    {
+      "signature": "46sPVYbTNkKp5Utb1qf2RCt6iu1gdkc6MFHX7L1RYxCLhLWGSF3SJdTHeeLVBHHpcW8tSXgYs1uZAjTp6SvXVGN3",
+      "slot": 438856384,
+      "blockTime": 1786556434,
+      "signers": [
+        "869VFUwhX3gde3t6FdF94gUSdNd7BBVamGndjVBp7gVv"
+      ],
+      "instructions": [
+        {
+          "programId": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+          "data": "A"
+        }
+      ]
+    },
+    {
+      "signature": "4e3N7dRrcM4MmR1cFejGKJRvHfokQ6GTnNy223sXJ14rqFn3BFw3enukpjqdGQ9XkYXNvNvqEySGoWsrT3woz5G7",
+      "slot": 438856383,
+      "blockTime": 1786556433,
+      "signers": [
+        "869VFUwhX3gde3t6FdF94gUSdNd7BBVamGndjVBp7gVv"
+      ],
+      "instructions": [
+        {
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "data": "7XKPuV9M6N6Yq"
+        },
+        {
+          "programId": "3hGfVcg87NiS7W1za5fFY35EgB1WfCLoikJki57UjxTA",
+          "data": "5EtmW6tQHorKUw2AhTkueKh"
+        },
+        {
+          "programId": "11111111111111111111111111111111",
+          "data": "3Bxs4Bc3VYuGVB19"
+        }
+      ]
+    }
+  ]
+}

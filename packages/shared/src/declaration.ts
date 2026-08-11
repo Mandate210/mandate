@@ -37,6 +37,38 @@ export const DISCRIMINATOR_BYTES = 8
  */
 export const INERT_PROGRAM_IDS: readonly string[] = ['ComputeBudget111111111111111111111111111111']
 
+/**
+ * Programs that identify their method in fewer than eight bytes, and how many they
+ * use. Everything absent from this table is assumed to be Anchor's eight.
+ *
+ * **This is not a convenience — without it the model refuses a protocol's own program
+ * upgrade.** A native instruction puts its opcode first and its arguments straight
+ * after, inside the same eight bytes: the upgradeable loader's `Write` carries the
+ * offset of the chunk being written, so a single deployment produces dozens of
+ * instructions that are the same operation with a different key each time. Measured on
+ * real mainnet transactions, not reasoned about: the fixtures behind SC-002 are program
+ * deployments, and matching on all eight bytes made every chunk of them undeclared
+ * (`docs/PLAN.md` → «Фікстури SC-002»).
+ *
+ * Every address here was checked against mainnet before being written down, and every
+ * width is that program's own instruction encoding — u32 opcodes for the native
+ * programs, a single byte for the token programs.
+ */
+export const METHOD_BYTES: Readonly<Record<string, number>> = {
+  /** System */
+  '11111111111111111111111111111111': 4,
+  /** BPF upgradeable loader — `Write`, `DeployWithMaxDataLen`, `Upgrade`, `SetAuthority` */
+  BPFLoaderUpgradeab1e11111111111111111111111: 4,
+  /** Address lookup table */
+  AddressLookupTab1e1111111111111111111111111: 4,
+  /** SPL Token */
+  TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA: 1,
+  /** SPL Token-2022 */
+  TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb: 1,
+  /** Associated token account — `Create` carries no data at all */
+  ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL: 1,
+}
+
 /** Base58 as it comes off the chain. Compared for equality here, never decoded. */
 export const addressSchema = z.string().min(32).max(44)
 
@@ -100,17 +132,25 @@ export type Verdict =
   | { status: 'undeclared'; uncovered: UncoveredInstruction[] }
 
 /**
- * The eight bytes an entry is matched on, zero-filled if the data is shorter.
+ * The eight bytes an entry is matched on: the program's method identity, zero-filled
+ * to a fixed width.
  *
- * For an Anchor program these are the method's identity and nothing else, which is the
- * case the model is built for. For a native program — SPL Token, System — the first
- * byte is the opcode and the rest are already arguments, so an entry declaring one of
- * those pins those leading argument bytes too. That makes such an entry *narrower*
- * than its author may expect, never wider: it can withhold cover from an operation the
- * protocol meant to declare, and it can never extend cover to one it did not.
+ * For an Anchor program that is the leading eight bytes and nothing else. For a program
+ * in `METHOD_BYTES` it is only that program's opcode, because the bytes after it are
+ * arguments, and matching on arguments would make the same operation a different
+ * operation every time it runs with different inputs.
+ *
+ * Arguments are outside the model by design, not by oversight: an entry says *which*
+ * operation is permitted, and FR-006 keeps amounts and destinations out of the verdict
+ * entirely. Taking fewer bytes for these programs makes them behave the way Anchor
+ * programs already did, rather than accidentally stricter.
  */
-export const discriminatorOf = (data: readonly number[]): number[] =>
-  Array.from({ length: DISCRIMINATOR_BYTES }, (_, index) => data[index] ?? 0)
+export const methodOf = (programId: string, data: readonly number[]): number[] => {
+  const width = METHOD_BYTES[programId] ?? DISCRIMINATOR_BYTES
+  return Array.from({ length: DISCRIMINATOR_BYTES }, (_, index) =>
+    index < width ? (data[index] ?? 0) : 0,
+  )
+}
 
 const sameBytes = (left: readonly number[], right: readonly number[]): boolean =>
   left.length === right.length && left.every((byte, index) => byte === right[index])
@@ -136,7 +176,8 @@ export const entryCovers = (
   at: number,
 ): boolean => {
   if (entry.programId !== instruction.programId) return false
-  if (!sameBytes(entry.ixDiscriminator, discriminatorOf(instruction.data))) return false
+  if (!sameBytes(entry.ixDiscriminator, methodOf(instruction.programId, instruction.data)))
+    return false
 
   // FR-031: an operation executed before its entry took effect is undeclared, however
   // long the entry has existed.
@@ -184,7 +225,7 @@ export const evaluateTransaction = ({
       uncovered.push({
         index,
         programId: instruction.programId,
-        discriminator: discriminatorOf(instruction.data),
+        discriminator: methodOf(instruction.programId, instruction.data),
       })
     } else {
       covered.push({ index, entryIndex })

@@ -3,9 +3,9 @@ import {
   type DeclarationEntry,
   INERT_PROGRAM_IDS,
   type ObservedTransaction,
-  discriminatorOf,
   entryCovers,
   evaluateTransaction,
+  methodOf,
 } from './declaration'
 
 const PROTOCOL_PROGRAM = 'Drai11111111111111111111111111111111111111'
@@ -47,16 +47,34 @@ const evaluate = (
   entries: DeclarationEntry[] = [entry()],
 ) => evaluateTransaction({ transaction: transaction(overrides), entries, privileged: [ADMIN] })
 
-describe('discriminatorOf', () => {
-  it('takes the first eight bytes', () => {
-    expect(discriminatorOf([...PAUSE, 42, 43])).toEqual(PAUSE)
+const LOADER = 'BPFLoaderUpgradeab1e11111111111111111111111'
+const TOKEN = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'
+
+describe('methodOf', () => {
+  it('takes the first eight bytes of an Anchor instruction', () => {
+    expect(methodOf(PROTOCOL_PROGRAM, [...PAUSE, 42, 43])).toEqual(PAUSE)
   })
 
-  it('zero-fills data shorter than a discriminator', () => {
-    // A native-program instruction can be a single opcode byte. Padding keeps the
-    // comparison total instead of throwing on a transaction we still have to judge.
-    expect(discriminatorOf([3])).toEqual([3, 0, 0, 0, 0, 0, 0, 0])
-    expect(discriminatorOf([])).toEqual([0, 0, 0, 0, 0, 0, 0, 0])
+  it('zero-fills data shorter than eight bytes', () => {
+    expect(methodOf(PROTOCOL_PROGRAM, [3])).toEqual([3, 0, 0, 0, 0, 0, 0, 0])
+    expect(methodOf(PROTOCOL_PROGRAM, [])).toEqual([0, 0, 0, 0, 0, 0, 0, 0])
+  })
+
+  it('takes only the opcode of a native instruction', () => {
+    // The loader's `Write` puts the chunk offset right after the opcode, so two
+    // chunks of one deployment differ in bytes four to eight. They are the same
+    // operation, and a protocol that declared «I deploy upgrades» has declared both.
+    const first = methodOf(LOADER, [1, 0, 0, 0, 204, 185, 0, 0, 0xaa, 0xbb])
+    const second = methodOf(LOADER, [1, 0, 0, 0, 16, 76, 1, 0, 0xcc])
+    expect(first).toEqual([1, 0, 0, 0, 0, 0, 0, 0])
+    expect(first).toEqual(second)
+  })
+
+  it('keeps different native opcodes apart', () => {
+    // `DeployWithMaxDataLen` is not `Write`, and a token transfer is not a burn.
+    expect(methodOf(LOADER, [3, 0, 0, 0])).not.toEqual(methodOf(LOADER, [1, 0, 0, 0]))
+    expect(methodOf(TOKEN, [3, 1, 2, 3, 4, 5, 6, 7, 8])).toEqual([3, 0, 0, 0, 0, 0, 0, 0])
+    expect(methodOf(TOKEN, [8, 1, 2])).not.toEqual(methodOf(TOKEN, [3, 1, 2]))
   })
 })
 

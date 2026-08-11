@@ -1,0 +1,50 @@
+{
+  "fetchedAt": "2026-08-12T17:38:57.671Z",
+  "skipped": [
+    {
+      "programId": "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P",
+      "authority": "7gZufwwAo17y5kg8FMyJy2phgpvv9RSdzWtdXiWHjFr8",
+      "reason": "authority never appears as a signer"
+    },
+    {
+      "programId": "EtrnLzgbS7nMMy5fbD42kXiUzGg8XQzJ972Xtk1cjWih",
+      "authority": "GPgADQrhzGoUgLqxsZMKvSpwcLaJFVTq6gEixKhmcwpm",
+      "reason": "authority never appears as a signer"
+    },
+    {
+      "programId": "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA",
+      "authority": "7gZufwwAo17y5kg8FMyJy2phgpvv9RSdzWtdXiWHjFr8",
+      "reason": "authority never appears as a signer"
+    },
+    {
+      "programId": "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4",
+      "authority": "CvQZZ23qYDWF2RUpxYJ8y9K4skmuvYEEjH7fK58jtipQ",
+      "reason": "authority never appears as a signer"
+    },
+    {
+      "programId": "Archer8kgiavM61GyusMzaaS2ft5sALtNsD1HxkUPMhy",
+      "authority": "ELGWUVJD6NBNLyJ5Xv98PzoSg9Wh2Y8Bwep9JZgm9nuo",
+      "reason": "authority never appears as a signer"
+    },
+    {
+      "programId": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+      "authority": "AeLmXCbPaQHGWRLr2saFsEVfmMNuKnxRAbWCT9P5twgz",
+      "reason": "authority never appears as a signer"
+    },
+    {
+      "programId": "NA247a7YE9S3p9CdKmMyETx8TTwbSdVbVYHHxpnHTUV",
+      "authority": "CJu4TUnfzXzyXv3HkCP53G4uRxR2hsVbWjZDgs57MAPs",
+      "reason": "authority never appears as a signer"
+    },
+    {
+      "programId": "otterXYtgZ5DRUGX6JGtcZPg3GoWxEqcLrb9MjeCv3X",
+      "authority": "CZRJMbyrxXgqM7uMVfX5Ps21DddizuRPXjmh6bmDoHXf",
+      "reason": "authority never appears as a signer"
+    },
+    {
+      "programId": "GpmL2vNNQq2Fm3yJH6vP4CApVwANhiiZHbsonWKDJhJd",
+      "authority": "CDyhUVdRQ99n9a95nELtHD919dKJTNpvtH6CpieSvyrn",
+      "reason": "authority never appears as a signer"
+    }
+  ]
+}
