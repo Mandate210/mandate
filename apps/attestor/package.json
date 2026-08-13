@@ -24,5 +24,10 @@
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
+  },
+  "exports": {
+    "./act": "./src/act.ts",
+    "./chain": "./src/chain.ts",
+    "./watch": "./src/watch.ts"
   }
 }

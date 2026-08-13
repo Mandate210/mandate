@@ -76,6 +76,12 @@ export interface ActChain {
     incidentSeq: number
     verdict: AttestVerdict
   }): Promise<void>
+  /** Whether the incident is still taking attestations. */
+  incidentOpen(protocol: string, incidentSeq: number): Promise<boolean>
+  /** Whether the incident has the `unauthorized` attestations its quorum asks for. */
+  quorumReached(protocol: string, incidentSeq: number): Promise<boolean>
+  /** Records the quorum and pays out in one operation (FR-012). Permissionless. */
+  resolve(protocol: string, incidentSeq: number): Promise<void>
 }
 
 export type IgnoreReason =
@@ -96,7 +102,14 @@ export type ActOutcome =
    * Reported rather than swallowed: a protocol whose cover has lapsed while its keys
    * are being used is worth seeing in a log. */
   | { kind: 'not-opened'; reason: 'no-policy-in-force' }
-  | { kind: 'attested'; verdict: AttestVerdict; incidentSeq: number; opened: boolean }
+  | {
+      kind: 'attested'
+      verdict: AttestVerdict
+      incidentSeq: number
+      opened: boolean
+      /** This attestation completed the quorum and this attestor paid it out. */
+      settled: boolean
+    }
   /** FR-009 holds: one attestor, one attestation. Reached by a restart re-delivering a
    * transaction this attestor already acted on. */
   | { kind: 'already-attested'; incidentSeq: number }
@@ -113,12 +126,43 @@ export interface Actor {
   act(transaction: PrivilegedTransaction): Promise<ActOutcome>
 }
 
+/**
+ * How long an attestor holds off before opening an incident nobody has opened yet, and
+ * why it holds off at all.
+ *
+ * Every attestor sees the same transaction within milliseconds of the others and reaches
+ * the same verdict, so without a stagger they all pass the «has anyone opened one?»
+ * check in the same instant and every one of them opens its own. The program does not
+ * stop them: an incident is addressed by `(protocol, seq)`, so two incidents about one
+ * event are two perfectly valid accounts — and the attestations then split between them,
+ * leaving *neither* at quorum. Measured, not imagined: this is what a three-attestor
+ * scenario did to one compromise in ten before the stagger existed.
+ *
+ * A random wait spreads the herd, and the second look afterwards is what actually
+ * prevents the duplicate — the wait only makes it likely that there is something to see.
+ * Cheap against SC-001's thirty-second budget.
+ *
+ * **This narrows the window rather than closing it.** Two attestors that draw similar
+ * waits can still both open, because nothing on chain makes a trigger signature unique.
+ * Closing it properly means addressing an incident by its trigger, which is a change to
+ * the program and to everything that derives an incident address (`docs/PLAN.md` →
+ * «Один інцидент на подію»).
+ */
+export const DEFAULT_OPEN_JITTER_MS = 1_500
+
 export const createActor = ({
   chain,
   logger = silentLogger,
+  openJitterMs = DEFAULT_OPEN_JITTER_MS,
+  random = Math.random,
+  sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
 }: {
   chain: ActChain
   logger?: ActLogger
+  openJitterMs?: number
+  /** Injected so a test can make the stagger deterministic. */
+  random?: () => number
+  sleep?: (ms: number) => Promise<void>
 }): Actor => {
   /**
    * Record this attestor's verdict on an incident that exists.
@@ -143,12 +187,59 @@ export const createActor = ({
     try {
       await chain.attest({ protocol, incidentSeq: incident.seq, verdict })
     } catch (error) {
-      if (!(await chain.hasAttested(protocol, incident.seq))) throw error
-      return { kind: 'already-attested', incidentSeq: incident.seq }
+      // Both ways this loses are races, and both are diagnosed by re-reading the state
+      // rather than by picking apart the error: another attestor's attestation may have
+      // completed the quorum and settled the incident while this one was in flight, and
+      // the program refuses attestations on a settled incident. Matching on error codes
+      // here would be one refactor of the program away from silently swallowing a real
+      // failure.
+      if (await chain.hasAttested(protocol, incident.seq)) {
+        return { kind: 'already-attested', incidentSeq: incident.seq }
+      }
+      if (!(await chain.incidentOpen(protocol, incident.seq))) {
+        return { kind: 'ignored', reason: 'incident-settled' }
+      }
+      throw error
     }
 
     logger.info({ protocol, incidentSeq: incident.seq, verdict, opened }, 'attested')
-    return { kind: 'attested', verdict, incidentSeq: incident.seq, opened }
+    const settled = verdict === 'unauthorized' && (await settle(protocol, incident.seq))
+    return { kind: 'attested', verdict, incidentSeq: incident.seq, opened, settled }
+  }
+
+  /**
+   * Pay out, if this attestation was the one that completed the quorum.
+   *
+   * **Without this nothing closes the loop.** FR-012 says the payout is initiated by
+   * the same operation that records the quorum, and `resolve` is that operation — but
+   * it is permissionless and takes no signer, so the program cannot call it and nobody
+   * is obliged to. An attestor that stops at its own attestation leaves the incident
+   * sitting at quorum until its deadline passes and `close_expired_incident` closes it
+   * with no payout: the decision made, and the money not sent. So whoever casts the
+   * deciding attestation carries it through.
+   *
+   * Only after an `unauthorized` attestation, because that is the only verdict the
+   * quorum counts (FR-010) — an `authorized` vote can never be the one that completes
+   * it.
+   *
+   * **A failure here is logged, not raised.** Every way this loses is a race it was
+   * expected to lose: another attestor resolved first and the incident is no longer
+   * open, or the policy lapsed in the seconds since the attestation. Neither loses the
+   * incident — it is either settled already or will close on its deadline — and taking
+   * the worker down over it would cost the next compromise.
+   */
+  const settle = async (protocol: string, incidentSeq: number): Promise<boolean> => {
+    if (!(await chain.quorumReached(protocol, incidentSeq))) return false
+
+    try {
+      await chain.resolve(protocol, incidentSeq)
+    } catch (error) {
+      logger.warn({ protocol, incidentSeq, error }, 'quorum reached but resolve did not land')
+      return false
+    }
+
+    logger.info({ protocol, incidentSeq }, 'quorum reached, paid out')
+    return true
   }
 
   const act = async (delivered: PrivilegedTransaction): Promise<ActOutcome> => {
@@ -184,6 +275,17 @@ export const createActor = ({
     if (policySeq === null) {
       logger.warn({ protocol, signature }, 'undeclared privileged transaction on an uncovered protocol')
       return { kind: 'not-opened', reason: 'no-policy-in-force' }
+    }
+
+    // Stagger, then look again. The first check was made the instant the transaction
+    // arrived, when every other attestor was making the same one.
+    if (openJitterMs > 0) {
+      await sleep(Math.floor(random() * openJitterMs))
+      const opened = await chain.findIncidentByTrigger(protocol, signature)
+      if (opened !== null) {
+        logger.info({ protocol, incidentSeq: opened.seq }, 'another attestor opened it first')
+        return attestOn(protocol, opened, 'unauthorized', false)
+      }
     }
 
     logger.info(

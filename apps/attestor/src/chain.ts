@@ -234,6 +234,57 @@ export const createChain = ({
       return (await connection.getAccountInfo(attestation)) !== null
     },
 
+    incidentOpen: async (protocol, incidentSeq) => {
+      const incident = await program.account.incident.fetchNullable(
+        findIncident(programId, new PublicKey(protocol), incidentSeq),
+      )
+      return incident !== null && 'open' in incident.status
+    },
+
+    /**
+     * The bar is the set size the incident recorded when it opened, never the current
+     * one, and the share is rounded **up** — both exactly as `quorum_threshold` does it
+     * in the program. Rounding down would let a set of three clear a 60% quorum on one
+     * attestation.
+     */
+    quorumReached: async (protocol, incidentSeq) => {
+      const incident = await program.account.incident.fetchNullable(
+        findIncident(programId, new PublicKey(protocol), incidentSeq),
+      )
+      if (incident === null || !('open' in incident.status)) return false
+
+      const { quorumBps } = await program.account.config.fetch(findConfig(programId))
+      const needed = Math.ceil((incident.setSize * quorumBps) / 10_000)
+      return incident.votesUnauthorized >= needed
+    },
+
+    resolve: async (protocol, incidentSeq) => {
+      const key = new PublicKey(protocol)
+      const incident = findIncident(programId, key, incidentSeq)
+      const stored = await program.account.incident.fetch(incident)
+      const [{ pool }, policy] = await Promise.all([
+        program.account.protocol.fetch(key),
+        program.account.policy.fetch(stored.policy),
+      ])
+      const { assetMint } = await program.account.config.fetch(findConfig(programId))
+
+      await program.methods
+        .resolve(new BN(incidentSeq))
+        .accountsPartial({
+          protocol: key,
+          pool,
+          policy: stored.policy,
+          incident,
+          vault: findVault(assetMint, pool),
+          // The beneficiary and the opener are paid in the settlement asset, so both
+          // need an account for it. Derived, not created: `resolve` cannot open one,
+          // and a beneficiary without an account is a policy that was issued wrong.
+          beneficiaryToken: getAssociatedTokenAddressSync(assetMint, policy.beneficiary, true),
+          openerToken: getAssociatedTokenAddressSync(assetMint, stored.opener, true),
+        })
+        .rpc()
+    },
+
     attest: async ({ protocol, incidentSeq, verdict }) => {
       const key = new PublicKey(protocol)
       const incident = findIncident(programId, key, incidentSeq)
