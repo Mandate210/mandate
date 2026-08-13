@@ -11,8 +11,10 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@coral-xyz/anchor": "^0.32.1",
     "@drain-cover/sdk": "workspace:*",
     "@drain-cover/shared": "workspace:*",
+    "@solana/spl-token": "^0.4.9",
     "@solana/web3.js": "^1.95.4",
     "pino": "^9.5.0"
   },
