@@ -4,10 +4,16 @@
 //
 // **Every address here comes off the chain, none from a list someone typed.** The
 // pipeline starts at a recent block, takes the programs that appear in it, reads each
-// program's upgrade authority out of its ProgramData account, and then fetches what
-// those authorities have signed. A fixture set assembled from remembered addresses
-// would be a set of guesses about who is privileged; this one is derived, and every
-// step of the derivation is in the fixture's `provenance`.
+// program's upgrade authority out of its ProgramData account, and then fetches the
+// transactions those authorities took part in. A fixture set assembled from remembered
+// addresses would be a set of guesses about who is privileged; this one is derived, and
+// every step of the derivation is in the fixture's `provenance`.
+//
+// **Took part in, not signed.** A privileged address is very often off-curve — a
+// multisig's, with no keypair anywhere — and cannot appear among a transaction's
+// signers however much authority it holds. Collecting only signed transactions produced
+// a fixture set with no multisig protocol in it at all, which is how the matching rule
+// came to have a permanent blind spot over them.
 //
 //   node packages/shared/scripts/fetch-privileged.mjs --rpc <url> [--target 200]
 //
@@ -143,11 +149,27 @@ const signersOf = (transaction) =>
     transaction.transaction.message.header.numRequiredSignatures,
   )
 
+/** `json` encoding gives account *indices*; the rule matches on addresses. Resolved
+ * here rather than at read time so the fixture states which accounts an instruction
+ * took without anybody having to re-derive the index table. */
+const instructionOf = (instruction, keys) => ({
+  programId: keys[instruction.programIdIndex],
+  /** Base58, verbatim as the RPC returned it. */
+  data: instruction.data,
+  accounts: (instruction.accounts ?? []).map((index) => keys[index]),
+  ...(instruction.stackHeight == null ? {} : { stackHeight: instruction.stackHeight }),
+})
+
 const main = async () => {
   selfCheck()
   console.log(`rpc: ${RPC}`)
 
   const finalized = await call('getSlot', [{ commitment: 'finalized' }])
+  const firstAvailableBlock = await call('getFirstAvailableBlock', [])
+  console.log(
+    `history window: slots ${firstAvailableBlock}..${finalized} ` +
+      `(${finalized - firstAvailableBlock} slots, about ${Math.round(((finalized - firstAvailableBlock) * 0.4) / 86_400)} days)`,
+  )
   const programUse = new Map()
   for (let index = 0; index < BLOCKS; index += 1) {
     const slot = finalized - 300 - index * 500
@@ -217,6 +239,7 @@ const main = async () => {
       { limit: SIGNATURES_PER_AUTHORITY },
     ])
     const transactions = []
+    let signedCount = 0
     for (const { signature, err } of signatures) {
       if (err) continue
       const transaction = await call('getTransaction', [
@@ -226,30 +249,44 @@ const main = async () => {
       if (!transaction) continue
 
       const keys = accountKeysOf(transaction)
+      // Involvement, not signature. Dropping everything the authority did not sign is
+      // what made every multisig-governed protocol invisible: 5 of the 17 authorities
+      // this pipeline finds are off-curve, so a signature of theirs cannot exist at all
+      // (docs/PLAN.md → «Мультисиг і привілейовані PDA»).
+      if (!keys.includes(authority)) continue
+
       const signers = signersOf(transaction)
-      // The authority has to have *signed*, not merely appeared: a transaction that
-      // only mentions it is not an exercise of its privilege.
-      if (!signers.includes(authority)) continue
+      if (signers.includes(authority)) signedCount += 1
 
       transactions.push({
         signature,
         slot: transaction.slot,
         blockTime: transaction.blockTime,
         signers,
-        instructions: transaction.transaction.message.instructions.map((instruction) => ({
-          programId: keys[instruction.programIdIndex],
-          /** Base58, verbatim as the RPC returned it. */
-          data: instruction.data,
+        accountKeys: keys,
+        instructions: transaction.transaction.message.instructions.map((instruction) =>
+          instructionOf(instruction, keys),
+        ),
+        /** Kept grouped the way the RPC reports them, by the top-level instruction that
+         * caused them. `flattenInstructions` is the one place that puts them in order. */
+        innerInstructions: (transaction.meta?.innerInstructions ?? []).map((group) => ({
+          index: group.index,
+          instructions: group.instructions.map((instruction) => instructionOf(instruction, keys)),
         })),
       })
     }
 
     if (transactions.length === 0) {
-      // Very common, and worth recording rather than dropping: most programs of any
-      // size are governed by a multisig, whose authority is a PDA that never signs —
-      // the members sign, and the privileged address only appears in the accounts.
-      skipped.push({ programId, authority, reason: 'authority never appears as a signer' })
-      console.log(`skipped ${authority}: never signs`)
+      // Recorded rather than dropped, and the wording matters: this is «nothing in the
+      // window this endpoint keeps», not «this address never acts». A public endpoint
+      // holds days, not history — the first run of this script called it «never appears
+      // as a signer» and overstated what had been measured.
+      skipped.push({
+        programId,
+        authority,
+        reason: 'no transaction mentioning the authority within the endpoint’s history window',
+      })
+      console.log(`skipped ${authority}: nothing in the window`)
       continue
     }
 
@@ -260,9 +297,16 @@ const main = async () => {
         fetchedAt,
         /** How this address was found to be privileged, so the claim is checkable. */
         derivedFrom: `upgrade authority of program ${programId}, read from its ProgramData account`,
+        /** The oldest slot this endpoint could serve when the snapshot was taken —
+         * the bound on every «never» a reader might infer from these files. */
+        firstAvailableBlock,
       },
       authority,
       programId,
+      /** How the authority took part, counted at collection time so the split between
+       * the two branches of the rule is visible without re-deriving it. */
+      signed: signedCount,
+      involvedOnly: transactions.length - signedCount,
       transactions,
     }
     writeFileSync(
@@ -276,7 +320,7 @@ const main = async () => {
 
   writeFileSync(
     join(OUT_DIR, 'skipped.json'),
-    `${JSON.stringify({ fetchedAt, skipped }, null, 2)}\n`,
+    `${JSON.stringify({ fetchedAt, firstAvailableBlock, finalized, skipped }, null, 2)}\n`,
     'utf8',
   )
   console.log(`\ncollected ${collected} transactions in ${calls} RPC calls`)

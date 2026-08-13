@@ -1,0 +1,157 @@
+{
+  "provenance": {
+    "cluster": "mainnet-beta",
+    "rpc": "https://solana-rpc.publicnode.com",
+    "fetchedAt": "2026-08-13T09:18:14.980Z",
+    "derivedFrom": "upgrade authority of program JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4, read from its ProgramData account",
+    "firstAvailableBlock": 438557016
+  },
+  "authority": "CvQZZ23qYDWF2RUpxYJ8y9K4skmuvYEEjH7fK58jtipQ",
+  "programId": "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4",
+  "signed": 0,
+  "involvedOnly": 2,
+  "transactions": [
+    {
+      "signature": "47ii1w6ZassNkogZQSBrnfk74yvHy4444ritnV3fD3dBPpzkA8saPG5G8Ncr8Un16BJGpaLxkbRWja2mMnAX3KG7",
+      "slot": 438982144,
+      "blockTime": 1786609076,
+      "signers": [
+        "3ZR4gMzciDHZudi5e1evdESKZuCQEE9QNHLkMoRsfDxQ"
+      ],
+      "accountKeys": [
+        "3ZR4gMzciDHZudi5e1evdESKZuCQEE9QNHLkMoRsfDxQ",
+        "21eEzJoTuN69nTgYtbsv7V3NpnKvoGGFKky9N3Li6EGB",
+        "4Ec7ZxZS6Sbdg5UGSLHbAnM7GQHp2eFd4KYWRexAipQT",
+        "5o32G9a1tQg4BW7ygrHHF2PRMd945wmoX2Cop5xYUpgi",
+        "6npiGjRkEr81pgrwRpnxZETRt1cNGyPmqbxJLtifTEfv",
+        "7ZyDFzet6sKgZLN4D89JLfo7chu2n7nYdkFt5RCFk8Sf",
+        "BssAxGv8zAoYkTb459m9fUitH1cHZdZXtPCsLdE71R1r",
+        "C7kAzzFDRAcmF4HL2QPyiPSkbeDJmx7bQtNW6BYEcAqW",
+        "DttWaMuVvTiduZRnguLF7jNxTgiMBZ1hyAumKUiL2KRL",
+        "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4",
+        "11111111111111111111111111111111",
+        "2uWJza2Zp2zw6WxvDEyDFNHQpLJQtVD8sVBSx2idZr3m",
+        "4YjJ9mEgUhHr1ymoWwnvHSycwqaeEQ7js8PNn5grKrYc",
+        "8nQVTB5FPdP2VUnHH7TzkfnHY8zWABw7vvh47NckkDht",
+        "BPFLoaderUpgradeab1e11111111111111111111111",
+        "ComputeBudget111111111111111111111111111111",
+        "CvQZZ23qYDWF2RUpxYJ8y9K4skmuvYEEjH7fK58jtipQ",
+        "SMPLecH534NA9acpos4G6x7uf3LWbCAwZQE9e8ZekMu",
+        "SMPLKTQhrgo22hFCVq2VGX1KAktTWjeizkhrdB1eauK",
+        "SysvarC1ock11111111111111111111111111111111",
+        "SysvarRent111111111111111111111111111111111"
+      ],
+      "instructions": [
+        {
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "data": "3eWpQGeEfTn7",
+          "accounts": [],
+          "stackHeight": 1
+        },
+        {
+          "programId": "ComputeBudget111111111111111111111111111111",
+          "data": "JAXgoy",
+          "accounts": [],
+          "stackHeight": 1
+        },
+        {
+          "programId": "SMPLecH534NA9acpos4G6x7uf3LWbCAwZQE9e8ZekMu",
+          "data": "oRTh8cc1MvBdL387UF1Gbi2am3wuJLUfyY8RZaazK",
+          "accounts": [
+            "7ZyDFzet6sKgZLN4D89JLfo7chu2n7nYdkFt5RCFk8Sf",
+            "C7kAzzFDRAcmF4HL2QPyiPSkbeDJmx7bQtNW6BYEcAqW",
+            "3ZR4gMzciDHZudi5e1evdESKZuCQEE9QNHLkMoRsfDxQ",
+            "2uWJza2Zp2zw6WxvDEyDFNHQpLJQtVD8sVBSx2idZr3m",
+            "BPFLoaderUpgradeab1e11111111111111111111111",
+            "4Ec7ZxZS6Sbdg5UGSLHbAnM7GQHp2eFd4KYWRexAipQT",
+            "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4",
+            "21eEzJoTuN69nTgYtbsv7V3NpnKvoGGFKky9N3Li6EGB",
+            "BssAxGv8zAoYkTb459m9fUitH1cHZdZXtPCsLdE71R1r",
+            "SysvarRent111111111111111111111111111111111",
+            "SysvarC1ock11111111111111111111111111111111",
+            "CvQZZ23qYDWF2RUpxYJ8y9K4skmuvYEEjH7fK58jtipQ",
+            "8nQVTB5FPdP2VUnHH7TzkfnHY8zWABw7vvh47NckkDht",
+            "SMPLKTQhrgo22hFCVq2VGX1KAktTWjeizkhrdB1eauK",
+            "7ZyDFzet6sKgZLN4D89JLfo7chu2n7nYdkFt5RCFk8Sf",
+            "4YjJ9mEgUhHr1ymoWwnvHSycwqaeEQ7js8PNn5grKrYc",
+            "5o32G9a1tQg4BW7ygrHHF2PRMd945wmoX2Cop5xYUpgi",
+            "6npiGjRkEr81pgrwRpnxZETRt1cNGyPmqbxJLtifTEfv",
+            "C7kAzzFDRAcmF4HL2QPyiPSkbeDJmx7bQtNW6BYEcAqW"
+          ],
+          "stackHeight": 1
+        },
+        {
+          "programId": "11111111111111111111111111111111",
+          "data": "3Bxs4ThwQbE4vyj5",
+          "accounts": [
+            "3ZR4gMzciDHZudi5e1evdESKZuCQEE9QNHLkMoRsfDxQ",
+            "DttWaMuVvTiduZRnguLF7jNxTgiMBZ1hyAumKUiL2KRL"
+          ],
+          "stackHeight": 1
+        }
+      ],
+      "innerInstructions": [
+        {
+          "index": 2,
+          "instructions": [
+            {
+              "programId": "BPFLoaderUpgradeab1e11111111111111111111111",
+              "data": "5Sxr3",
+              "accounts": [
+                "4Ec7ZxZS6Sbdg5UGSLHbAnM7GQHp2eFd4KYWRexAipQT",
+                "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4",
+                "21eEzJoTuN69nTgYtbsv7V3NpnKvoGGFKky9N3Li6EGB",
+                "BssAxGv8zAoYkTb459m9fUitH1cHZdZXtPCsLdE71R1r",
+                "SysvarRent111111111111111111111111111111111",
+                "SysvarC1ock11111111111111111111111111111111",
+                "CvQZZ23qYDWF2RUpxYJ8y9K4skmuvYEEjH7fK58jtipQ"
+              ],
+              "stackHeight": 2
+            },
+            {
+              "programId": "SMPLKTQhrgo22hFCVq2VGX1KAktTWjeizkhrdB1eauK",
+              "data": "QfRmcz1jZ4Z",
+              "accounts": [
+                "7ZyDFzet6sKgZLN4D89JLfo7chu2n7nYdkFt5RCFk8Sf",
+                "4YjJ9mEgUhHr1ymoWwnvHSycwqaeEQ7js8PNn5grKrYc",
+                "5o32G9a1tQg4BW7ygrHHF2PRMd945wmoX2Cop5xYUpgi",
+                "6npiGjRkEr81pgrwRpnxZETRt1cNGyPmqbxJLtifTEfv",
+                "C7kAzzFDRAcmF4HL2QPyiPSkbeDJmx7bQtNW6BYEcAqW",
+                "2uWJza2Zp2zw6WxvDEyDFNHQpLJQtVD8sVBSx2idZr3m",
+                "CvQZZ23qYDWF2RUpxYJ8y9K4skmuvYEEjH7fK58jtipQ"
+              ],
+              "stackHeight": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "signature": "2iwUHwpzrLQRtjCacsxXKBAVvoKenVVPyu8eTXsrJYLM66pUBjZ3YNiNuM47kHtMHZJ3uUdUGJDfrFXBSGD7cze9",
+      "slot": 438961153,
+      "blockTime": 1786600309,
+      "signers": [
+        "BssAxGv8zAoYkTb459m9fUitH1cHZdZXtPCsLdE71R1r"
+      ],
+      "accountKeys": [
+        "BssAxGv8zAoYkTb459m9fUitH1cHZdZXtPCsLdE71R1r",
+        "21eEzJoTuN69nTgYtbsv7V3NpnKvoGGFKky9N3Li6EGB",
+        "BPFLoaderUpgradeab1e11111111111111111111111",
+        "CvQZZ23qYDWF2RUpxYJ8y9K4skmuvYEEjH7fK58jtipQ"
+      ],
+      "instructions": [
+        {
+          "programId": "BPFLoaderUpgradeab1e11111111111111111111111",
+          "data": "6vx8P",
+          "accounts": [
+            "21eEzJoTuN69nTgYtbsv7V3NpnKvoGGFKky9N3Li6EGB",
+            "BssAxGv8zAoYkTb459m9fUitH1cHZdZXtPCsLdE71R1r",
+            "CvQZZ23qYDWF2RUpxYJ8y9K4skmuvYEEjH7fK58jtipQ"
+          ],
+          "stackHeight": 1
+        }
+      ],
+      "innerInstructions": []
+    }
+  ]
+}

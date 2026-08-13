@@ -5,11 +5,12 @@ import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import {
   type DeclarationEntry,
-  INERT_PROGRAM_IDS,
   type ObservedTransaction,
   evaluateTransaction,
   methodOf,
+  scopeOf,
 } from './declaration'
+import { base58Decode, flattenInstructions } from './observed'
 
 /**
  * SC-002 — no false incident on real privileged transactions.
@@ -36,31 +37,12 @@ const TRAIN_SHARE = 0.25
 /** SC-002 asks for at least this many real transactions. */
 const REQUIRED = 200
 
-const ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
-
-/** The fixtures keep instruction data exactly as the RPC returned it, which is base58.
- * Decoding here rather than at collection time keeps the files verbatim evidence. */
-const base58Decode = (text: string): number[] => {
-  let zeros = 0
-  while (zeros < text.length && text[zeros] === '1') zeros += 1
-
-  const bytes: number[] = []
-  for (let index = zeros; index < text.length; index += 1) {
-    let carry = ALPHABET.indexOf(text[index] as string)
-    if (carry === -1) throw new Error(`not base58: ${text}`)
-    for (let byte = 0; byte < bytes.length; byte += 1) {
-      carry += (bytes[byte] as number) * 58
-      bytes[byte] = carry & 0xff
-      carry >>= 8
-    }
-    while (carry > 0) {
-      bytes.push(carry & 0xff)
-      carry >>= 8
-    }
-  }
-
-  return [...new Array<number>(zeros).fill(0), ...bytes.reverse()]
-}
+const rpcInstructionSchema = z.object({
+  programId: z.string(),
+  data: z.string(),
+  accounts: z.array(z.string()),
+  stackHeight: z.number().int().nullable().optional(),
+})
 
 const fixtureSchema = z.object({
   provenance: z.object({
@@ -68,9 +50,12 @@ const fixtureSchema = z.object({
     rpc: z.string(),
     fetchedAt: z.string(),
     derivedFrom: z.string(),
+    firstAvailableBlock: z.number().int(),
   }),
   authority: z.string(),
   programId: z.string(),
+  signed: z.number().int(),
+  involvedOnly: z.number().int(),
   transactions: z
     .array(
       z.object({
@@ -78,7 +63,11 @@ const fixtureSchema = z.object({
         slot: z.number(),
         blockTime: z.number().int(),
         signers: z.array(z.string()),
-        instructions: z.array(z.object({ programId: z.string(), data: z.string() })),
+        accountKeys: z.array(z.string()),
+        instructions: z.array(rpcInstructionSchema),
+        innerInstructions: z.array(
+          z.object({ index: z.number().int(), instructions: z.array(rpcInstructionSchema) }),
+        ),
       }),
     )
     .min(1),
@@ -86,8 +75,20 @@ const fixtureSchema = z.object({
 
 interface Protocol {
   authority: string
+  signed: number
+  involvedOnly: number
   transactions: ObservedTransaction[]
 }
+
+/** Base58 lives in the files; the rule reads bytes. Decoded on the way in, along with
+ * the flattening, so the fixtures stay verbatim evidence and the interpretation of them
+ * sits in one visible place. */
+const decode = (instruction: z.infer<typeof rpcInstructionSchema>) => ({
+  programId: instruction.programId,
+  data: base58Decode(instruction.data),
+  accounts: instruction.accounts,
+  ...(instruction.stackHeight == null ? {} : { stackHeight: instruction.stackHeight }),
+})
 
 const load = (): Protocol[] =>
   readdirSync(FIXTURES)
@@ -96,15 +97,21 @@ const load = (): Protocol[] =>
       const fixture = fixtureSchema.parse(JSON.parse(readFileSync(join(FIXTURES, name), 'utf8')))
       return {
         authority: fixture.authority,
+        signed: fixture.signed,
+        involvedOnly: fixture.involvedOnly,
         transactions: fixture.transactions
           .map((transaction) => ({
             signature: transaction.signature,
             blockTime: transaction.blockTime,
             signers: transaction.signers,
-            instructions: transaction.instructions.map((instruction) => ({
-              programId: instruction.programId,
-              data: base58Decode(instruction.data),
-            })),
+            accountKeys: transaction.accountKeys,
+            instructions: flattenInstructions(
+              transaction.instructions.map(decode),
+              transaction.innerInstructions.map((group) => ({
+                index: group.index,
+                instructions: group.instructions.map(decode),
+              })),
+            ),
           }))
           .sort((left, right) => left.blockTime - right.blockTime),
       }
@@ -112,15 +119,22 @@ const load = (): Protocol[] =>
 
 const protocols = load()
 const total = protocols.reduce((sum, protocol) => sum + protocol.transactions.length, 0)
+const involvedOnly = protocols.reduce((sum, protocol) => sum + protocol.involvedOnly, 0)
 
-/** What a declaration is keyed on — the pair an entry stores. */
-const operationsOf = (transaction: ObservedTransaction): string[] =>
-  transaction.instructions
-    .filter((instruction) => !INERT_PROGRAM_IDS.includes(instruction.programId))
-    .map(
-      (instruction) =>
-        `${instruction.programId}:${methodOf(instruction.programId, instruction.data).join(',')}`,
-    )
+/**
+ * What a declaration is keyed on — the pair an entry stores — for exactly the
+ * instructions the rule will hold this protocol to.
+ *
+ * Taking the scope from `scopeOf` rather than restating it is what keeps the two
+ * branches honest: a protocol declares what it is answerable for, and if the rule ever
+ * widened its scope without the declaration widening with it, this test would start
+ * finding false openings instead of silently agreeing with itself.
+ */
+const operationsOf = (transaction: ObservedTransaction, authority: string): string[] =>
+  (scopeOf({ transaction, privileged: [authority] })?.instructions ?? []).map(
+    ({ instruction }) =>
+      `${instruction.programId}:${methodOf(instruction.programId, instruction.data).join(',')}`,
+  )
 
 /** The entries a protocol would have filed for the operations it was already running. */
 const declare = (operations: Set<string>, effectiveAt: number, until: number): DeclarationEntry[] =>
@@ -145,6 +159,51 @@ describe('SC-002 — real privileged transactions open no incident', () => {
     expect(total).toBeGreaterThanOrEqual(REQUIRED)
   })
 
+  it('sees a privileged address that acts without ever signing', () => {
+    // The regression that the involvement branch exists for, on real chain history
+    // rather than on a constructed transaction. Without it every one of these is
+    // `not-privileged` — a protocol governed by a multisig is invisible to the cover it
+    // is paying for, and its program upgrades most of all.
+    //
+    // The share is small on this snapshot and that is a fact about the endpoint, not
+    // about the world: a public RPC keeps days of history, and a multisig upgrade is
+    // rare enough that a two-day window mostly misses it. What the snapshot does carry
+    // is `skipped.json` — the authorities with no history in the window at all, five of
+    // which are off-curve and so can never sign anything, ever.
+    const involved = protocols.flatMap((protocol) =>
+      protocol.transactions
+        .filter(
+          (transaction) => scopeOf({ transaction, privileged: [protocol.authority] })?.basis === 'involvement',
+        )
+        .map((transaction) => ({ authority: protocol.authority, signature: transaction.signature })),
+    )
+
+    expect(involvedOnly).toBeGreaterThan(0)
+    expect(involved.length).toBeGreaterThan(0)
+    console.log(
+      `SC-002: ${involvedOnly} of ${total} transactions involve a privileged address that did not sign`,
+    )
+  })
+
+  it('opens an incident on an undeclared operation, whoever signed the transaction', () => {
+    // The other side of the same coin, and the reason the involvement branch is not
+    // simply «be more permissive»: with nothing declared, every one of these has to be
+    // grounds for an incident. A branch that recognised the transaction but never found
+    // anything uncovered in it would satisfy the test above and protect nobody.
+    const verdicts = protocols.flatMap((protocol) =>
+      protocol.transactions
+        .filter(
+          (transaction) => scopeOf({ transaction, privileged: [protocol.authority] })?.basis === 'involvement',
+        )
+        .map((transaction) =>
+          evaluateTransaction({ transaction, entries: [], privileged: [protocol.authority] }),
+        ),
+    )
+
+    expect(verdicts.length).toBeGreaterThan(0)
+    expect(verdicts.every((verdict) => verdict.status === 'undeclared')).toBe(true)
+  })
+
   it('opens no incident on an operation the protocol had already been performing', () => {
     let checked = 0
     let novel = 0
@@ -156,13 +215,15 @@ describe('SC-002 — real privileged transactions open no incident', () => {
       const later = protocol.transactions.slice(split)
       if (later.length === 0) continue
 
-      const declared = new Set(history.flatMap(operationsOf))
+      const declared = new Set(
+        history.flatMap((transaction) => operationsOf(transaction, protocol.authority)),
+      )
       const effectiveAt = history[history.length - 1]?.blockTime ?? 0
       const until = (later[later.length - 1]?.blockTime ?? 0) + HOUR
       const entries = declare(declared, effectiveAt, until)
 
       for (const transaction of later) {
-        const operations = operationsOf(transaction)
+        const operations = operationsOf(transaction, protocol.authority)
         // An operation this protocol had not performed before is outside what this
         // test can say anything about: it would have been declared as well.
         if (!operations.every((operation) => declared.has(operation))) {

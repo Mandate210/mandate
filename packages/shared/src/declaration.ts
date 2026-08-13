@@ -21,6 +21,24 @@ import { z } from 'zod'
  * FR-035 (a fund-moving operation is only ever declared for a bounded window) and
  * FR-031 (the window takes effect only after a delay), which together keep a stolen
  * key from declaring its way out.
+ *
+ * **A privileged address does not have to sign.** Measured on the T025 fixtures and on
+ * a re-derivation from mainnet: 5 of the 17 upgrade authorities found there are
+ * off-curve addresses — program-derived, so no keypair for them exists and they can
+ * never appear among a transaction's signers at all. Among them are the authorities of
+ * Jupiter and pump.fun. They exercise their privilege through a multisig, which signs
+ * with its members' keys and passes the privileged address down as a CPI signer.
+ *
+ * Judging by signature alone made every such protocol permanently invisible — a
+ * `not-privileged` verdict on its own program upgrade, which is the single most
+ * dangerous operation this cover exists to notice. So involvement, not signature, is
+ * what makes a transaction the protocol's business (`docs/PLAN.md` → «Мультисиг і
+ * привілейовані PDA»).
+ *
+ * **The CPI signature itself is not observable, and no rule here pretends otherwise.**
+ * A transaction's metadata records inner instructions without any signer flag —
+ * `invoke_signed` leaves no trace a third party could read. What is observable is that
+ * an instruction *takes* the privileged address, and that is what is matched on.
  */
 
 /** Anchor writes eight bytes of method identity at the head of instruction data. */
@@ -95,15 +113,29 @@ export const observedInstructionSchema = z.object({
   programId: addressSchema,
   /** Raw instruction data. Only its leading bytes are read. */
   data: z.array(byteSchema),
+  /** The addresses the instruction takes, in order. **Which of them signed is not in
+   * here and cannot be**: for an instruction reached through CPI the runtime records no
+   * signer flags at all. */
+  accounts: z.array(addressSchema),
+  /** 1 for an instruction the transaction lists, 2 and up for one reached through CPI.
+   * Carried so the trail can say where an uncovered instruction sat, and so that
+   * flattening stays reversible. */
+  stackHeight: z.number().int().min(1),
 })
 
 export const observedTransactionSchema = z.object({
   signature: z.string(),
   /** Cluster time of the block that carried it, in seconds — not the observer's clock. */
   blockTime: z.number().int(),
-  /** Addresses that signed. A transaction is the protocol's business only if one of
-   * its privileged addresses is among them. */
+  /** Addresses that signed the transaction itself. A privileged address among them
+   * puts the *whole* transaction under its authority — see `evaluateTransaction`. */
   signers: z.array(addressSchema),
+  /** Every address the transaction touches, including the ones an address table
+   * supplied. Absence from this list is what makes a transaction none of our business. */
+  accountKeys: z.array(addressSchema),
+  /** Top-level and inner instructions in execution order, flattened — each one's depth
+   * is its `stackHeight`. Flat because an uncovered instruction has to be identifiable
+   * by a single index in the trail the incident carries. */
   instructions: z.array(observedInstructionSchema),
 })
 
@@ -112,7 +144,7 @@ export type ObservedInstruction = z.infer<typeof observedInstructionSchema>
 export type ObservedTransaction = z.infer<typeof observedTransactionSchema>
 
 export interface UncoveredInstruction {
-  /** Position in `transaction.instructions`, so the trail can point at it. */
+  /** Position in the flattened `transaction.instructions`, so the trail can point at it. */
   index: number
   programId: string
   discriminator: number[]
@@ -124,12 +156,25 @@ export interface CoveredInstruction {
   entryIndex: number
 }
 
+/**
+ * Why the transaction was the protocol's business, and therefore how much of it had to
+ * be declared. Recorded in the verdict because the two branches judge different scopes,
+ * and an incident's trail has to say which one it was for a third party to reproduce it
+ * (SC-007).
+ */
+export type Basis =
+  /** A privileged address signed the transaction: all of it ran under that authority. */
+  | 'signature'
+  /** It did not sign, but instructions inside take it — a multisig executing on its
+   * behalf. Only those instructions ran under the protocol's authority. */
+  | 'involvement'
+
 export type Verdict =
-  /** No privileged address signed it, so it is not this protocol's business at all. */
+  /** The privileged addresses are nowhere in it, so it is not this protocol's business. */
   | { status: 'not-privileged' }
-  | { status: 'declared'; covered: CoveredInstruction[] }
+  | { status: 'declared'; basis: Basis; covered: CoveredInstruction[] }
   /** Grounds to open an incident (FR-006). */
-  | { status: 'undeclared'; uncovered: UncoveredInstruction[] }
+  | { status: 'undeclared'; basis: Basis; uncovered: UncoveredInstruction[] }
 
 /**
  * The eight bytes an entry is matched on: the program's method identity, zero-filled
@@ -193,11 +238,69 @@ export const entryCovers = (
 /**
  * The verdict on one observed transaction.
  *
- * **Every instruction has to be covered.** A transaction signed by a privileged key
- * executes everything in it under that key's authority, so one uncovered instruction
- * makes the transaction undeclared even if the rest were declared — otherwise a
- * declared pause could carry an undeclared transfer along with it.
+ * **The authority exercised sets the scope of what had to be declared**, and there are
+ * exactly two scopes.
+ *
+ * *A privileged address signed it.* Then all of it ran under that address's authority,
+ * and **every instruction has to be covered** — one uncovered instruction makes the
+ * transaction undeclared even if the rest were declared, otherwise a declared pause
+ * could carry an undeclared transfer along with it. This is the branch the whole SC-002
+ * body of evidence sits in, and it is unchanged.
+ *
+ * *It did not sign, but instructions inside take it.* Then the transaction is somebody
+ * else's — a multisig's, executed by its members — and only the instructions that take
+ * the privileged address ran under the protocol's authority. Demanding the rest would
+ * open an incident on every multisig execution over the executor's own bookkeeping,
+ * which is a false opening about a protocol that did nothing wrong.
+ *
+ * The cost of the second branch is ceremony, and it is the deliberate direction to err
+ * in: a protocol governed by a multisig has to declare the multisig's own instructions
+ * too, because those genuinely take its privileged address, and an undeclared one is a
+ * false opening rather than a missed compromise.
  */
+export interface Scope {
+  basis: Basis
+  /** The instructions that ran under the protocol's authority, with their positions in
+   * the flattened `transaction.instructions`. */
+  instructions: { instruction: ObservedInstruction; index: number }[]
+}
+
+/**
+ * What the protocol has to have declared for this transaction, and why — or `null` when
+ * the transaction is none of its business.
+ *
+ * Separate from the verdict because it is also the answer to «what would a protocol
+ * running this operation have declared», which is what the SC-002 evidence is built on.
+ * One definition, so the question the test asks is the question the rule answers.
+ */
+export const scopeOf = ({
+  transaction,
+  privileged,
+}: {
+  transaction: ObservedTransaction
+  privileged: readonly string[]
+}): Scope | null => {
+  if (!transaction.accountKeys.some((key) => privileged.includes(key))) return null
+
+  const active = transaction.instructions
+    .map((instruction, index) => ({ instruction, index }))
+    .filter(({ instruction }) => !INERT_PROGRAM_IDS.includes(instruction.programId))
+
+  if (transaction.signers.some((signer) => privileged.includes(signer))) {
+    return { basis: 'signature', instructions: active }
+  }
+
+  const touching = active.filter(({ instruction }) =>
+    instruction.accounts.some((account) => privileged.includes(account)),
+  )
+  // Present in the account list but taken by no instruction: nothing was done with it,
+  // so there is nothing to judge. Reached by a transaction that merely names the address
+  // — a fee payer's lookup table, an account passed and ignored.
+  if (touching.length === 0) return null
+
+  return { basis: 'involvement', instructions: touching }
+}
+
 export const evaluateTransaction = ({
   transaction,
   entries,
@@ -206,18 +309,17 @@ export const evaluateTransaction = ({
   transaction: ObservedTransaction
   /** The protocol's declaration entries, all of them, as read from the chain. */
   entries: readonly DeclarationEntry[]
-  /** `Protocol.privileged` — the addresses whose signature makes a transaction ours. */
+  /** `Protocol.privileged` — the addresses whose involvement makes a transaction ours. */
   privileged: readonly string[]
 }): Verdict => {
-  const isPrivileged = transaction.signers.some((signer) => privileged.includes(signer))
-  if (!isPrivileged) return { status: 'not-privileged' }
+  const scope = scopeOf({ transaction, privileged })
+  if (scope === null) return { status: 'not-privileged' }
 
+  const { basis } = scope
   const covered: CoveredInstruction[] = []
   const uncovered: UncoveredInstruction[] = []
 
-  for (const [index, instruction] of transaction.instructions.entries()) {
-    if (INERT_PROGRAM_IDS.includes(instruction.programId)) continue
-
+  for (const { instruction, index } of scope.instructions) {
     const entryIndex = entries.findIndex((entry) =>
       entryCovers(entry, instruction, transaction.blockTime),
     )
@@ -232,5 +334,7 @@ export const evaluateTransaction = ({
     }
   }
 
-  return uncovered.length > 0 ? { status: 'undeclared', uncovered } : { status: 'declared', covered }
+  return uncovered.length > 0
+    ? { status: 'undeclared', basis, uncovered }
+    : { status: 'declared', basis, covered }
 }

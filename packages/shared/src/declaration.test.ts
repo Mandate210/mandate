@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   type DeclarationEntry,
   INERT_PROGRAM_IDS,
+  type ObservedInstruction,
   type ObservedTransaction,
   entryCovers,
   evaluateTransaction,
@@ -12,6 +13,8 @@ const PROTOCOL_PROGRAM = 'Drai11111111111111111111111111111111111111'
 const OTHER_PROGRAM = 'Othe22222222222222222222222222222222222222'
 const ADMIN = 'Admi33333333333333333333333333333333333333'
 const STRANGER = 'Stra44444444444444444444444444444444444444'
+/** Stands in for a multisig's own program, which signs with its members' keys. */
+const MULTISIG = 'Mult55555555555555555555555555555555555555'
 const PAUSE = [1, 2, 3, 4, 5, 6, 7, 8]
 const WITHDRAW = [9, 9, 9, 9, 9, 9, 9, 9]
 
@@ -34,11 +37,21 @@ const entry = (overrides: Partial<DeclarationEntry> = {}): DeclarationEntry => (
   ...overrides,
 })
 
+/** A top-level instruction taking the admin — the ordinary case, where the same address
+ * both signs and is passed as the authority. */
+const ix = (
+  programId: string,
+  data: number[],
+  accounts: string[] = [ADMIN],
+  stackHeight = 1,
+): ObservedInstruction => ({ programId, data, accounts, stackHeight })
+
 const transaction = (overrides: Partial<ObservedTransaction> = {}): ObservedTransaction => ({
   signature: 'sig',
   blockTime: DURING,
   signers: [ADMIN],
-  instructions: [{ programId: PROTOCOL_PROGRAM, data: PAUSE }],
+  accountKeys: [ADMIN, PROTOCOL_PROGRAM],
+  instructions: [ix(PROTOCOL_PROGRAM, PAUSE)],
   ...overrides,
 })
 
@@ -79,7 +92,7 @@ describe('methodOf', () => {
 })
 
 describe('entryCovers', () => {
-  const instruction = { programId: PROTOCOL_PROGRAM, data: PAUSE }
+  const instruction = ix(PROTOCOL_PROGRAM, PAUSE)
 
   it('covers a matching instruction inside the window', () => {
     expect(entryCovers(entry(), instruction, DURING)).toBe(true)
@@ -131,25 +144,34 @@ describe('entryCovers', () => {
   })
 })
 
-describe('evaluateTransaction', () => {
+describe('evaluateTransaction — a privileged address signed', () => {
   it('declares a transaction whose instruction an entry covers', () => {
-    expect(evaluate()).toEqual({ status: 'declared', covered: [{ index: 0, entryIndex: 0 }] })
+    expect(evaluate()).toEqual({
+      status: 'declared',
+      basis: 'signature',
+      covered: [{ index: 0, entryIndex: 0 }],
+    })
   })
 
-  it('leaves alone a transaction no privileged address signed', () => {
+  it('leaves alone a transaction the privileged addresses are nowhere in', () => {
     // Not a verdict about the transaction — a statement that it is not this protocol's
     // business. The watcher only ever sees privileged addresses, but the rule has to
     // hold on its own.
-    expect(evaluate({ signers: [STRANGER] })).toEqual({ status: 'not-privileged' })
+    expect(
+      evaluate({
+        signers: [STRANGER],
+        accountKeys: [STRANGER, PROTOCOL_PROGRAM],
+        instructions: [ix(PROTOCOL_PROGRAM, PAUSE, [STRANGER])],
+      }),
+    ).toEqual({ status: 'not-privileged' })
   })
 
   it('reports an undeclared instruction with enough to point at it', () => {
-    const verdict = evaluate({
-      instructions: [{ programId: PROTOCOL_PROGRAM, data: WITHDRAW }],
-    })
+    const verdict = evaluate({ instructions: [ix(PROTOCOL_PROGRAM, WITHDRAW)] })
 
     expect(verdict).toEqual({
       status: 'undeclared',
+      basis: 'signature',
       uncovered: [{ index: 0, programId: PROTOCOL_PROGRAM, discriminator: WITHDRAW }],
     })
   })
@@ -165,6 +187,7 @@ describe('evaluateTransaction', () => {
 
     expect(evaluate({}, [expired, current])).toEqual({
       status: 'declared',
+      basis: 'signature',
       covered: [{ index: 0, entryIndex: 1 }],
     })
   })
@@ -173,16 +196,26 @@ describe('evaluateTransaction', () => {
     // The privileged key authorised everything in it, so a declared pause carrying an
     // undeclared transfer is an undeclared transaction.
     const verdict = evaluate({
-      instructions: [
-        { programId: PROTOCOL_PROGRAM, data: PAUSE },
-        { programId: OTHER_PROGRAM, data: WITHDRAW },
-      ],
+      instructions: [ix(PROTOCOL_PROGRAM, PAUSE), ix(OTHER_PROGRAM, WITHDRAW)],
     })
 
     expect(verdict).toEqual({
       status: 'undeclared',
+      basis: 'signature',
       uncovered: [{ index: 1, programId: OTHER_PROGRAM, discriminator: WITHDRAW }],
     })
+  })
+
+  it('judges an instruction that does not name it, because its signature authorised it', () => {
+    // The scope follows the authority: everything in a transaction a privileged key
+    // signed ran under that key, whether or not the instruction lists it. A withdrawal
+    // moving funds out of a vault whose authority is some other PDA is exactly the shape
+    // an attacker would reach for if the rule looked only at named accounts.
+    const verdict = evaluate({
+      instructions: [ix(PROTOCOL_PROGRAM, PAUSE), ix(OTHER_PROGRAM, WITHDRAW, [STRANGER])],
+    })
+
+    expect(verdict.status).toBe('undeclared')
   })
 
   it('ignores instructions that carry no authority', () => {
@@ -193,13 +226,14 @@ describe('evaluateTransaction', () => {
     // that would make SC-002 unreachable — every legitimate transaction would open an
     // incident.
     const verdict = evaluate({
-      instructions: [
-        { programId: computeBudget, data: [2, 64, 66, 15, 0] },
-        { programId: PROTOCOL_PROGRAM, data: PAUSE },
-      ],
+      instructions: [ix(computeBudget, [2, 64, 66, 15, 0], []), ix(PROTOCOL_PROGRAM, PAUSE)],
     })
 
-    expect(verdict).toEqual({ status: 'declared', covered: [{ index: 1, entryIndex: 0 }] })
+    expect(verdict).toEqual({
+      status: 'declared',
+      basis: 'signature',
+      covered: [{ index: 1, entryIndex: 0 }],
+    })
   })
 
   it('judges by the transaction clock, not by the observer', () => {
@@ -210,5 +244,104 @@ describe('evaluateTransaction', () => {
 
     expect(early.status).toBe('undeclared')
     expect(inside.status).toBe('declared')
+  })
+})
+
+describe('evaluateTransaction — a multisig acted on the protocol’s behalf', () => {
+  /**
+   * The shape 5 of the 17 real upgrade authorities behind T025 are in: the privileged
+   * address is off-curve, so no signature of its can ever exist. A member signs, the
+   * multisig program runs, and the privileged address comes down as a CPI signer of an
+   * inner instruction — where no signer flag is recorded at all.
+   */
+  const executed = (inner: ObservedInstruction[], overrides: Partial<ObservedTransaction> = {}) =>
+    transaction({
+      signers: [STRANGER],
+      accountKeys: [STRANGER, ADMIN, MULTISIG, PROTOCOL_PROGRAM],
+      instructions: [ix(MULTISIG, [7, 7, 7, 7, 7, 7, 7, 7], [STRANGER, ADMIN]), ...inner],
+      ...overrides,
+    })
+
+  const multisigEntry = entry({
+    programId: MULTISIG,
+    ixDiscriminator: [7, 7, 7, 7, 7, 7, 7, 7],
+  })
+
+  it('does not lose the transaction merely because the privileged address could not sign', () => {
+    // The regression this whole branch exists for. Before it, this returned
+    // `not-privileged` — a protocol upgrade through a multisig was invisible.
+    const verdict = evaluateTransaction({
+      transaction: executed([ix(PROTOCOL_PROGRAM, WITHDRAW, [ADMIN], 2)]),
+      entries: [entry(), multisigEntry],
+      privileged: [ADMIN],
+    })
+
+    expect(verdict).toEqual({
+      status: 'undeclared',
+      basis: 'involvement',
+      uncovered: [{ index: 1, programId: PROTOCOL_PROGRAM, discriminator: WITHDRAW }],
+    })
+  })
+
+  it('declares an inner instruction the protocol had declared', () => {
+    const verdict = evaluateTransaction({
+      transaction: executed([ix(PROTOCOL_PROGRAM, PAUSE, [ADMIN], 2)]),
+      entries: [entry(), multisigEntry],
+      privileged: [ADMIN],
+    })
+
+    expect(verdict).toEqual({
+      status: 'declared',
+      basis: 'involvement',
+      covered: [
+        { index: 0, entryIndex: 1 },
+        { index: 1, entryIndex: 0 },
+      ],
+    })
+  })
+
+  it('judges only the instructions that take the privileged address', () => {
+    // The executor's own bookkeeping — paying its rent, closing its buffer — is not the
+    // protocol's business, and demanding a declaration for it would open an incident on
+    // every multisig execution.
+    const verdict = evaluateTransaction({
+      transaction: executed([
+        ix(PROTOCOL_PROGRAM, PAUSE, [ADMIN], 2),
+        ix(OTHER_PROGRAM, WITHDRAW, [STRANGER], 2),
+      ]),
+      entries: [entry(), multisigEntry],
+      privileged: [ADMIN],
+    })
+
+    expect(verdict.status).toBe('declared')
+  })
+
+  it('is not the protocol’s business when nothing takes the address', () => {
+    // Named in the transaction and used by nothing in it — an account passed and
+    // ignored, or one an address table dragged in.
+    const verdict = evaluateTransaction({
+      transaction: executed([ix(OTHER_PROGRAM, WITHDRAW, [STRANGER], 2)], {
+        instructions: [
+          ix(MULTISIG, [7, 7, 7, 7, 7, 7, 7, 7], [STRANGER]),
+          ix(OTHER_PROGRAM, WITHDRAW, [STRANGER], 2),
+        ],
+      }),
+      entries: [],
+      privileged: [ADMIN],
+    })
+
+    expect(verdict).toEqual({ status: 'not-privileged' })
+  })
+
+  it('still reads the clock and the window the same way', () => {
+    const verdict = evaluateTransaction({
+      transaction: executed([ix(PROTOCOL_PROGRAM, PAUSE, [ADMIN], 2)], {
+        blockTime: EFFECTIVE - 1,
+      }),
+      entries: [entry(), multisigEntry],
+      privileged: [ADMIN],
+    })
+
+    expect(verdict.status).toBe('undeclared')
   })
 })
