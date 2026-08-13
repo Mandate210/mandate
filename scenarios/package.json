@@ -1,25 +1,26 @@
 {
-  "name": "@drain-cover/tests",
+  "name": "@drain-cover/scenarios",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "scripts": {
+    "compromise": "tsx compromise.ts",
     "test": "vitest run --passWithNoTests",
-    "test:integration": "vitest run --config vitest.integration.config.ts --passWithNoTests",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",
+    "@drain-cover/attestor": "workspace:*",
     "@drain-cover/sdk": "workspace:*",
+    "@drain-cover/shared": "workspace:*",
+    "@drain-cover/tests": "workspace:*",
     "@solana/spl-token": "^0.4.9",
     "@solana/web3.js": "^1.95.4"
   },
   "devDependencies": {
+    "@types/node": "26.2.0",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
-  },
-  "exports": {
-    "./world": "./world.ts",
-    "./harness": "./harness.ts"
   }
 }
