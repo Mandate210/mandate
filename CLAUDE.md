@@ -164,7 +164,8 @@ filesystem, not a broken setup.
 
 - **The program keypair exists only in `target/deploy/`, which is gitignored.**
   Wiping `target` makes `anchor keys sync` mint a different address and orphans
-  anything already deployed. Back it up before the first deploy.
+  anything already deployed. A backup lives outside the repo — restore it into
+  `target/deploy/` **before** deploying, never after (`docs/deploy-devnet.md` → Ключі).
 - `anchor keys sync` rewrites only the cluster configured in `Anchor.toml`; the
   other one is updated by hand. `tests/config-consistency.test.ts` guards all
   three places the id is duplicated.
