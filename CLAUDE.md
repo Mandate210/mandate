@@ -73,6 +73,20 @@ wsl -e bash -lc "cd <repo in WSL> && anchor deploy"         # WSL
 pnpm --filter @drain-cover/tests test:integration           # Windows
 ```
 
+**The end-to-end scenario is a fourth step, and it needs its own ledger:**
+
+```bash
+pnpm --filter @drain-cover/scenarios compromise     # Windows, after --reset + deploy
+```
+
+It stages ten compromises as real transactions, starts real attestor workers and
+measures SC-003 and SC-005. It runs with a **30-second declaration delay** where the
+integration suite uses 24 hours — three of its scenarios and its control turn on an
+entry being in force, and none of them is reachable in a three-minute run otherwise.
+`Config` fixes that delay forever at creation, so the scenario and the integration
+suite cannot share a ledger: reset between them. The scenario says so rather than
+failing on a confusing timing assertion.
+
 `--reset` is not optional. `Config` is a singleton PDA, and the admin and settlement
 mint are fixed inside it forever, so a ledger carrying a config from an earlier run
 puts the suite in a state it cannot reproduce. Its attestation window is one of those
