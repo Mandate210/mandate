@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "compromise": "tsx compromise.ts",
+    "devnet:setup": "tsx devnet-setup.ts",
+    "devnet:measure": "tsx measure.ts",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
