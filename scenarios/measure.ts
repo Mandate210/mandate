@@ -26,7 +26,14 @@ import { AnchorProvider, BN, type Program, Wallet } from '@coral-xyz/anchor'
 import { createActor } from '@drain-cover/attestor/act'
 import { createChain } from '@drain-cover/attestor/chain'
 import { type WatchedAddress, connectionWatchRpc, createWatcher } from '@drain-cover/attestor/watch'
-import { type DrainCover, createProgram, findAttestor, findConfig } from '@drain-cover/sdk'
+import {
+  type DrainCover,
+  createProgram,
+  findAttestor,
+  findConfig,
+  findIncident,
+} from '@drain-cover/sdk'
+import { base58Decode } from '@drain-cover/shared'
 import { asset } from '@drain-cover/tests/harness'
 import { fundPool, issuePolicy, registerProtocol } from '@drain-cover/tests/world'
 import {
@@ -37,7 +44,14 @@ import {
 } from '@solana/spl-token'
 import { Keypair, type PublicKey } from '@solana/web3.js'
 import { UNIT, sendWith } from './compromises'
-import { type DevnetEnv, decodeKeypair, readState, secondsPerSlot, setupDevnetEnv } from './devnet'
+import {
+  type DevnetEnv,
+  decodeKeypair,
+  readState,
+  secondsPerSlot,
+  setupDevnetEnv,
+  withRetry,
+} from './devnet'
 
 /** SC-001. */
 const LATENCY_BUDGET_SECONDS = 30
@@ -101,13 +115,17 @@ const percentile = (values: number[], fraction: number): number => {
 
 /** Every transaction that ever touched this incident account — its whole life cycle. */
 const feesFor = async (env: DevnetEnv, incident: PublicKey): Promise<number> => {
-  const signatures = await env.connection.getSignaturesForAddress(incident, { limit: 100 })
+  const signatures = await withRetry(() =>
+    env.connection.getSignaturesForAddress(incident, { limit: 100 }),
+  )
   let total = 0
   for (const { signature } of signatures) {
-    const transaction = await env.connection.getTransaction(signature, {
-      maxSupportedTransactionVersion: 0,
-      commitment: 'confirmed',
-    })
+    const transaction = await withRetry(() =>
+      env.connection.getTransaction(signature, {
+        maxSupportedTransactionVersion: 0,
+        commitment: 'confirmed',
+      }),
+    )
     total += transaction?.meta?.fee ?? 0
   }
   return total
@@ -240,6 +258,13 @@ const main = async (): Promise<void> => {
   for (let index = 0; index < SAMPLES; index += 1) {
     process.stdout.write(`  sample ${String(index + 1).padStart(2)}/${SAMPLES}  `)
 
+    // Read before firing, so the wait knows which account to watch without asking the
+    // cluster to search for it. Racing workers can only push this higher, never lower,
+    // and the trigger signature is verified on arrival either way.
+    const incidentSeq = (
+      await withRetry(() => program.account.protocol.fetch(target.protocol))
+    ).nextIncidentSeq.toNumber()
+
     // A different amount every time: two identical transfers inside one blockhash would
     // be the same transaction, and the second would be rejected as a duplicate.
     const signature = await sendWith(
@@ -256,7 +281,7 @@ const main = async (): Promise<void> => {
       [privileged],
     )
 
-    const settled = await awaitPayout(program, env, target.protocol, signature)
+    const settled = await awaitPayout(program, env, target.protocol, signature, incidentSeq)
     if (settled === null) {
       failures.push(`sample ${index + 1} (${signature.slice(0, 12)}…) never paid out`)
       say('NOT SETTLED')
@@ -267,6 +292,10 @@ const main = async (): Promise<void> => {
     say(
       `${(settled.paidAt - settled.triggeredAt).toFixed(0)}s on chain, ${settled.wallSeconds.toFixed(1)}s observed`,
     )
+    // A breath between samples. Not pacing for its own sake: the workers are still
+    // finishing the last incident's `resolve` when this loop is ready to fire again,
+    // and firing into that would measure two overlapping cycles as one.
+    await sleep(1_500)
   }
 
   for (const watcher of watchers) await watcher.stop()
@@ -347,45 +376,62 @@ const main = async (): Promise<void> => {
  * Waits for the incident this transaction raised to pay out, and reports when — in
  * cluster time.
  *
- * The incident is found by its trigger signature rather than by sequence number: the
- * workers race to open it, and which sequence they land on is not this script's to
- * predict. That is the same `memcmp` the attestor uses for its own idempotency.
+ * **The incident is addressed, not searched for.** The obvious way to find it is a
+ * `memcmp` on the stored trigger signature, which is what the attestor itself does —
+ * but that is `getProgramAccounts`, the most expensive call a provider meters, and
+ * polling it every second is what killed the first run of this script. Worse than the
+ * crash: the quota it burned was the quota the attestors needed, so the script was
+ * slowing down the very thing it was timing.
+ *
+ * The sequence number is known instead, read off the protocol before the transaction
+ * was fired, which turns the wait into a single-account fetch. The signature is still
+ * checked on arrival — an incident at the expected sequence raised by something else
+ * would otherwise be recorded as this sample's.
  */
 const awaitPayout = async (
   program: Program<DrainCover>,
   env: DevnetEnv,
   protocol: PublicKey,
   signature: string,
+  incidentSeq: number,
 ): Promise<{ triggeredAt: number; paidAt: number; wallSeconds: number; incident: PublicKey } | null> => {
   const started = Date.now()
-  const trigger = await env.connection.getTransaction(signature, {
-    maxSupportedTransactionVersion: 0,
-    commitment: 'confirmed',
-  })
+  const trigger = await withRetry(() =>
+    env.connection.getTransaction(signature, {
+      maxSupportedTransactionVersion: 0,
+      commitment: 'confirmed',
+    }),
+  )
   const triggeredAt = trigger?.blockTime ?? 0
   if (triggeredAt === 0) return null
 
-  for (;;) {
-    const found = await program.account.incident.all([
-      { memcmp: { offset: 8 + 32, bytes: signature } },
-    ])
-    const raised = found.find(({ account }) => 'paidOut' in account.status)
+  const incident = findIncident(program.programId, protocol, incidentSeq)
+  const expected = base58Decode(signature)
 
-    if (raised !== undefined) {
+  for (;;) {
+    const account = await withRetry(() => program.account.incident.fetchNullable(incident))
+
+    if (account !== null && 'paidOut' in account.status) {
+      const raisedBy = [...account.triggerSig]
+      if (raisedBy.length !== expected.length || raisedBy.some((byte, at) => byte !== expected[at])) {
+        return null
+      }
       // The newest transaction touching the incident is the `resolve` that paid it:
-      // nothing else can follow a payout.
-      const [latest] = await env.connection.getSignaturesForAddress(raised.publicKey, { limit: 1 })
+      // nothing can follow a payout.
+      const [latest] = await withRetry(() =>
+        env.connection.getSignaturesForAddress(incident, { limit: 1 }),
+      )
       const paidAt = latest?.blockTime ?? 0
       if (paidAt === 0) return null
       return {
         triggeredAt,
         paidAt,
         wallSeconds: (Date.now() - started) / 1_000,
-        incident: raised.publicKey,
+        incident,
       }
     }
     if (Date.now() - started > SAMPLE_TIMEOUT_SECONDS * 1_000) return null
-    await sleep(1_000)
+    await sleep(2_000)
   }
 }
 

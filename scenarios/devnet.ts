@@ -142,6 +142,52 @@ export const decodeKeypair = (encoded: string): Keypair =>
   Keypair.fromSecretKey(Uint8Array.from(Buffer.from(encoded, 'base64')))
 
 /**
+ * Spaces outgoing RPC calls so the provider never has to refuse one.
+ *
+ * A free tier caps requests per second, and `@solana/web3.js` answers a refusal by
+ * retrying with backoff and then, after a few tries, throwing — which kills a run
+ * that is minutes deep. Being refused is also strictly worse than waiting: each 429
+ * costs the retry delay *and* the round trip that earned it.
+ *
+ * A leaky bucket over dispatch, not over completion: rate limits are counted on
+ * requests arriving, so delaying when a call goes out is the whole of it, and nothing
+ * here has to serialise responses.
+ */
+const spacedDispatch = (minIntervalMs: number) => {
+  let nextAt = 0
+  return (dispatch: () => void): void => {
+    const now = Date.now()
+    const at = Math.max(now, nextAt)
+    nextAt = at + minIntervalMs
+    if (at === now) dispatch()
+    else setTimeout(dispatch, at - now)
+  }
+}
+
+/** Eight per second, against the ten a free tier typically allows. */
+const RPC_MIN_INTERVAL_MS = 125
+
+/**
+ * Retries anything that failed for a reason the cluster is likely to stop having.
+ *
+ * Used around this script's *own* calls only. The attestors' calls are deliberately
+ * left alone: they are the system under measurement, and wrapping them in retries this
+ * script invented would report a resilience the product does not have.
+ */
+export const withRetry = async <T>(operation: () => Promise<T>, attempts = 5): Promise<T> => {
+  let lastError: unknown
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await operation()
+    } catch (error) {
+      lastError = error
+      await new Promise((resolve) => setTimeout(resolve, 400 * 2 ** attempt))
+    }
+  }
+  throw lastError
+}
+
+/**
  * How long a slot actually takes on this cluster, measured rather than assumed.
  *
  * The 400ms target is not what devnet does — it has been running nearer 0.27s, which
@@ -183,8 +229,14 @@ export const setupDevnetEnv = async (): Promise<DevnetEnv> => {
   // against a slot that has not caught up rejects transactions whose accounts exist,
   // and that failure is indistinguishable from a real constraint violation.
   const ws = devnetWsUrl()
+  const dispatch = spacedDispatch(RPC_MIN_INTERVAL_MS)
   const connection = new Connection(endpoint, {
     commitment: 'confirmed',
+    fetchMiddleware: (info, init, next) => {
+      dispatch(() => {
+        next(info, init)
+      })
+    },
     ...(ws === undefined ? {} : { wsEndpoint: ws }),
   })
   const payer = deployerKeypair()
