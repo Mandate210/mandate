@@ -44,6 +44,11 @@
 | `drain_cover-keypair.json` | ключ програми — визначає її адресу | `target/deploy/drain_cover-keypair.json` |
 | `devnet-deployer.json` | платник деплою й upgrade authority | `~/.config/solana/drain-cover-devnet-deployer.json` (WSL) |
 
+Каталог перевизначається змінною **`DRAIN_COVER_KEYS_DIR`**, а кількість зразків
+виміру — **`DEVNET_SAMPLES`** (типово 20). Обидві читаються лише з оточення процесу,
+не з `.env`, тому їх і немає в `.env.example`: там вони б не спрацювали. Та сама
+конвенція, що вже діє для `TEST_RPC_URL` і `ALLOW_NON_LOCAL_TEST_RPC`.
+
 Бекап ключа програми — **умова, а не гігієна**: `target/` у `.gitignore`, тож
 очистка каталогу змушує `anchor keys sync` намінтити іншу адресу й осиротити все
 задеплоєне. Відновлення — покласти файл назад у `target/deploy/` **до** `anchor deploy`.
