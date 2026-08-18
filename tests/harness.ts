@@ -120,6 +120,14 @@ export interface TestEnv {
   /** Stand-in for USDC: same decimals, freely mintable in tests. */
   assetMint: PublicKey
   fundedKeypair(sol?: number): Promise<Keypair>
+  /**
+   * Tops `recipient` up to `sol`, and does nothing if it is already there.
+   *
+   * Airdropped here and transferred on a real cluster, which is the whole reason it
+   * is on the interface rather than being `requestAirdrop` at the call site: a
+   * scenario written against the airdrop cannot be pointed at devnet at all.
+   */
+  fund(recipient: PublicKey, sol: number): Promise<void>
   /** Associated token account for `owner`, optionally credited with `amount`. */
   assetAccount(owner: PublicKey, amount?: bigint): Promise<PublicKey>
 }
@@ -160,6 +168,18 @@ export const setupTestEnv = async (): Promise<TestEnv> => {
     return keypair
   }
 
+  const fund = async (recipient: PublicKey, sol: number): Promise<void> => {
+    const wanted = sol * LAMPORTS_PER_SOL
+    const held = await connection.getBalance(recipient)
+    if (held >= wanted) return
+
+    const signature = await connection.requestAirdrop(recipient, wanted - held)
+    const status = await connection.confirmTransaction(signature, 'confirmed')
+    if (status.value.err !== null) {
+      throw new Error(`Airdrop failed: ${JSON.stringify(status.value.err)}`)
+    }
+  }
+
   const payer = adminKeypair()
   // Topped up rather than funded once: several files share this key within a
   // validator run, and each of them pays rent for the accounts it creates.
@@ -185,5 +205,5 @@ export const setupTestEnv = async (): Promise<TestEnv> => {
     return account.address
   }
 
-  return { connection, payer, provider, assetMint, fundedKeypair, assetAccount }
+  return { connection, payer, provider, assetMint, fundedKeypair, fund, assetAccount }
 }

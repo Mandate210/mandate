@@ -34,7 +34,7 @@ import {
   findIncident,
 } from '@drain-cover/sdk'
 import { base58Decode } from '@drain-cover/shared'
-import { asset } from '@drain-cover/tests/harness'
+import { type TestEnv, asset } from '@drain-cover/tests/harness'
 import { fundPool, issuePolicy, registerProtocol } from '@drain-cover/tests/world'
 import {
   createAssociatedTokenAccountIdempotent,
@@ -44,14 +44,7 @@ import {
 } from '@solana/spl-token'
 import { Keypair, type PublicKey } from '@solana/web3.js'
 import { UNIT, sendWith } from './compromises'
-import {
-  type DevnetEnv,
-  decodeKeypair,
-  readState,
-  secondsPerSlot,
-  setupDevnetEnv,
-  withRetry,
-} from './devnet'
+import { decodeKeypair, readState, secondsPerSlot, setupDevnetEnv, withRetry } from './devnet'
 
 /** SC-001. */
 const LATENCY_BUDGET_SECONDS = 30
@@ -114,7 +107,7 @@ const percentile = (values: number[], fraction: number): number => {
 }
 
 /** Every transaction that ever touched this incident account — its whole life cycle. */
-const feesFor = async (env: DevnetEnv, incident: PublicKey): Promise<number> => {
+const feesFor = async (env: TestEnv, incident: PublicKey): Promise<number> => {
   const signatures = await withRetry(() =>
     env.connection.getSignaturesForAddress(incident, { limit: 100 }),
   )
@@ -390,7 +383,7 @@ const main = async (): Promise<void> => {
  */
 const awaitPayout = async (
   program: Program<DrainCover>,
-  env: DevnetEnv,
+  env: TestEnv,
   protocol: PublicKey,
   signature: string,
   incidentSeq: number,

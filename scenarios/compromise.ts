@@ -34,7 +34,13 @@ import { AnchorProvider, BN, type Program, Wallet } from '@coral-xyz/anchor'
 import { createActor } from '@drain-cover/attestor/act'
 import { createChain, toObservedTransaction } from '@drain-cover/attestor/chain'
 import { type WatchedAddress, connectionWatchRpc, createWatcher } from '@drain-cover/attestor/watch'
-import { type DrainCover, createProgram, findConfig, findIncident } from '@drain-cover/sdk'
+import {
+  type DrainCover,
+  createProgram,
+  findAttestor,
+  findConfig,
+  findIncident,
+} from '@drain-cover/sdk'
 import {
   asset,
   clusterTimestamp,
@@ -46,6 +52,7 @@ import {
 import {
   fundPool,
   issuePolicy,
+  quorumNeeded,
   type RegisteredProtocol,
   registerProtocol,
   revokeDeclaration,
@@ -58,7 +65,7 @@ import {
   getAssociatedTokenAddressSync,
   mintTo,
 } from '@solana/spl-token'
-import { Keypair, LAMPORTS_PER_SOL, type PublicKey, SystemProgram } from '@solana/web3.js'
+import { Keypair, type PublicKey, SystemProgram } from '@solana/web3.js'
 import {
   COMPROMISES,
   type Compromise,
@@ -67,6 +74,7 @@ import {
   UNIT,
   sendWith,
 } from './compromises'
+import { decodeKeypair, readState, secondsPerSlot, setupDevnetEnv } from './devnet'
 
 /** Thirty seconds where the product parameter is a day — see the note at the top. */
 const DECLARATION_DELAY = 30
@@ -92,6 +100,15 @@ const CONTROL_WINDOW_SECONDS = 15
  * where the deciding vote comes from somebody other than the opener.
  */
 const ATTESTOR_COUNT = 3
+
+/**
+ * SOL an attestor holds for a run, whichever cluster it is on.
+ *
+ * It pays rent for the incidents it opens (~0.0022 each) and for its own attestations
+ * (~0.0010 each), plus fees — under 0.05 SOL across eleven stages. On a validator this
+ * could be any number at all; devnet is the reason it is this one.
+ */
+const ATTESTOR_SOL = 0.15
 
 const POOL_CAPITAL = asset(100_000)
 const POLICY_LIMIT = asset(10_000)
@@ -227,14 +244,14 @@ const buildStage = async (
   // does not need a balance minted this way; its members can sign.
   if (privileged !== null) {
     await mintTo(env.connection, env.payer, token, treasury, privileged, 10_000 * UNIT)
-    // `lamport-drain` moves native balance out of the privileged account, so there has
-    // to be some there to move.
-    await env.connection.confirmTransaction(
-      await env.connection.requestAirdrop(privilegedAddress, 2 * LAMPORTS_PER_SOL),
-      'confirmed',
-    )
   } else {
     await mintTo(env.connection, env.payer, token, treasury, privilegedAddress, 10_000 * UNIT, members)
+  }
+  // Only the scenario that sweeps native balance needs any, and it says how much.
+  // Airdropped on a validator and transferred on devnet, where two SOL a stage would
+  // cost more than a whole run can afford.
+  if (compromise.needsSol !== undefined) {
+    await env.fund(privilegedAddress, compromise.needsSol)
   }
 
   const world: CompromiseWorld = {
@@ -298,42 +315,84 @@ const awaitDecision = async (
   target: RegisteredProtocol,
   signature: string,
   budgetSeconds: number,
-): Promise<{ settled: boolean; seconds: number; received: bigint; note: string }> => {
+): Promise<{
+  settled: boolean
+  seconds: number
+  received: bigint
+  note: string
+  incident: PublicKey | null
+}> => {
   const started = Date.now()
-  const address = findIncident(program.programId, target.protocol, 0)
   const beneficiary = getAssociatedTokenAddressSync(env.assetMint, target.treasury, true)
   const before = await balanceOf(env, beneficiary)
 
   for (;;) {
-    const incident = await program.account.incident.fetchNullable(address)
-    if (incident !== null && 'paidOut' in incident.status) {
+    const raised = await incidentsForTrigger(program, target.protocol, signature)
+    const paid = raised.find(({ account }) => 'paidOut' in account.status)
+
+    if (paid !== undefined) {
       const seconds = (Date.now() - started) / 1000
-      const triggered = bs58(incident.triggerSig)
-      if (triggered !== signature) {
-        return {
-          settled: false,
-          seconds,
-          received: 0n,
-          note: `incident was raised by ${triggered.slice(0, 12)}…, not by the compromise`,
-        }
-      }
       const received = (await balanceOf(env, beneficiary)) - before
       return {
         settled: received > 0n,
         seconds,
         received,
         note: received > 0n ? '' : 'settled without moving any money to the beneficiary',
+        incident: paid.address,
       }
     }
     if (Date.now() - started > budgetSeconds * 1000) {
       const note =
-        incident === null
+        raised.length === 0
           ? 'no incident was ever opened'
-          : `incident stayed open with ${incident.votesUnauthorized} of the votes it needed`
-      return { settled: false, seconds: (Date.now() - started) / 1000, received: 0n, note }
+          : `${raised.length} incident(s) opened on this transaction, none reached a quorum — votes ${raised
+              .map(({ account }) => account.votesUnauthorized)
+              .join(' and ')}`
+      return {
+        settled: false,
+        seconds: (Date.now() - started) / 1000,
+        received: 0n,
+        note,
+        incident: raised[0]?.address ?? null,
+      }
     }
     await sleep(400)
   }
+}
+
+/**
+ * Every incident this protocol carries for this trigger signature — plural on purpose.
+ *
+ * The first version of this looked at sequence number zero and asked whether *that*
+ * incident had paid out. On a validator, where the whole cycle is two seconds, the
+ * attestors practically never raced and sequence zero was always the right one. On
+ * devnet they race on essentially every event (T070): a second attestor opens its own
+ * incident at sequence one, and if the quorum lands there, reading sequence zero
+ * reports «not recognised» for a compromise that was recognised and paid. A
+ * measurement that can call a success a failure is worse than no measurement.
+ *
+ * Enumerated from the protocol's own counter rather than found with a `memcmp`: that
+ * would be `getProgramAccounts` on a poll loop, which is what starved the attestors of
+ * their RPC quota in the first devnet run of `measure.ts`.
+ */
+const incidentsForTrigger = async (
+  program: Program<DrainCover>,
+  protocol: PublicKey,
+  signature: string,
+): Promise<{ address: PublicKey; account: { status: object; votesUnauthorized: number } }[]> => {
+  const { nextIncidentSeq } = await program.account.protocol.fetch(protocol)
+  const addresses = Array.from({ length: nextIncidentSeq.toNumber() }, (_, seq) =>
+    findIncident(program.programId, protocol, seq),
+  )
+  if (addresses.length === 0) return []
+
+  const accounts = await program.account.incident.fetchMultiple(addresses)
+  return accounts.flatMap((account, index) => {
+    if (account === null) return []
+    if (bs58(account.triggerSig) !== signature) return []
+    const address = addresses[index]
+    return address === undefined ? [] : [{ address, account }]
+  })
 }
 
 const balanceOf = async (env: TestEnv, account: PublicKey): Promise<bigint> => {
@@ -365,12 +424,67 @@ const bs58 = (bytes: number[]): string => {
   return '1'.repeat(zeros) + digits.reverse().map((digit) => BASE58[digit]).join('')
 }
 
-const main = async (): Promise<void> => {
-  const env = await setupTestEnv()
-  const program = createProgram(env.provider)
+/**
+ * Attestors admitted for a run of this scenario, and the epoch wait that FR-008 forces.
+ *
+ * Only reachable on a validator started with `--slots-per-epoch 32`. A devnet epoch is
+ * 432 000 slots, so admitting a set there and waiting for it takes about thirty-two
+ * hours — which is why the devnet entry point reuses a set admitted in an earlier
+ * session instead of calling this.
+ */
+const admitFreshSet = async (
+  program: Program<DrainCover>,
+  env: TestEnv,
+): Promise<Keypair[]> => {
+  const attestorKeys: Keypair[] = []
+  for (let index = 0; index < ATTESTOR_COUNT; index += 1) {
+    const keypair = await env.fundedKeypair(ATTESTOR_SOL)
+    await setAttestor(program, env, keypair.publicKey)
+    attestorKeys.push(keypair)
+  }
+  await waitForNextEpoch(env.connection)
+  return attestorKeys
+}
 
-  say('drain-cover — compromise scenario (T028)\n')
-  await ensureScenarioConfig(program, env)
+/**
+ * The scenario itself, from an empty world to the two criteria.
+ *
+ * Takes its environment and its attestors rather than making them, because those are
+ * the only two things devnet does differently: money there is transferred instead of
+ * airdropped, and the attestor set has to have been admitted an epoch earlier. Every
+ * judgement below is the same on both, which is the point — a devnet run that shared
+ * none of this code would be evidence about a different program.
+ */
+export const runScenario = async ({
+  program,
+  env,
+  attestorKeys,
+  cluster,
+}: {
+  program: Program<DrainCover>
+  env: TestEnv
+  /** Already in the set and already able to vote in the current epoch. */
+  attestorKeys: Keypair[]
+  /** Set on a public cluster, so every payout can be printed as a link somebody
+   * outside this process can open. That link is half of what M1 promises to show. */
+  cluster?: 'devnet'
+}): Promise<void> => {
+  // **Can these workers carry a quorum at all.**
+  //
+  // The set is global to the deployment and the denominator is whatever `Config` says,
+  // not how many workers this run happens to start. Re-running the scenario on a ledger
+  // that already has a set admits three more, so the bar rises while the number of
+  // voters does not — and every sample then waits out its full budget in silence. Ten
+  // stages at three minutes each is half an hour of a run that could never have worked.
+  // `--reset` between runs is what `CLAUDE.md` prescribes; this is what says so when it
+  // was skipped.
+  const config = await program.account.config.fetch(findConfig(program.programId))
+  const needed = quorumNeeded(config.attestorCount, config.quorumBps)
+  if (needed > attestorKeys.length) {
+    throw new Error(
+      `The set on this deployment is ${config.attestorCount} attestors, so a quorum needs ${needed} votes — and this run has only ${attestorKeys.length} workers. No incident could ever be resolved. On a validator, restart it with --reset (CLAUDE.md → Commands); on devnet, the set in devnet-state.json is smaller than the one Config counts.`,
+    )
+  }
 
   say(`staging ${COMPROMISES.length} protocols, one per compromise, plus the control…`)
   const stages: Stage[] = []
@@ -381,24 +495,12 @@ const main = async (): Promise<void> => {
   for (const stage of [...stages, control]) await stage.compromise.prepare?.(stage.world)
   say(`  ${stages.length + 1} staged\n`)
 
-  say('admitting attestors…')
-  const attestorKeys: Keypair[] = []
-  for (let index = 0; index < ATTESTOR_COUNT; index += 1) {
-    const keypair = await env.fundedKeypair(5)
-    await setAttestor(program, env, keypair.publicKey)
-    attestorKeys.push(keypair)
-  }
   for (const attestor of attestorKeys) {
     // Enough bond for every incident this attestor might be the one to open, plus fees.
     await env.assetAccount(attestor.publicKey, BigInt(OPEN_BOND) * BigInt(stages.length + 2))
-    await env.connection.confirmTransaction(
-      await env.connection.requestAirdrop(attestor.publicKey, 5 * LAMPORTS_PER_SOL),
-      'confirmed',
-    )
+    await env.fund(attestor.publicKey, ATTESTOR_SOL)
   }
-  // FR-008: admitted in one epoch, voting from the next.
-  await waitForNextEpoch(env.connection)
-  say(`  ${attestorKeys.length} attestors active\n`)
+  say(`${attestorKeys.length} attestors active\n`)
 
   const watched: WatchedAddress[] = [...stages, control].map((stage) => ({
     protocol: stage.target.protocol.toBase58(),
@@ -464,7 +566,14 @@ const main = async (): Promise<void> => {
   for (const watcher of watchers) await watcher.start()
   say(`${watchers.length} attestor workers watching ${watched.length} privileged addresses\n`)
 
-  const results: { id: string; recognised: boolean; seconds: number; received: bigint }[] = []
+  const results: {
+    id: string
+    recognised: boolean
+    seconds: number
+    received: bigint
+    incident: PublicKey | null
+    signature: string
+  }[] = []
 
   for (const stage of stages) {
     process.stdout.write(`  ${stage.compromise.id.padEnd(36)} `)
@@ -481,6 +590,8 @@ const main = async (): Promise<void> => {
       recognised: decision.settled,
       seconds: decision.seconds,
       received: decision.received,
+      incident: decision.incident,
+      signature,
     })
     say(
       decision.settled
@@ -540,6 +651,16 @@ const main = async (): Promise<void> => {
   const recognised = results.filter((result) => result.recognised)
   const slowest = Math.max(...recognised.map((result) => result.seconds), 0)
 
+  if (cluster !== undefined) {
+    // The other half of what M1 shows: somebody outside this process opening the
+    // incident and reading the payout for themselves.
+    say('\non chain:')
+    for (const result of results) {
+      if (result.incident === null) continue
+      say(`  ${result.id.padEnd(36)} https://explorer.solana.com/address/${result.incident.toBase58()}?cluster=${cluster}`)
+    }
+  }
+
   say('\n────────────────────────────────────────────────')
   say(`SC-003  recognised ${recognised.length} of ${results.length}   (needs ≥ ${REQUIRED_RECOGNISED})`)
   say(
@@ -571,6 +692,94 @@ const main = async (): Promise<void> => {
   }
   say('\nboth criteria met.')
   process.exit(0)
+}
+
+/**
+ * The devnet setup: the same scenario, two things the cluster decides differently.
+ *
+ * Money is transferred rather than airdropped, and the attestor set is **reused, never
+ * admitted** — FR-008 lets an attestor vote from the epoch after the one it joined in,
+ * and a devnet epoch is 432 000 slots, about thirty-two hours. Admitting a set here
+ * would hang the demonstration for a day and a half.
+ *
+ * `Config` is checked and never created: it is a singleton whose parameters are fixed
+ * forever, and devnet has no `--reset` to undo a wrong one.
+ */
+const setupOnDevnet = async (): Promise<{
+  env: TestEnv
+  program: Program<DrainCover>
+  attestorKeys: Keypair[]
+}> => {
+  const env = await setupDevnetEnv()
+  const program = createProgram(env.provider)
+
+  const state = readState()
+  if (state === null || state.attestors.length === 0) {
+    throw new Error(
+      'No devnet-state.json with attestors. Run `pnpm --filter @drain-cover/scenarios devnet:setup` first, then wait for the next epoch.',
+    )
+  }
+
+  const config = await program.account.config.fetchNullable(findConfig(program.programId))
+  if (config === null) throw new Error('No Config on this cluster. Run devnet:setup first.')
+  if (config.declarationDelay.toNumber() !== DECLARATION_DELAY) {
+    throw new Error(
+      `This deployment's declaration delay is ${config.declarationDelay.toNumber()}s and the scenario needs ${DECLARATION_DELAY}s. Config is a singleton fixed at creation and devnet has no --reset, so this cannot be corrected here — only under a new program id.`,
+    )
+  }
+
+  const attestorKeys = state.attestors.map(decodeKeypair)
+  const { epoch } = await env.connection.getEpochInfo()
+  const memberships = await program.account.attestor.fetchMultiple(
+    attestorKeys.map((attestor) => findAttestor(program.programId, attestor.publicKey)),
+  )
+  const active = memberships.filter(
+    (attestor) => attestor?.inSet && attestor.activeFromEpoch.toNumber() <= epoch,
+  ).length
+  const needed = Math.ceil((config.attestorCount * config.quorumBps) / 10_000)
+
+  if (active < needed) {
+    const info = await env.connection.getEpochInfo()
+    const hours =
+      ((info.slotsInEpoch - info.slotIndex) * (await secondsPerSlot(env.connection))) / 3_600
+    throw new Error(
+      `Only ${active} of ${attestorKeys.length} attestors can vote in epoch ${epoch}, and a quorum of the set of ${config.attestorCount} needs ${needed}. FR-008 admits an attestor from the epoch after the one it was admitted in, and this epoch has about ${hours.toFixed(1)}h to run. Nothing to fix — wait.`,
+    )
+  }
+
+  say(`epoch ${epoch}: ${active} attestors can vote, quorum needs ${needed} of ${config.attestorCount}\n`)
+  return { env, program, attestorKeys }
+}
+
+const setupOnValidator = async (): Promise<{
+  env: TestEnv
+  program: Program<DrainCover>
+  attestorKeys: Keypair[]
+}> => {
+  const env = await setupTestEnv()
+  const program = createProgram(env.provider)
+
+  await ensureScenarioConfig(program, env)
+  say('admitting attestors…')
+  const attestorKeys = await admitFreshSet(program, env)
+
+  return { env, program, attestorKeys }
+}
+
+const main = async (): Promise<void> => {
+  const onDevnet = process.argv.includes('--devnet')
+
+  say(`drain-cover — compromise scenario (T028), ${onDevnet ? 'devnet' : 'local validator'}\n`)
+  const { env, program, attestorKeys } = onDevnet
+    ? await setupOnDevnet()
+    : await setupOnValidator()
+
+  await runScenario({
+    program,
+    env,
+    attestorKeys,
+    ...(onDevnet ? { cluster: 'devnet' as const } : {}),
+  })
 }
 
 main().catch((error: unknown) => {

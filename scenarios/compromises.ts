@@ -80,6 +80,13 @@ export interface Compromise {
   id: string
   /** The class of real incident whose on-chain shape this reproduces. */
   reproduces: string
+  /**
+   * SOL the privileged address has to be holding, for the one scenario that sweeps
+   * native balance. Declared rather than given to everybody: on a validator a couple
+   * of SOL a stage is free, and on devnet the same generosity is more than a whole
+   * run can afford.
+   */
+  needsSol?: number
   /** Everything the attacker's world needs, done before any attestor is watching —
    * staging a mint is not a compromise, and an attestor judging it would be judging
    * the scenario's own scaffolding. */
@@ -170,6 +177,8 @@ export const COMPROMISES: Compromise[] = [
   {
     id: 'lamport-drain',
     reproduces: 'the native balance of the privileged account swept out alongside the token theft',
+    // The 0.1 SOL below, plus room for the fee and the rent it keeps.
+    needsSol: 0.12,
     fire: (world) =>
       world.send(
         [

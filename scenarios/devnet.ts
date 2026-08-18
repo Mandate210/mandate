@@ -208,21 +208,17 @@ export const secondsPerSlot = async (connection: Connection): Promise<number> =>
  * What a helper account is given, whatever the caller asked for.
  *
  * `tests/world.ts` asks for one or two SOL per protocol authority and per incident
- * opener. On a validator that is free; here it would be twenty SOL for a twenty-sample
- * run, against a balance that was transferred in by hand. Each of those accounts pays
- * rent for one or two small accounts and a handful of fees — three hundredths of a SOL
- * covers that several times over.
+ * opener. On a validator that is free; here eleven staged protocols would be twenty-two
+ * SOL, against a balance that was transferred in by hand.
+ *
+ * What such an account actually spends: a protocol authority pays rent for the
+ * declaration entries it files (~0.0016 each) and the fees to file them, and most of
+ * them file none at all. Fifteen thousandths is several times the worst case and still
+ * an order of magnitude below what the callers ask for.
  */
-const HELPER_SOL = 0.03
+const HELPER_SOL = 0.015
 
-export interface DevnetEnv extends TestEnv {
-  /** Explicit funding, for the accounts whose spending is not a rounding error. */
-  fund(recipient: PublicKey, sol: number): Promise<void>
-  /** Fixed at creation, so a run against an existing `Config` has to use this one. */
-  assetMint: PublicKey
-}
-
-export const setupDevnetEnv = async (): Promise<DevnetEnv> => {
+export const setupDevnetEnv = async (): Promise<TestEnv> => {
   const endpoint = devnetRpcUrl()
 
   // `confirmed` everywhere, including preflight: on a shared cluster a simulation run
