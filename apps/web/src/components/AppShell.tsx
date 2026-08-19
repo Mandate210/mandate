@@ -1,3 +1,4 @@
+import DemoNotice from '@/components/DemoNotice'
 import { INCIDENT } from '@/lib/mockData'
 import { useScenario } from '@/lib/scenario'
 import { cn } from '@/lib/utils'
@@ -22,6 +23,7 @@ const AppShell = ({ children }: { children: ReactNode }) => {
 
   return (
     <div className="min-h-screen flex flex-col">
+      <DemoNotice />
       <header className="sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur-sm">
         <div className="mx-auto w-full max-w-[1400px] px-6 h-14 flex items-center gap-8">
           <NavLink to="/" className="flex items-baseline gap-2 shrink-0">
