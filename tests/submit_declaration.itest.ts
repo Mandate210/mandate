@@ -1,5 +1,5 @@
 import { AnchorError, BN, type Program } from '@coral-xyz/anchor'
-import { type DrainCover, createProgram, findConfig, findDeclarationEntry } from '@drain-cover/sdk'
+import { type DrainCover, createProgram, findConfig, findDeclarationEntry } from '@mandate/sdk'
 import { Keypair, SystemProgram } from '@solana/web3.js'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { type TestEnv, setupTestEnv, validatorReachable } from './harness'

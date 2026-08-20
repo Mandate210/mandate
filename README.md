@@ -58,8 +58,8 @@ the verdict, the incident, the attestations and the payout are the workers' own
 doing — which is the whole claim.
 
 ```bash
-pnpm --filter @drain-cover/scenarios devnet:compromise    # against devnet
-pnpm --filter @drain-cover/scenarios compromise           # against a local validator
+pnpm --filter @mandate/scenarios devnet:compromise    # against devnet
+pnpm --filter @mandate/scenarios compromise           # against a local validator
 ```
 
 It prints an explorer link for every incident it settles. Running it against

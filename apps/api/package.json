@@ -1,5 +1,5 @@
 {
-  "name": "@drain-cover/api",
+  "name": "@mandate/api",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -11,9 +11,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@drain-cover/db": "workspace:*",
-    "@drain-cover/sdk": "workspace:*",
-    "@drain-cover/shared": "workspace:*",
+    "@mandate/db": "workspace:*",
+    "@mandate/sdk": "workspace:*",
+    "@mandate/shared": "workspace:*",
     "@hono/node-server": "^1.13.7",
     "@hono/zod-validator": "^0.4.1",
     "hono": "^4.6.14",

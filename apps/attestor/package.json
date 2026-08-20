@@ -1,5 +1,5 @@
 {
-  "name": "@drain-cover/attestor",
+  "name": "@mandate/attestor",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -12,8 +12,8 @@
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",
-    "@drain-cover/sdk": "workspace:*",
-    "@drain-cover/shared": "workspace:*",
+    "@mandate/sdk": "workspace:*",
+    "@mandate/shared": "workspace:*",
     "@solana/spl-token": "^0.4.9",
     "@solana/web3.js": "^1.95.4",
     "pino": "^9.5.0"

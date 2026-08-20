@@ -1,5 +1,5 @@
 {
-  "name": "@drain-cover/scenarios",
+  "name": "@mandate/scenarios",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -13,10 +13,10 @@
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",
-    "@drain-cover/attestor": "workspace:*",
-    "@drain-cover/sdk": "workspace:*",
-    "@drain-cover/shared": "workspace:*",
-    "@drain-cover/tests": "workspace:*",
+    "@mandate/attestor": "workspace:*",
+    "@mandate/sdk": "workspace:*",
+    "@mandate/shared": "workspace:*",
+    "@mandate/tests": "workspace:*",
     "@solana/spl-token": "^0.4.9",
     "@solana/web3.js": "^1.95.4"
   },

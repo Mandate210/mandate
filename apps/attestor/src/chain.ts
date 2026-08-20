@@ -5,8 +5,8 @@
 // network. Same split as `watch.ts` and `connectionWatchRpc`.
 
 import { BN, type Program } from '@coral-xyz/anchor'
-import type { DeclarationEntry, ObservedTransaction } from '@drain-cover/shared'
-import { base58Decode, flattenInstructions } from '@drain-cover/shared'
+import type { DeclarationEntry, ObservedTransaction } from '@mandate/shared'
+import { base58Decode, flattenInstructions } from '@mandate/shared'
 import {
   type DrainCover,
   findAttestation,
@@ -16,7 +16,7 @@ import {
   findIncident,
   findPolicy,
   findVault,
-} from '@drain-cover/sdk'
+} from '@mandate/sdk'
 import { getAssociatedTokenAddressSync } from '@solana/spl-token'
 import { type Connection, type Keypair, PublicKey, SystemProgram } from '@solana/web3.js'
 import type { ActChain, AttestVerdict, IncidentRef, ProtocolState } from './act'

@@ -1,4 +1,4 @@
-# drain-cover
+# Mandate
 
 Parametric cover for Solana protocols: pays out automatically when a protocol's
 privileged admin access is used without authorization. Anchor program holds the
@@ -48,7 +48,7 @@ cargo build-sbf --manifest-path programs/drain-cover/Cargo.toml --arch v3
 **After every program change, sync the IDL into the SDK:**
 
 ```bash
-pnpm --filter @drain-cover/sdk sync:idl
+pnpm --filter @mandate/sdk sync:idl
 ```
 
 `target/` is gitignored, so `packages/sdk/src/idl/` holds a committed copy — that is
@@ -70,13 +70,13 @@ Anchor runs its scripts inside WSL, which has no node. Three steps instead:
 ```bash
 wsl -e bash -lc "solana-test-validator --reset --slots-per-epoch 32"   # WSL, keep running
 wsl -e bash -lc "cd <repo in WSL> && anchor deploy"         # WSL
-pnpm --filter @drain-cover/tests test:integration           # Windows
+pnpm --filter @mandate/tests test:integration           # Windows
 ```
 
 **The end-to-end scenario is a fourth step, and it needs its own ledger:**
 
 ```bash
-pnpm --filter @drain-cover/scenarios compromise     # Windows, after --reset + deploy
+pnpm --filter @mandate/scenarios compromise     # Windows, after --reset + deploy
 ```
 
 It stages ten compromises as real transactions, starts real attestor workers and

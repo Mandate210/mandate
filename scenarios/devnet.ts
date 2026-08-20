@@ -15,7 +15,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { AnchorProvider, Wallet } from '@coral-xyz/anchor'
-import { ASSET_DECIMALS, type TestEnv } from '@drain-cover/tests/harness'
+import { ASSET_DECIMALS, type TestEnv } from '@mandate/tests/harness'
 import { createMint, getOrCreateAssociatedTokenAccount, mintTo } from '@solana/spl-token'
 import {
   Connection,
@@ -89,7 +89,7 @@ export const devnetRpcUrl = (): string => {
  * scavenger hunt. Overridable because the default is a Windows-shaped guess.
  */
 export const keysDir = (): string =>
-  process.env.DRAIN_COVER_KEYS_DIR || join(homedir(), '.secrets', 'drain-cover')
+  process.env.MANDATE_KEYS_DIR || join(homedir(), '.secrets', 'mandate')
 
 const keypairFromFile = (path: string): Keypair => {
   if (!existsSync(path)) {

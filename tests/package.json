@@ -1,5 +1,5 @@
 {
-  "name": "@drain-cover/tests",
+  "name": "@mandate/tests",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",
-    "@drain-cover/sdk": "workspace:*",
+    "@mandate/sdk": "workspace:*",
     "@solana/spl-token": "^0.4.9",
     "@solana/web3.js": "^1.95.4"
   },

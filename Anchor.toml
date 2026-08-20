@@ -25,5 +25,5 @@ wallet = "~/.config/solana/id.json"
 # → «Тулчейн: розподіл між WSL і Windows»). The flow is three steps instead:
 #   WSL:      solana-test-validator
 #   WSL:      anchor deploy
-#   Windows:  pnpm --filter @drain-cover/tests test:integration
+#   Windows:  pnpm --filter @mandate/tests test:integration
 test = "echo 'Run the integration suite from Windows — see the comment in Anchor.toml' && exit 1"

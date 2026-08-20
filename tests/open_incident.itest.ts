@@ -5,7 +5,7 @@ import {
   findConfig,
   findIncident,
   findPolicy,
-} from '@drain-cover/sdk'
+} from '@mandate/sdk'
 import { getAccount } from '@solana/spl-token'
 import { Keypair, SystemProgram } from '@solana/web3.js'
 import { beforeAll, describe, expect, it } from 'vitest'

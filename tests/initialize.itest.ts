@@ -1,5 +1,5 @@
 import type { Program } from '@coral-xyz/anchor'
-import { type DrainCover, createProgram, findConfig } from '@drain-cover/sdk'
+import { type DrainCover, createProgram, findConfig } from '@mandate/sdk'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { type TestEnv, setupTestEnv, validatorReachable } from './harness'
 import { CONFIG_PARAMS, ensureConfig, initializeConfig } from './world'

@@ -1,4 +1,4 @@
-import type { DeclarationEntry, ObservedTransaction } from '@drain-cover/shared'
+import type { DeclarationEntry, ObservedTransaction } from '@mandate/shared'
 import { describe, expect, it } from 'vitest'
 import {
   type ActChain,

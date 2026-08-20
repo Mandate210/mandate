@@ -1,5 +1,5 @@
 import type { Program } from '@coral-xyz/anchor'
-import { type DrainCover, createProgram, findConfig, findIncident } from '@drain-cover/sdk'
+import { type DrainCover, createProgram, findConfig, findIncident } from '@mandate/sdk'
 import { getAccount } from '@solana/spl-token'
 import type { Keypair, PublicKey } from '@solana/web3.js'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'

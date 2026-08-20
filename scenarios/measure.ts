@@ -1,6 +1,6 @@
 // T029 — the two numbers M1 owes, measured on devnet rather than on a validator.
 //
-//   pnpm --filter @drain-cover/scenarios devnet:measure
+//   pnpm --filter @mandate/scenarios devnet:measure
 //
 // Needs `devnet:setup` to have run at least one epoch earlier: FR-008 admits an attestor
 // into the set from the *following* epoch, and a devnet epoch is about thirty-two hours.
@@ -23,19 +23,19 @@
 // incident itself would measure the program and report it as the product.
 
 import { AnchorProvider, BN, type Program, Wallet } from '@coral-xyz/anchor'
-import { createActor } from '@drain-cover/attestor/act'
-import { createChain } from '@drain-cover/attestor/chain'
-import { type WatchedAddress, connectionWatchRpc, createWatcher } from '@drain-cover/attestor/watch'
+import { createActor } from '@mandate/attestor/act'
+import { createChain } from '@mandate/attestor/chain'
+import { type WatchedAddress, connectionWatchRpc, createWatcher } from '@mandate/attestor/watch'
 import {
   type DrainCover,
   createProgram,
   findAttestor,
   findConfig,
   findIncident,
-} from '@drain-cover/sdk'
-import { base58Decode } from '@drain-cover/shared'
-import { type TestEnv, asset } from '@drain-cover/tests/harness'
-import { fundPool, issuePolicy, registerProtocol } from '@drain-cover/tests/world'
+} from '@mandate/sdk'
+import { base58Decode } from '@mandate/shared'
+import { type TestEnv, asset } from '@mandate/tests/harness'
+import { fundPool, issuePolicy, registerProtocol } from '@mandate/tests/world'
 import {
   createAssociatedTokenAccountIdempotent,
   createMint,
@@ -128,7 +128,7 @@ const main = async (): Promise<void> => {
   const env = await setupDevnetEnv()
   const program = createProgram(env.provider)
 
-  say('drain-cover — devnet measurement (T029)\n')
+  say('mandate — devnet measurement (T029)\n')
 
   const state = readState()
   if (state === null || state.attestors.length === 0) {

@@ -30,7 +30,7 @@ import {
   type DeclarationEntry,
   type ObservedTransaction,
   evaluateTransaction,
-} from '@drain-cover/shared'
+} from '@mandate/shared'
 import type { PrivilegedTransaction } from './watch'
 
 /** The two classifications `Attestation` stores. */

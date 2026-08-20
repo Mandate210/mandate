@@ -1,5 +1,5 @@
 import { AnchorError, BN, type Program } from '@coral-xyz/anchor'
-import { type DrainCover, createProgram } from '@drain-cover/sdk'
+import { type DrainCover, createProgram } from '@mandate/sdk'
 import { getAccount } from '@solana/spl-token'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { type TestEnv, asset, setupTestEnv, validatorReachable } from './harness'

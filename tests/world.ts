@@ -11,7 +11,7 @@ import {
   findPool,
   findProtocol,
   findVault,
-} from '@drain-cover/sdk'
+} from '@mandate/sdk'
 import { Connection, Keypair, type PublicKey, SystemProgram } from '@solana/web3.js'
 import { type TestEnv, testRpcUrl, waitForNextEpoch } from './harness'
 

@@ -1,5 +1,5 @@
 import type { Program } from '@coral-xyz/anchor'
-import { type DrainCover, createProgram, findIncident } from '@drain-cover/sdk'
+import { type DrainCover, createProgram, findIncident } from '@mandate/sdk'
 import { LAMPORTS_PER_SOL, type PublicKey } from '@solana/web3.js'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { type TestEnv, asset, setupTestEnv, validatorReachable } from './harness'

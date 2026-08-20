@@ -1,5 +1,5 @@
 {
-  "name": "@drain-cover/sdk",
+  "name": "@mandate/sdk",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -18,7 +18,7 @@
     "@coral-xyz/anchor": "^0.32.1",
     "@solana/spl-token": "^0.4.9",
     "@solana/web3.js": "^1.95.4",
-    "@drain-cover/shared": "workspace:*"
+    "@mandate/shared": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.7.2",

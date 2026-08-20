@@ -1,5 +1,5 @@
 import { AnchorError, type Program } from '@coral-xyz/anchor'
-import { type DrainCover, createProgram, findPool, findProtocol } from '@drain-cover/sdk'
+import { type DrainCover, createProgram, findPool, findProtocol } from '@mandate/sdk'
 import { getAccount } from '@solana/spl-token'
 import { Keypair, type PublicKey, SystemProgram } from '@solana/web3.js'
 import { beforeAll, describe, expect, it } from 'vitest'

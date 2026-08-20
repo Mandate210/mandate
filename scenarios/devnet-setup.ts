@@ -1,6 +1,6 @@
 // One-time, irreversible setup of the devnet deployment (T029, first half).
 //
-//   pnpm --filter @drain-cover/scenarios devnet:setup
+//   pnpm --filter @mandate/scenarios devnet:setup
 //
 // Idempotent: safe to re-run after a devnet hiccup, and it says what it found rather
 // than recreating it. What it cannot do is undo — `Config` is a singleton PDA with no
@@ -15,8 +15,8 @@
 // than one script that appears to hang for a day and a half.
 
 import { BN } from '@coral-xyz/anchor'
-import { createProgram, findAttestor, findConfig } from '@drain-cover/sdk'
-import { setAttestor } from '@drain-cover/tests/world'
+import { createProgram, findAttestor, findConfig } from '@mandate/sdk'
+import { setAttestor } from '@mandate/tests/world'
 import { Keypair, LAMPORTS_PER_SOL, SystemProgram } from '@solana/web3.js'
 import {
   decodeKeypair,
@@ -64,7 +64,7 @@ const main = async (): Promise<void> => {
   const env = await setupDevnetEnv()
   const program = createProgram(env.provider)
 
-  say('drain-cover — devnet setup (T029)\n')
+  say('mandate — devnet setup (T029)\n')
   say(`payer   ${env.payer.publicKey.toBase58()}`)
   say(`balance ${(await env.connection.getBalance(env.payer.publicKey)) / LAMPORTS_PER_SOL} SOL`)
   say(`mint    ${env.assetMint.toBase58()}\n`)
@@ -138,16 +138,36 @@ const main = async (): Promise<void> => {
   const remaining = info.slotsInEpoch - info.slotIndex
   const hours = (remaining * (await secondsPerSlot(env.connection))) / 3_600
 
+  // Read back rather than assumed. A re-run finds everybody already admitted, and a
+  // message that says «votes from the next epoch» regardless would send the next
+  // session away to wait out a devnet epoch — a day and a half — for a set that can
+  // already vote.
+  const admitted = await program.account.attestor.fetchMultiple(
+    attestors.map((attestor) => findAttestor(program.programId, attestor.publicKey)),
+  )
+  const votingNow = admitted.filter(
+    (attestor) => attestor?.inSet && attestor.activeFromEpoch.toNumber() <= info.epoch,
+  ).length
+
   say('')
   say('────────────────────────────────────────────────')
   say(`epoch ${info.epoch}, ${remaining} of ${info.slotsInEpoch} slots left`)
-  say(`the set votes from epoch ${info.epoch + 1} — about ${hours.toFixed(1)}h away`)
+  if (votingNow === attestors.length) {
+    say(`all ${votingNow} attestors can vote now`)
+  } else {
+    say(`${votingNow} of ${attestors.length} can vote now; the rest from epoch ${info.epoch + 1}`)
+    say(`that boundary is about ${hours.toFixed(1)}h away`)
+  }
   say('────────────────────────────────────────────────')
   say('')
-  say('FR-008 is why: an attestor admitted in one epoch votes from the next, and a')
-  say('devnet epoch is 432 000 slots. Run the measurement after the boundary:')
+  if (votingNow < attestors.length) {
+    say('FR-008 is why: an attestor admitted in one epoch votes from the next, and a')
+    say('devnet epoch is 432 000 slots. Run the measurement after the boundary:')
+  } else {
+    say('Ready to measure:')
+  }
   say('')
-  say('  pnpm --filter @drain-cover/scenarios devnet:measure')
+  say('  pnpm --filter @mandate/scenarios devnet:measure')
 
   const left = await env.connection.getBalance(env.payer.publicKey)
   say(`\npayer has ${(left / LAMPORTS_PER_SOL).toFixed(4)} SOL left`)

@@ -1,7 +1,7 @@
 // The end-to-end scenario (T028): a compromise happens, and the system pays out
 // without anybody touching it.
 //
-//   pnpm --filter @drain-cover/scenarios compromise
+//   pnpm --filter @mandate/scenarios compromise
 //
 // Needs a validator started the way the integration suite needs one — `--reset` and
 // `--slots-per-epoch 32` (`CLAUDE.md` → Commands). `--reset` is not optional here for a
@@ -31,16 +31,16 @@
 // SC-005 makes.
 
 import { AnchorProvider, BN, type Program, Wallet } from '@coral-xyz/anchor'
-import { createActor } from '@drain-cover/attestor/act'
-import { createChain, toObservedTransaction } from '@drain-cover/attestor/chain'
-import { type WatchedAddress, connectionWatchRpc, createWatcher } from '@drain-cover/attestor/watch'
+import { createActor } from '@mandate/attestor/act'
+import { createChain, toObservedTransaction } from '@mandate/attestor/chain'
+import { type WatchedAddress, connectionWatchRpc, createWatcher } from '@mandate/attestor/watch'
 import {
   type DrainCover,
   createProgram,
   findAttestor,
   findConfig,
   findIncident,
-} from '@drain-cover/sdk'
+} from '@mandate/sdk'
 import {
   asset,
   clusterTimestamp,
@@ -48,7 +48,7 @@ import {
   type TestEnv,
   waitForNextEpoch,
   waitPastClusterTime,
-} from '@drain-cover/tests/harness'
+} from '@mandate/tests/harness'
 import {
   fundPool,
   issuePolicy,
@@ -57,7 +57,7 @@ import {
   registerProtocol,
   revokeDeclaration,
   setAttestor,
-} from '@drain-cover/tests/world'
+} from '@mandate/tests/world'
 import {
   createAssociatedTokenAccountIdempotent,
   createMint,
@@ -716,7 +716,7 @@ const setupOnDevnet = async (): Promise<{
   const state = readState()
   if (state === null || state.attestors.length === 0) {
     throw new Error(
-      'No devnet-state.json with attestors. Run `pnpm --filter @drain-cover/scenarios devnet:setup` first, then wait for the next epoch.',
+      'No devnet-state.json with attestors. Run `pnpm --filter @mandate/scenarios devnet:setup` first, then wait for the next epoch.',
     )
   }
 
@@ -769,7 +769,7 @@ const setupOnValidator = async (): Promise<{
 const main = async (): Promise<void> => {
   const onDevnet = process.argv.includes('--devnet')
 
-  say(`drain-cover — compromise scenario (T028), ${onDevnet ? 'devnet' : 'local validator'}\n`)
+  say(`mandate — compromise scenario (T028), ${onDevnet ? 'devnet' : 'local validator'}\n`)
   const { env, program, attestorKeys } = onDevnet
     ? await setupOnDevnet()
     : await setupOnValidator()

@@ -1,7 +1,7 @@
 // What GitHub Pages needs on top of a plain Vite build, and why.
 //
 // **`404.html`.** Pages serves static files and knows nothing about client-side
-// routes, so a visitor opening `/drain-cover/incident/…` directly — a shared link,
+// routes, so a visitor opening `/mandate/incident/…` directly — a shared link,
 // a refresh, a bookmark — gets a 404 for a page this app can render perfectly well.
 // Pages serves `404.html` for any path it cannot find, so a copy of `index.html`
 // under that name hands control back to the router. Only the first paint differs;

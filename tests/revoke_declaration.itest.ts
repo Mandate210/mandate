@@ -1,5 +1,5 @@
 import { AnchorError, BN, type Program } from '@coral-xyz/anchor'
-import { type DrainCover, createProgram, findDeclarationEntry } from '@drain-cover/sdk'
+import { type DrainCover, createProgram, findDeclarationEntry } from '@mandate/sdk'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { type TestEnv, setupTestEnv, validatorReachable } from './harness'
 import {

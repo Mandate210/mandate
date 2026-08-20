@@ -333,7 +333,7 @@ Zod-схеми параметрів і відповідей — у `packages/sha
 ## Структура файлів
 
 ```
-drain-cover/
+mandate/
 ├── programs/drain-cover/          # Anchor, Rust
 │   └── src/
 │       ├── lib.rs

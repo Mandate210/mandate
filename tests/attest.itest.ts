@@ -5,7 +5,7 @@ import {
   findAttestation,
   findAttestor,
   findIncident,
-} from '@drain-cover/sdk'
+} from '@mandate/sdk'
 import { type Keypair, SystemProgram } from '@solana/web3.js'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { type TestEnv, asset, setupTestEnv, validatorReachable, waitForNextEpoch } from './harness'

@@ -11,8 +11,8 @@
 // would be an attestor nobody could reproduce.
 
 import { AnchorProvider, Wallet } from '@coral-xyz/anchor'
-import { createProgram } from '@drain-cover/sdk'
-import { base58Decode } from '@drain-cover/shared'
+import { createProgram } from '@mandate/sdk'
+import { base58Decode } from '@mandate/shared'
 import { Connection, Keypair } from '@solana/web3.js'
 import pino from 'pino'
 import { createActor } from './act'

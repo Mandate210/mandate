@@ -23,21 +23,21 @@ importers:
 
   apps/api:
     dependencies:
-      '@drain-cover/db':
-        specifier: workspace:*
-        version: link:../../packages/db
-      '@drain-cover/sdk':
-        specifier: workspace:*
-        version: link:../../packages/sdk
-      '@drain-cover/shared':
-        specifier: workspace:*
-        version: link:../../packages/shared
       '@hono/node-server':
         specifier: ^1.13.7
         version: 1.19.17(hono@4.13.1)
       '@hono/zod-validator':
         specifier: ^0.4.1
         version: 0.4.3(hono@4.13.1)(zod@3.25.76)
+      '@mandate/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@mandate/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
+      '@mandate/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       hono:
         specifier: ^4.6.14
         version: 4.13.1
@@ -66,10 +66,10 @@ importers:
       '@coral-xyz/anchor':
         specifier: ^0.32.1
         version: 0.32.1(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)
-      '@drain-cover/sdk':
+      '@mandate/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
-      '@drain-cover/shared':
+      '@mandate/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@solana/spl-token':
@@ -180,7 +180,7 @@ importers:
       '@coral-xyz/anchor':
         specifier: ^0.32.1
         version: 0.32.1(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)
-      '@drain-cover/shared':
+      '@mandate/shared':
         specifier: workspace:*
         version: link:../shared
       '@solana/spl-token':
@@ -215,16 +215,16 @@ importers:
       '@coral-xyz/anchor':
         specifier: ^0.32.1
         version: 0.32.1(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)
-      '@drain-cover/attestor':
+      '@mandate/attestor':
         specifier: workspace:*
         version: link:../apps/attestor
-      '@drain-cover/sdk':
+      '@mandate/sdk':
         specifier: workspace:*
         version: link:../packages/sdk
-      '@drain-cover/shared':
+      '@mandate/shared':
         specifier: workspace:*
         version: link:../packages/shared
-      '@drain-cover/tests':
+      '@mandate/tests':
         specifier: workspace:*
         version: link:../tests
       '@solana/spl-token':
@@ -252,7 +252,7 @@ importers:
       '@coral-xyz/anchor':
         specifier: ^0.32.1
         version: 0.32.1(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)
-      '@drain-cover/sdk':
+      '@mandate/sdk':
         specifier: workspace:*
         version: link:../packages/sdk
       '@solana/spl-token':

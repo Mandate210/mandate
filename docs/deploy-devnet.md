@@ -37,14 +37,14 @@
 
 ## Ключі
 
-Обидва лежать **поза репозиторієм**, у `%USERPROFILE%\.secrets\drain-cover\`:
+Обидва лежать **поза репозиторієм**, у `%USERPROFILE%\.secrets\mandate\`:
 
 | Файл | Що це | Робоча копія |
 |---|---|---|
 | `drain_cover-keypair.json` | ключ програми — визначає її адресу | `target/deploy/drain_cover-keypair.json` |
-| `devnet-deployer.json` | платник деплою й upgrade authority | `~/.config/solana/drain-cover-devnet-deployer.json` (WSL) |
+| `devnet-deployer.json` | платник деплою й upgrade authority | `~/.config/solana/mandate-devnet-deployer.json` (WSL) |
 
-Каталог перевизначається змінною **`DRAIN_COVER_KEYS_DIR`**, а кількість зразків
+Каталог перевизначається змінною **`MANDATE_KEYS_DIR`**, а кількість зразків
 виміру — **`DEVNET_SAMPLES`** (типово 20). Обидві читаються лише з оточення процесу,
 не з `.env`, тому їх і немає в `.env.example`: там вони б не спрацювали. Та сама
 конвенція, що вже діє для `TEST_RPC_URL` і `ALLOW_NON_LOCAL_TEST_RPC`.
@@ -140,7 +140,7 @@ faucet-ліміту, а він виявився вчетверо меншим з
 wsl -e bash -lc "cd <repo> && solana program deploy \
   target/deploy/drain_cover.so \
   --program-id target/deploy/drain_cover-keypair.json \
-  --keypair ~/.config/solana/drain-cover-devnet-deployer.json \
+  --keypair ~/.config/solana/mandate-devnet-deployer.json \
   --url devnet \
   --max-len 420760"
 ```
@@ -149,7 +149,7 @@ wsl -e bash -lc "cd <repo> && solana program deploy \
 понад це, звідси 420 805 байтів у таблиці ренти вище.
 
 Якщо деплой обірветься на середині, буфер лишається оплаченим і його видно в
-`solana program show --buffers --keypair ~/.config/solana/drain-cover-devnet-deployer.json
+`solana program show --buffers --keypair ~/.config/solana/mandate-devnet-deployer.json
 -u devnet`. Продовжити — `--buffer <адреса>`; кинути й забрати ренту —
 `solana program close <адреса>`. На devnet, де кожен SOL здобувається вручну,
 загублений буфер коштує повторного походу по faucet.
@@ -165,7 +165,7 @@ wsl -e bash -lc "solana program show DsRdHv4QRYQ7teVhwuLVttktF792gvDFQdiuraQ4eF4
 
 ## Крок 5 — `Config` ✅ створений 2026-08-13
 
-Одноразово й назавжди, скриптом `pnpm --filter @drain-cover/scenarios devnet:setup`.
+Одноразово й назавжди, скриптом `pnpm --filter @mandate/scenarios devnet:setup`.
 
 | | |
 |---|---|
@@ -198,8 +198,8 @@ wsl -e bash -lc "solana program show DsRdHv4QRYQ7teVhwuLVttktF792gvDFQdiuraQ4eF4
 Тому T029 розділена на два запуски, а не один скрипт, що вдає зависання на добу:
 
 ```bash
-pnpm --filter @drain-cover/scenarios devnet:setup     # один раз, зроблено
-pnpm --filter @drain-cover/scenarios devnet:measure   # після межі епохи
+pnpm --filter @mandate/scenarios devnet:setup     # один раз, зроблено
+pnpm --filter @mandate/scenarios devnet:measure   # після межі епохи
 ```
 
 `devnet:measure` сам перевіряє, чи вже можна голосувати, і якщо ні — каже, скільки
@@ -233,7 +233,7 @@ Explorer:
 
 ## Крок 8 — вимір T029 ✅ 2026-08-14, епоха 1120
 
-`pnpm --filter @drain-cover/scenarios devnet:measure`, 20 зразків, 20 із 20 дійшли
+`pnpm --filter @mandate/scenarios devnet:measure`, 20 зразків, 20 із 20 дійшли
 до грошей у казні.
 
 | | Виміряно | Бюджет |
