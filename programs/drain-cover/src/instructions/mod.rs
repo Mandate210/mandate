@@ -1,5 +1,5 @@
 // One file per instruction, added in Phase 4 in user-story order. Names below are
-// the ones the tasks carry, so a task and a file always match (docs/TASKS.md).
+// the ones the tasks carry, so a task and a file always match.
 //
 // Foundation: initialize
 // US1 (P1): register_protocol, issue_policy, service_fund_pool (temporary, removed

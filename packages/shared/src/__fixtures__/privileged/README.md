@@ -38,7 +38,7 @@ it «never appears as a signer» and claimed more than it had measured.
   "provenance": {
     "cluster": "mainnet-beta",
     "rpc": "https://solana-rpc.publicnode.com",
-    "fetchedAt": "2026-08-13T…",
+    "fetchedAt": "<ISO-8601>",
     "derivedFrom": "upgrade authority of program …, read from its ProgramData account",
     "firstAvailableBlock": 438556507  // the endpoint's oldest servable slot
   },

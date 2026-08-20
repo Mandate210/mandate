@@ -77,7 +77,8 @@ Worth knowing before drawing conclusions:
 - **No mainnet and no external audit.** Neither is close, and both come before
   anything touches real money.
 - Two defects that only appear under real network latency are open and block the
-  next milestone — `docs/TASKS.md` → T070, T071.
+  next milestone: attestors race to open two incidents on one event, and nothing
+  ever closes an incident whose window expired, so pool capital stays frozen.
 
 ## Layout
 
@@ -100,4 +101,4 @@ observer, and can be rebuilt from the chain — if anything can only be recovere
 from Postgres, it is in the wrong place.
 
 Requirements and success criteria are in `docs/SPEC.md`, the architecture and its
-risks in `docs/PLAN.md`, and the work itself in `docs/TASKS.md`.
+risks in `docs/PLAN.md`.

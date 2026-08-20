@@ -35,7 +35,7 @@ const REFERENCE_ATTESTORS = 5
 // 2_220_240 for the incident and 1_009_200 per attestation, both a function of the
 // account layouts alone. Adding a field to either account moves them, and this test is
 // here so that happens as a decision rather than as a surprise — which is why it sits
-// in 2a, before the number of accounts per incident settles (docs/TASKS.md → T064).
+// in 2a, before the number of accounts per incident settles (T064).
 const INCIDENT_RENT_CEILING = 2_250_000
 const ATTESTATION_RENT_CEILING = 1_020_000
 /** Incident plus five attestations. Measured today: 7_266_240. */

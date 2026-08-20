@@ -4,9 +4,8 @@ Parametric cover for Solana protocols: pays out automatically when a protocol's
 privileged admin access is used without authorization. Anchor program holds the
 capital; independent attestors decide; payout is immediate and irreversible.
 
-Read `docs/SPEC.md` before changing behaviour, `docs/PLAN.md` before changing
-structure, `docs/TASKS.md` for what is next, `docs/SCRATCHPAD.md` for where the
-last session stopped.
+Read `docs/SPEC.md` before changing behaviour and `docs/PLAN.md` before changing
+structure.
 
 ## Stack
 
@@ -141,7 +140,7 @@ inline passed while asserting nothing.
 - **No price oracles anywhere.** One dollar-denominated asset only (FR-014).
 - **No auth, no sessions, no wallet adapter in `web`.** Every action is a signed
   transaction made outside the app (FR-034).
-- Conventional commits, one task from `docs/TASKS.md` per commit, ending with
+- Conventional commits, one task per commit, ending with
   `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`.
 - Client repo: commits are authored as the client, never as the contractor.
   `.arena.json` stays out of the index. Before any push, check that no personal

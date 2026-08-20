@@ -18,7 +18,7 @@ pub use state::Verdict;
 declare_id!("DsRdHv4QRYQ7teVhwuLVttktF792gvDFQdiuraQ4eF4P");
 
 // Every instruction is registered here, which is why instruction tasks cannot run
-// in parallel — they all touch this file (docs/TASKS.md).
+// in parallel — they all touch this file.
 #[program]
 pub mod drain_cover {
     use super::*;

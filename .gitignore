@@ -35,3 +35,9 @@ test-ledger/
 Thumbs.db
 .idea/
 .vscode/
+
+# Робочі документи підрядника — лишаються на диску, у репозиторій не йдуть.
+# SCRATCHPAD — журнал сесій; TASKS — план робіт з ID задач і внутрішнім процесом.
+# Клієнту потрібні SPEC, PLAN і README; решта — про те, як до них дійшли.
+docs/SCRATCHPAD.md
+docs/TASKS.md
