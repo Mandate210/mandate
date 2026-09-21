@@ -1,5 +1,5 @@
 import type { Program } from '@coral-xyz/anchor'
-import { type DrainCover, createProgram, findConfig, findIncident } from '@mandate/sdk'
+import { type DrainCover, createProgram, findConfig } from '@mandate/sdk'
 import { getAccount } from '@solana/spl-token'
 import type { Keypair, PublicKey } from '@solana/web3.js'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -101,8 +101,7 @@ describe.skipIf(!reachable)('SC-004 — quorum with 40% of the set unavailable',
 
   it('reaches a decision and pays, with 40% of the set never answering', async () => {
     const beneficiaryBefore = (await getAccount(env.connection, beneficiaryToken)).amount
-    const { seq } = await openIncident(program, env, target, policySeq)
-    const incidentAccount = findIncident(program.programId, target.protocol, seq)
+    const { incident: incidentAccount } = await openIncident(program, env, target, policySeq)
 
     const opened = await program.account.incident.fetch(incidentAccount)
     // The denominator is the whole set, unavailability included — that is what makes
@@ -112,7 +111,7 @@ describe.skipIf(!reachable)('SC-004 — quorum with 40% of the set unavailable',
     expect((silent * BPS) / setSize).toBeGreaterThanOrEqual(UNAVAILABLE_BPS)
 
     for (const voter of voters.slice(0, needed)) {
-      await attest(program, target, seq, voter)
+      await attest(program, target, incidentAccount, voter)
     }
 
     const attested = await program.account.incident.fetch(incidentAccount)
@@ -127,7 +126,7 @@ describe.skipIf(!reachable)('SC-004 — quorum with 40% of the set unavailable',
     const decidedAt = await clusterTimestamp(env.connection)
     expect(decidedAt).toBeLessThan(attested.deadline.toNumber())
 
-    await resolve(program, env, target, seq)
+    await resolve(program, env, target, incidentAccount)
 
     const settled = await program.account.incident.fetch(incidentAccount)
     expect(settled.status).toEqual({ paidOut: {} })
@@ -147,20 +146,18 @@ describe.skipIf(!reachable)('SC-004 — quorum with 40% of the set unavailable',
       retention: RETENTION,
       premium: PREMIUM,
     })
-    const { seq } = await openIncident(program, env, other, otherPolicy)
+    const { incident: opened } = await openIncident(program, env, other, otherPolicy)
 
     // One vote short of the same bar — an incident where 40% plus one member is
     // unreachable. SC-004 promises a decision up to 40%, and above it the quorum is
     // simply not met: the program has no notion of a reduced set to fall back on.
     for (const voter of voters.slice(0, needed - 1)) {
-      await attest(program, other, seq, voter)
+      await attest(program, other, opened, voter)
     }
 
-    const incident = await program.account.incident.fetch(
-      findIncident(program.programId, other.protocol, seq),
-    )
+    const incident = await program.account.incident.fetch(opened)
     expect(incident.setSize).toBe(setSize)
     expect(incident.votesUnauthorized).toBe(needed - 1)
-    await expect(resolve(program, env, other, seq)).rejects.toThrow()
+    await expect(resolve(program, env, other, opened)).rejects.toThrow()
   })
 })

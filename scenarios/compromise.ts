@@ -41,19 +41,20 @@ import {
   findConfig,
   findIncident,
 } from '@mandate/sdk'
+import { base58Decode } from '@mandate/shared'
 import {
+  type TestEnv,
   asset,
   clusterTimestamp,
   setupTestEnv,
-  type TestEnv,
   waitForNextEpoch,
   waitPastClusterTime,
 } from '@mandate/tests/harness'
 import {
+  type RegisteredProtocol,
   fundPool,
   issuePolicy,
   quorumNeeded,
-  type RegisteredProtocol,
   registerProtocol,
   revokeDeclaration,
   setAttestor,
@@ -144,10 +145,7 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
  * already carries one from another suite cannot run this. Said plainly rather than
  * failing later on a confusing timing assertion.
  */
-const ensureScenarioConfig = async (
-  program: Program<DrainCover>,
-  env: TestEnv,
-): Promise<void> => {
+const ensureScenarioConfig = async (program: Program<DrainCover>, env: TestEnv): Promise<void> => {
   const existing = await program.account.config.fetchNullable(findConfig(program.programId))
   if (existing !== null) {
     if (existing.declarationDelay.toNumber() !== DECLARATION_DELAY) {
@@ -215,13 +213,7 @@ const buildStage = async (
   await env.assetAccount(target.treasury)
 
   // A token the privileged address is the authority over — the protocol's own asset.
-  const token = await createMint(
-    env.connection,
-    env.payer,
-    privilegedAddress,
-    privilegedAddress,
-    6,
-  )
+  const token = await createMint(env.connection, env.payer, privilegedAddress, privilegedAddress, 6)
   const treasury = await createAssociatedTokenAccountIdempotent(
     env.connection,
     env.payer,
@@ -245,7 +237,15 @@ const buildStage = async (
   if (privileged !== null) {
     await mintTo(env.connection, env.payer, token, treasury, privileged, 10_000 * UNIT)
   } else {
-    await mintTo(env.connection, env.payer, token, treasury, privilegedAddress, 10_000 * UNIT, members)
+    await mintTo(
+      env.connection,
+      env.payer,
+      token,
+      treasury,
+      privilegedAddress,
+      10_000 * UNIT,
+      members,
+    )
   }
   // Only the scenario that sweeps native balance needs any, and it says how much.
   // Airdropped on a validator and transferred on devnet, where two SOL a stage would
@@ -289,8 +289,7 @@ const buildStage = async (
       return seq
     },
     revoke: (seq) => revokeDeclaration(program, target, seq),
-    send: (instructions, signers) =>
-      sendWith(env.connection, env.payer, instructions, signers),
+    send: (instructions, signers) => sendWith(env.connection, env.payer, instructions, signers),
   }
 
   return { compromise, target, world }
@@ -327,10 +326,9 @@ const awaitDecision = async (
   const before = await balanceOf(env, beneficiary)
 
   for (;;) {
-    const raised = await incidentsForTrigger(program, target.protocol, signature)
-    const paid = raised.find(({ account }) => 'paidOut' in account.status)
+    const raised = await incidentForTrigger(program, target.protocol, signature)
 
-    if (paid !== undefined) {
+    if (raised !== null && 'paidOut' in raised.account.status) {
       const seconds = (Date.now() - started) / 1000
       const received = (await balanceOf(env, beneficiary)) - before
       return {
@@ -338,22 +336,20 @@ const awaitDecision = async (
         seconds,
         received,
         note: received > 0n ? '' : 'settled without moving any money to the beneficiary',
-        incident: paid.address,
+        incident: raised.address,
       }
     }
     if (Date.now() - started > budgetSeconds * 1000) {
       const note =
-        raised.length === 0
+        raised === null
           ? 'no incident was ever opened'
-          : `${raised.length} incident(s) opened on this transaction, none reached a quorum — votes ${raised
-              .map(({ account }) => account.votesUnauthorized)
-              .join(' and ')}`
+          : `incident opened, no quorum — ${raised.account.votesUnauthorized} vote(s) unauthorized`
       return {
         settled: false,
         seconds: (Date.now() - started) / 1000,
         received: 0n,
         note,
-        incident: raised[0]?.address ?? null,
+        incident: raised?.address ?? null,
       }
     }
     await sleep(400)
@@ -361,39 +357,36 @@ const awaitDecision = async (
 }
 
 /**
- * Every incident this protocol carries for this trigger signature — plural on purpose.
+ * The incident this protocol carries for this trigger signature — singular, by
+ * construction.
  *
- * The first version of this looked at sequence number zero and asked whether *that*
- * incident had paid out. On a validator, where the whole cycle is two seconds, the
- * attestors practically never raced and sequence zero was always the right one. On
- * devnet they race on essentially every event (T070): a second attestor opens its own
- * incident at sequence one, and if the quorum lands there, reading sequence zero
- * reports «not recognised» for a compromise that was recognised and paid. A
- * measurement that can call a success a failure is worse than no measurement.
- *
- * Enumerated from the protocol's own counter rather than found with a `memcmp`: that
- * would be `getProgramAccounts` on a poll loop, which is what starved the attestors of
- * their RPC quota in the first devnet run of `measure.ts`.
+ * Two earlier versions of this are worth remembering. The first looked at sequence
+ * number zero and asked whether *that* incident had paid out; on devnet, where the
+ * attestors race on essentially every event, the quorum often landed on a second
+ * incident at sequence one and the scenario reported «not recognised» for a compromise
+ * that was recognised and paid. The second enumerated every incident of the protocol
+ * and filtered by the stored signature. Since T070 the address *is* the signature, so
+ * this is one derivation and one read — and «how many incidents did this event get»
+ * stops being a question, which is what `incidentCount` below is checked for.
  */
-const incidentsForTrigger = async (
+const incidentForTrigger = async (
   program: Program<DrainCover>,
   protocol: PublicKey,
   signature: string,
-): Promise<{ address: PublicKey; account: { status: object; votesUnauthorized: number } }[]> => {
-  const { nextIncidentSeq } = await program.account.protocol.fetch(protocol)
-  const addresses = Array.from({ length: nextIncidentSeq.toNumber() }, (_, seq) =>
-    findIncident(program.programId, protocol, seq),
-  )
-  if (addresses.length === 0) return []
-
-  const accounts = await program.account.incident.fetchMultiple(addresses)
-  return accounts.flatMap((account, index) => {
-    if (account === null) return []
-    if (bs58(account.triggerSig) !== signature) return []
-    const address = addresses[index]
-    return address === undefined ? [] : [{ address, account }]
-  })
+): Promise<{
+  address: PublicKey
+  account: { status: object; votesUnauthorized: number }
+} | null> => {
+  const address = findIncident(program.programId, protocol, base58Decode(signature))
+  const account = await program.account.incident.fetchNullable(address)
+  return account === null ? null : { address, account }
 }
+
+/** `Protocol.incident_count`: every incident ever opened against it, duplicates included. */
+const incidentsOpenedOn = async (
+  program: Program<DrainCover>,
+  protocol: PublicKey,
+): Promise<number> => (await program.account.protocol.fetch(protocol)).incidentCount.toNumber()
 
 const balanceOf = async (env: TestEnv, account: PublicKey): Promise<bigint> => {
   const info = await env.connection.getTokenAccountBalance(account, 'confirmed')
@@ -421,7 +414,13 @@ const bs58 = (bytes: number[]): string => {
     }
   }
 
-  return '1'.repeat(zeros) + digits.reverse().map((digit) => BASE58[digit]).join('')
+  return (
+    '1'.repeat(zeros) +
+    digits
+      .reverse()
+      .map((digit) => BASE58[digit])
+      .join('')
+  )
 }
 
 /**
@@ -432,10 +431,7 @@ const bs58 = (bytes: number[]): string => {
  * hours — which is why the devnet entry point reuses a set admitted in an earlier
  * session instead of calling this.
  */
-const admitFreshSet = async (
-  program: Program<DrainCover>,
-  env: TestEnv,
-): Promise<Keypair[]> => {
+const admitFreshSet = async (program: Program<DrainCover>, env: TestEnv): Promise<Keypair[]> => {
   const attestorKeys: Keypair[] = []
   for (let index = 0; index < ATTESTOR_COUNT; index += 1) {
     const keypair = await env.fundedKeypair(ATTESTOR_SOL)
@@ -512,7 +508,11 @@ export const runScenario = async ({
       commitment: 'confirmed',
     })
     const actor = createActor({
-      chain: createChain({ program: createProgram(provider), connection: env.connection, attestor }),
+      chain: createChain({
+        program: createProgram(provider),
+        connection: env.connection,
+        attestor,
+      }),
       logger: quiet,
     })
     return createWatcher({
@@ -556,7 +556,9 @@ export const runScenario = async ({
   if (lastEffective > 0) {
     const now = await clusterTimestamp(env.connection)
     if (lastEffective >= now) {
-      say(`waiting ${lastEffective - now + 1}s of cluster time for the declarations to take effect…`)
+      say(
+        `waiting ${lastEffective - now + 1}s of cluster time for the declarations to take effect…`,
+      )
       await waitPastClusterTime(env.connection, lastEffective)
     }
   }
@@ -573,6 +575,8 @@ export const runScenario = async ({
     received: bigint
     incident: PublicKey | null
     signature: string
+    /** Incidents the protocol counted for this one event. One is the only right answer. */
+    opened: number
   }[] = []
 
   for (const stage of stages) {
@@ -585,6 +589,7 @@ export const runScenario = async ({
       signature,
       CYCLE_BUDGET_SECONDS,
     )
+    const opened = await incidentsOpenedOn(program, stage.target.protocol)
     results.push({
       id: stage.compromise.id,
       recognised: decision.settled,
@@ -592,10 +597,11 @@ export const runScenario = async ({
       received: decision.received,
       incident: decision.incident,
       signature,
+      opened,
     })
     say(
       decision.settled
-        ? `recognised, ${Number(decision.received) / UNIT} paid in ${decision.seconds.toFixed(1)}s`
+        ? `recognised, ${Number(decision.received) / UNIT} paid in ${decision.seconds.toFixed(1)}s${opened === 1 ? '' : ` — ${opened} INCIDENTS OPENED`}`
         : `NOT RECOGNISED after ${decision.seconds.toFixed(0)}s — ${decision.note}`,
     )
   }
@@ -605,14 +611,20 @@ export const runScenario = async ({
   process.stdout.write(`  ${control.compromise.id.padEnd(36)} `)
   const controlSignature = await control.compromise.fire(control.world)
   await sleep(CONTROL_WINDOW_SECONDS * 1_000)
+  // The counter, not just the control's own address: an incident on this protocol about
+  // *any* transaction — the scaffolding touches the privileged key too — is a false
+  // opening, and the counter sees all of them where a single derived address would not.
+  const controlOpened = await incidentsOpenedOn(program, control.target.protocol)
   const controlIncident = await program.account.incident.fetchNullable(
-    findIncident(program.programId, control.target.protocol, 0),
+    findIncident(program.programId, control.target.protocol, base58Decode(controlSignature)),
   )
-  const controlHeld = controlIncident === null
+  const controlHeld = controlOpened === 0
   say(
     controlHeld
       ? `left alone for ${CONTROL_WINDOW_SECONDS}s, as it should be`
-      : 'FALSE INCIDENT — a declared operation was treated as a compromise',
+      : controlIncident !== null
+        ? 'FALSE INCIDENT — a declared operation was treated as a compromise'
+        : `FALSE INCIDENT — ${controlOpened} opened on the control protocol, on a transaction other than the control`,
   )
   if (controlIncident !== null) {
     // A false opening is the one failure this scenario cannot leave as a number: which
@@ -657,12 +669,19 @@ export const runScenario = async ({
     say('\non chain:')
     for (const result of results) {
       if (result.incident === null) continue
-      say(`  ${result.id.padEnd(36)} https://explorer.solana.com/address/${result.incident.toBase58()}?cluster=${cluster}`)
+      say(
+        `  ${result.id.padEnd(36)} https://explorer.solana.com/address/${result.incident.toBase58()}?cluster=${cluster}`,
+      )
     }
   }
 
   say('\n────────────────────────────────────────────────')
-  say(`SC-003  recognised ${recognised.length} of ${results.length}   (needs ≥ ${REQUIRED_RECOGNISED})`)
+  say(
+    `SC-003  recognised ${recognised.length} of ${results.length}   (needs ≥ ${REQUIRED_RECOGNISED})`,
+  )
+  say(
+    `T070    incidents per event ${results.map((result) => result.opened).join(' ')}   (needs 1 each)`,
+  )
   say(
     `SC-005  slowest full cycle ${slowest.toFixed(1)}s          (needs ≤ ${CYCLE_BUDGET_SECONDS}s)`,
   )
@@ -678,12 +697,25 @@ export const runScenario = async ({
     )
   }
   if (recognised.length === 0 || slowest > CYCLE_BUDGET_SECONDS) {
-    failures.push(`SC-005: slowest cycle ${slowest.toFixed(1)}s over the ${CYCLE_BUDGET_SECONDS}s budget`)
+    failures.push(
+      `SC-005: slowest cycle ${slowest.toFixed(1)}s over the ${CYCLE_BUDGET_SECONDS}s budget`,
+    )
   }
   if (!controlHeld) {
     // Without this the count above is not recall — it is the score of a system that
     // might be opening an incident on everything it sees.
     failures.push('control: an incident was opened on a declared operation')
+  }
+  const duplicated = results.filter((result) => result.opened > 1)
+  if (duplicated.length > 0) {
+    // T070. Before the incident was addressed by its trigger, three attestors racing
+    // on one event opened two or three incidents for it on devnet — 22 of 45 triggers.
+    // Every extra one held a bond and kept the pool's capital frozen for good.
+    failures.push(
+      `T070: more than one incident on one event — ${duplicated
+        .map((result) => `${result.id} (${result.opened})`)
+        .join(', ')}`,
+    )
   }
 
   if (failures.length > 0) {
@@ -747,7 +779,9 @@ const setupOnDevnet = async (): Promise<{
     )
   }
 
-  say(`epoch ${epoch}: ${active} attestors can vote, quorum needs ${needed} of ${config.attestorCount}\n`)
+  say(
+    `epoch ${epoch}: ${active} attestors can vote, quorum needs ${needed} of ${config.attestorCount}\n`,
+  )
   return { env, program, attestorKeys }
 }
 
@@ -770,9 +804,7 @@ const main = async (): Promise<void> => {
   const onDevnet = process.argv.includes('--devnet')
 
   say(`mandate — compromise scenario (T028), ${onDevnet ? 'devnet' : 'local validator'}\n`)
-  const { env, program, attestorKeys } = onDevnet
-    ? await setupOnDevnet()
-    : await setupOnValidator()
+  const { env, program, attestorKeys } = onDevnet ? await setupOnDevnet() : await setupOnValidator()
 
   await runScenario({
     program,

@@ -2,7 +2,16 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PublicKey } from '@solana/web3.js'
 import { describe, expect, it } from 'vitest'
-import { PROGRAM_ID, SEEDS, findAttestation, findConfig, seqSeed } from './index'
+import {
+  PROGRAM_ID,
+  SEEDS,
+  TRIGGER_SIG_LENGTH,
+  findAttestation,
+  findConfig,
+  findIncident,
+  seqSeed,
+  triggerSeeds,
+} from './index'
 
 const stateDir = join(
   import.meta.dirname,
@@ -72,6 +81,41 @@ describe('derivation', () => {
     expect([...seqSeed(1)]).toEqual([1, 0, 0, 0, 0, 0, 0, 0])
     expect([...seqSeed(256)]).toEqual([0, 1, 0, 0, 0, 0, 0, 0])
     expect(seqSeed(0)).toHaveLength(8)
+  })
+
+  it('splits a trigger signature into two seeds of the maximum length', () => {
+    const sig = Uint8Array.from({ length: TRIGGER_SIG_LENGTH }, (_, i) => i)
+    const [first, second] = triggerSeeds(sig)
+    expect([...first]).toEqual([...sig.subarray(0, 32)])
+    expect([...second]).toEqual([...sig.subarray(32)])
+  })
+
+  it('refuses anything that is not a 64-byte signature', () => {
+    // A 32-byte value derives a perfectly valid address the program will never
+    // recognise, so the length is checked here rather than left to the runtime.
+    expect(() => triggerSeeds(new Uint8Array(32))).toThrow(RangeError)
+    expect(() => triggerSeeds(new Uint8Array(65))).toThrow(RangeError)
+  })
+
+  it('addresses an incident by every byte of its trigger and by its protocol', () => {
+    const protocol = PublicKey.unique()
+    const sig = Uint8Array.from({ length: TRIGGER_SIG_LENGTH }, (_, i) => i)
+    const address = findIncident(PROGRAM_ID, protocol, sig)
+
+    // Same inputs, same address — that is the whole point.
+    expect(findIncident(PROGRAM_ID, protocol, sig).equals(address)).toBe(true)
+
+    // Each half of the signature lives in its own seed, so a change at either end
+    // has to move the address; a derivation that dropped a half would pass the
+    // first byte and fail the last.
+    for (const index of [0, 31, 32, 63]) {
+      const other = Uint8Array.from(sig)
+      other[index] = (other[index] ?? 0) ^ 0xff
+      expect(findIncident(PROGRAM_ID, protocol, other).equals(address)).toBe(false)
+    }
+
+    // One transaction touching two covered protocols is two incidents.
+    expect(findIncident(PROGRAM_ID, PublicKey.unique(), sig).equals(address)).toBe(false)
   })
 
   it('separates attestations by both identities', () => {

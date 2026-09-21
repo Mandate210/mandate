@@ -1,5 +1,5 @@
 import type { Program } from '@coral-xyz/anchor'
-import { type DrainCover, createProgram, findIncident } from '@mandate/sdk'
+import { type DrainCover, createProgram } from '@mandate/sdk'
 import { LAMPORTS_PER_SOL, type PublicKey } from '@solana/web3.js'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { type TestEnv, asset, setupTestEnv, validatorReachable } from './harness'
@@ -84,13 +84,12 @@ describe.skipIf(!reachable)('SC-008 — what one incident costs', () => {
       })
     ).seq
 
-    const { seq } = await openIncident(program, env, target, policySeq)
-    incident = findIncident(program.programId, target.protocol, seq)
+    incident = (await openIncident(program, env, target, policySeq)).incident
     attestations = []
     for (const attestor of attestors) {
-      attestations.push(await attest(program, target, seq, attestor))
+      attestations.push(await attest(program, target, incident, attestor))
     }
-    await resolve(program, env, target, seq)
+    await resolve(program, env, target, incident)
     await releaseAttestors(program, env, attestors)
 
     // Every transaction that touched this incident, which is exactly its lifetime:

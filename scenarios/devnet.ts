@@ -293,19 +293,20 @@ export const setupDevnetEnv = async (): Promise<TestEnv> => {
     writeState({ assetMint: assetMint.toBase58(), attestors: [] })
   }
 
+  // Both calls are this script's own scaffolding, so they get the retry (see
+  // `withRetry`). What they fail with under a rate limit is «Blockhash not found»:
+  // web3.js backs off on every 429 and, by the time the send gets through, the
+  // blockhash it was built on has expired. A fresh call builds a fresh transaction.
   const assetAccount = async (owner: PublicKey, amount = 0n): Promise<PublicKey> => {
-    const account = await getOrCreateAssociatedTokenAccount(
-      connection,
-      payer,
-      assetMint,
-      owner,
-      true,
-      'confirmed',
+    const account = await withRetry(() =>
+      getOrCreateAssociatedTokenAccount(connection, payer, assetMint, owner, true, 'confirmed'),
     )
     if (amount > 0n) {
-      await mintTo(connection, payer, assetMint, account.address, payer, amount, [], {
-        commitment: 'confirmed',
-      })
+      await withRetry(() =>
+        mintTo(connection, payer, assetMint, account.address, payer, amount, [], {
+          commitment: 'confirmed',
+        }),
+      )
     }
     return account.address
   }

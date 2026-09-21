@@ -1,12 +1,6 @@
-import { AnchorError, BN, type Program } from '@coral-xyz/anchor'
-import {
-  type DrainCover,
-  createProgram,
-  findAttestation,
-  findAttestor,
-  findIncident,
-} from '@mandate/sdk'
-import { type Keypair, SystemProgram } from '@solana/web3.js'
+import { AnchorError, type Program } from '@coral-xyz/anchor'
+import { type DrainCover, createProgram, findAttestation, findAttestor } from '@mandate/sdk'
+import { type Keypair, type PublicKey, SystemProgram } from '@solana/web3.js'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { type TestEnv, asset, setupTestEnv, validatorReachable, waitForNextEpoch } from './harness'
 import {
@@ -34,10 +28,10 @@ describe.skipIf(!reachable)('attest', () => {
   let second: Keypair
   /** Admitted after the incident opened — FR-008 keeps them out of it. */
   let latecomer: Keypair
-  let incidentSeq: number
+  let incident: PublicKey
 
-  const openOne = async (): Promise<number> =>
-    (await openIncident(program, env, target, policySeq)).seq
+  const openOne = async (): Promise<PublicKey> =>
+    (await openIncident(program, env, target, policySeq)).incident
 
   beforeAll(async () => {
     env = await setupTestEnv()
@@ -60,48 +54,42 @@ describe.skipIf(!reachable)('attest', () => {
       })
     ).seq
 
-    incidentSeq = await openOne()
+    incident = await openOne()
     latecomer = await admitAttestor(program, env)
     await waitForNextEpoch(env.connection)
   })
 
   it('records a verdict and tallies it on the incident', async () => {
-    const attestation = await attest(program, target, incidentSeq, first)
+    const attestation = await attest(program, target, incident, first)
 
-    const stored = await program.account.attestation.fetch(attestation)
-    expect(stored.verdict).toEqual({ unauthorized: {} })
-    expect(stored.submittedAt.toNumber()).toBeGreaterThan(0)
+    const record = await program.account.attestation.fetch(attestation)
+    expect(record.verdict).toEqual({ unauthorized: {} })
+    expect(record.submittedAt.toNumber()).toBeGreaterThan(0)
 
-    const incident = await program.account.incident.fetch(
-      findIncident(program.programId, target.protocol, incidentSeq),
-    )
+    const stored = await program.account.incident.fetch(incident)
     // Tallied on the incident rather than counted from the attestation accounts:
     // the program cannot enumerate PDAs, and a tally assembled by the caller is a
     // tally the caller can misreport.
-    expect(incident.votesUnauthorized).toBe(1)
-    expect(incident.votesAuthorized).toBe(0)
-    expect(incident.status).toEqual({ open: {} })
+    expect(stored.votesUnauthorized).toBe(1)
+    expect(stored.votesAuthorized).toBe(0)
+    expect(stored.status).toEqual({ open: {} })
   })
 
   it('counts a dissenting verdict separately', async () => {
-    await attest(program, target, incidentSeq, second, 'authorized')
+    await attest(program, target, incident, second, 'authorized')
 
-    const incident = await program.account.incident.fetch(
-      findIncident(program.programId, target.protocol, incidentSeq),
-    )
-    expect(incident.votesUnauthorized).toBe(1)
-    expect(incident.votesAuthorized).toBe(1)
+    const stored = await program.account.incident.fetch(incident)
+    expect(stored.votesUnauthorized).toBe(1)
+    expect(stored.votesAuthorized).toBe(1)
   })
 
   it('refuses a second attestation from the same attestor', async () => {
     // FR-009 without a check in our code: the address derives from
     // (incident, attestor), so the runtime refuses to create it twice.
-    await expect(attest(program, target, incidentSeq, first)).rejects.toThrow()
+    await expect(attest(program, target, incident, first)).rejects.toThrow()
 
-    const incident = await program.account.incident.fetch(
-      findIncident(program.programId, target.protocol, incidentSeq),
-    )
-    expect(incident.votesUnauthorized).toBe(1)
+    const stored = await program.account.incident.fetch(incident)
+    expect(stored.votesUnauthorized).toBe(1)
   })
 
   it('refuses an attestor admitted after the incident opened', async () => {
@@ -111,7 +99,7 @@ describe.skipIf(!reachable)('attest', () => {
     )
     expect(account.inSet).toBe(true)
 
-    const error = await attest(program, target, incidentSeq, latecomer).catch(
+    const error = await attest(program, target, incident, latecomer).catch(
       (thrown: unknown) => thrown,
     )
 
@@ -122,11 +110,13 @@ describe.skipIf(!reachable)('attest', () => {
   it('refuses an attestor who has been removed', async () => {
     const removed = await admitAttestor(program, env)
     await waitForNextEpoch(env.connection)
-    const seq = await openOne()
+    const inFlight = await openOne()
     await setAttestor(program, env, removed.publicKey, false)
 
     // Removal is immediate, so it lands even on an incident already in flight.
-    const error = await attest(program, target, seq, removed).catch((thrown: unknown) => thrown)
+    const error = await attest(program, target, inFlight, removed).catch(
+      (thrown: unknown) => thrown,
+    )
 
     expect(error).toBeInstanceOf(AnchorError)
     expect((error as AnchorError).error.errorCode.code).toBe('AttestorNotActive')
@@ -134,13 +124,12 @@ describe.skipIf(!reachable)('attest', () => {
 
   it('refuses an address that was never admitted', async () => {
     const stranger = await env.fundedKeypair(2)
-    const incident = findIncident(program.programId, target.protocol, incidentSeq)
 
     // No attestor account at all, so the seeds resolve to an address that holds
     // nothing — the constraint fails before any verdict is counted.
     await expect(
       program.methods
-        .attest(new BN(incidentSeq), { unauthorized: {} })
+        .attest({ unauthorized: {} })
         .accountsPartial({
           protocol: target.protocol,
           incident,

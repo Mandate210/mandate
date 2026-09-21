@@ -1,5 +1,5 @@
 import { AnchorError, type Program } from '@coral-xyz/anchor'
-import { type DrainCover, createProgram, findConfig, findIncident } from '@mandate/sdk'
+import { type DrainCover, createProgram, findConfig } from '@mandate/sdk'
 import { getAccount } from '@solana/spl-token'
 import type { Keypair, PublicKey } from '@solana/web3.js'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -54,11 +54,8 @@ describe.skipIf(!reachable)('US1 — edges', () => {
     return [target, seq, policy]
   }
 
-  const incidentOn = (target: RegisteredProtocol, seq: number) =>
-    findIncident(program.programId, target.protocol, seq)
-
-  const votesNeededFor = async (target: RegisteredProtocol, seq: number): Promise<number> =>
-    quorumNeeded((await program.account.incident.fetch(incidentOn(target, seq))).setSize, quorumBps)
+  const votesNeededFor = async (incident: PublicKey): Promise<number> =>
+    quorumNeeded((await program.account.incident.fetch(incident)).setSize, quorumBps)
 
   beforeAll(async () => {
     env = await setupTestEnv()
@@ -75,12 +72,12 @@ describe.skipIf(!reachable)('US1 — edges', () => {
 
   it('refuses a second incident on cover that has already been spent', async () => {
     const [target, policySeq, policy] = await covered()
-    const { seq } = await openIncident(program, env, target, policySeq)
-    const needed = await votesNeededFor(target, seq)
+    const { incident: opened } = await openIncident(program, env, target, policySeq)
+    const needed = await votesNeededFor(opened)
     for (const attestor of attestors.slice(0, needed)) {
-      await attest(program, target, seq, attestor)
+      await attest(program, target, opened, attestor)
     }
-    await resolve(program, env, target, seq)
+    await resolve(program, env, target, opened)
     expect((await program.account.policy.fetch(policy)).status).toEqual({ exhausted: {} })
 
     // What is left of the limit is the retention, which is never payable (FR-033), so
@@ -97,20 +94,20 @@ describe.skipIf(!reachable)('US1 — edges', () => {
 
   it('lets nobody outside the set make up the vote a quorum is missing', async () => {
     const [target, policySeq] = await covered()
-    const { seq } = await openIncident(program, env, target, policySeq)
-    const needed = await votesNeededFor(target, seq)
+    const { incident: opened } = await openIncident(program, env, target, policySeq)
+    const needed = await votesNeededFor(opened)
     for (const attestor of attestors.slice(0, needed - 1)) {
-      await attest(program, target, seq, attestor)
+      await attest(program, target, opened, attestor)
     }
 
     // Funded, willing, and holding no membership at all — the attestor account its
     // seeds point at was never created.
     const stranger = await env.fundedKeypair(2)
-    await expect(attest(program, target, seq, stranger)).rejects.toThrow()
+    await expect(attest(program, target, opened, stranger)).rejects.toThrow()
 
-    const incident = await program.account.incident.fetch(incidentOn(target, seq))
+    const incident = await program.account.incident.fetch(opened)
     expect(incident.votesUnauthorized).toBe(needed - 1)
-    const error = await resolve(program, env, target, seq).catch((thrown: unknown) => thrown)
+    const error = await resolve(program, env, target, opened).catch((thrown: unknown) => thrown)
     expect(error).toBeInstanceOf(AnchorError)
     expect((error as AnchorError).error.errorCode.code).toBe('QuorumNotReached')
     // Still open and still frozen: an attempt from outside is not an event.
@@ -119,40 +116,38 @@ describe.skipIf(!reachable)('US1 — edges', () => {
 
   it('counts a member who votes twice once', async () => {
     const [target, policySeq] = await covered()
-    const { seq } = await openIncident(program, env, target, policySeq)
+    const { incident: opened } = await openIncident(program, env, target, policySeq)
     const [first] = attestors
     if (first === undefined) throw new Error('no attestors were admitted')
 
-    await attest(program, target, seq, first)
+    await attest(program, target, opened, first)
     // FR-009 without a check in our code: `(incident, attestor)` derives one account,
     // so the second one fails in the runtime. What matters at this level is that the
     // tally is unmoved by trying.
-    await expect(attest(program, target, seq, first)).rejects.toThrow()
+    await expect(attest(program, target, opened, first)).rejects.toThrow()
 
-    expect((await program.account.incident.fetch(incidentOn(target, seq))).votesUnauthorized).toBe(
-      1,
-    )
+    expect((await program.account.incident.fetch(opened)).votesUnauthorized).toBe(1)
   })
 
   it('pays nothing when the set says the action was authorized', async () => {
     const [target, policySeq] = await covered()
     const beneficiaryToken = await env.assetAccount(target.treasury)
     const beneficiaryBefore = (await getAccount(env.connection, beneficiaryToken)).amount
-    const { seq, bond } = await openIncident(program, env, target, policySeq)
+    const { incident: opened, bond } = await openIncident(program, env, target, policySeq)
 
     // The protocol declared this operation and the set can see that it did, so every
     // verdict lands on the other side of the question (SPEC → US1, acceptance 4).
     for (const attestor of attestors) {
-      await attest(program, target, seq, attestor, 'authorized')
+      await attest(program, target, opened, attestor, 'authorized')
     }
 
-    const incident = await program.account.incident.fetch(incidentOn(target, seq))
+    const incident = await program.account.incident.fetch(opened)
     expect(incident.votesAuthorized).toBe(attestors.length)
     expect(incident.votesUnauthorized).toBe(0)
 
     // Quorum is counted on one classification (FR-010), and unanimity on the other
     // one is not a decision to pay.
-    const error = await resolve(program, env, target, seq).catch((thrown: unknown) => thrown)
+    const error = await resolve(program, env, target, opened).catch((thrown: unknown) => thrown)
     expect(error).toBeInstanceOf(AnchorError)
     expect((error as AnchorError).error.errorCode.code).toBe('QuorumNotReached')
 

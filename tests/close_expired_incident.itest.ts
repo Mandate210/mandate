@@ -1,7 +1,7 @@
 import { AnchorError, type Program } from '@coral-xyz/anchor'
-import { type DrainCover, createProgram, findConfig, findIncident } from '@mandate/sdk'
+import { type DrainCover, createProgram, findConfig } from '@mandate/sdk'
 import { getAccount } from '@solana/spl-token'
-import type { Keypair } from '@solana/web3.js'
+import type { Keypair, PublicKey } from '@solana/web3.js'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
   type TestEnv,
@@ -45,11 +45,11 @@ describe.skipIf(!reachable)('close_expired_incident', () => {
   let program: Program<DrainCover>
   let attestors: Keypair[]
   /** No attestations at all: the plain expiry, and the bond is forfeited. */
-  let expiring: { target: RegisteredProtocol; seq: number; bond: bigint }
+  let expiring: { target: RegisteredProtocol; incident: PublicKey; bond: bigint }
   /** Quorum reached, but its policy runs out before anyone settles it. */
-  let lapsed: { target: RegisteredProtocol; seq: number }
+  let lapsed: { target: RegisteredProtocol; incident: PublicKey }
   /** Quorum reached on a policy still in force — `resolve` territory. */
-  let payable: { target: RegisteredProtocol; seq: number }
+  let payable: { target: RegisteredProtocol; incident: PublicKey }
 
   /** A protocol with capital and one policy, unentangled from the others here. */
   const coveredProtocol = async (endTs?: number): Promise<[RegisteredProtocol, number]> => {
@@ -84,7 +84,7 @@ describe.skipIf(!reachable)('close_expired_incident', () => {
 
     const [expiringTarget, expiringPolicy] = await coveredProtocol()
     const opened = await openIncident(program, env, expiringTarget, expiringPolicy)
-    expiring = { target: expiringTarget, seq: opened.seq, bond: opened.bond }
+    expiring = { target: expiringTarget, incident: opened.incident, bond: opened.bond }
 
     // Its policy ends while the attestation window is still open, so by the deadline
     // `resolve` would refuse it (FR-016) and nothing but this instruction can end it.
@@ -92,27 +92,25 @@ describe.skipIf(!reachable)('close_expired_incident', () => {
     const [lapsedTarget, lapsedPolicy] = await coveredProtocol(lapsingEnd)
     lapsed = {
       target: lapsedTarget,
-      seq: (await openIncident(program, env, lapsedTarget, lapsedPolicy)).seq,
+      incident: (await openIncident(program, env, lapsedTarget, lapsedPolicy)).incident,
     }
 
     const [payableTarget, payablePolicy] = await coveredProtocol()
     payable = {
       target: payableTarget,
-      seq: (await openIncident(program, env, payableTarget, payablePolicy)).seq,
+      incident: (await openIncident(program, env, payableTarget, payablePolicy)).incident,
     }
 
     for (const attestor of attestors) {
-      await attest(program, lapsed.target, lapsed.seq, attestor)
-      await attest(program, payable.target, payable.seq, attestor)
+      await attest(program, lapsed.target, lapsed.incident, attestor)
+      await attest(program, payable.target, payable.incident, attestor)
     }
 
     // One wait for all three: they were opened within seconds of each other, and the
     // clock that matters is the cluster's, not this machine's.
     const deadlines = await Promise.all(
-      [expiring, lapsed, payable].map(async ({ target, seq }) =>
-        (
-          await program.account.incident.fetch(findIncident(program.programId, target.protocol, seq))
-        ).deadline.toNumber(),
+      [expiring, lapsed, payable].map(async ({ incident }) =>
+        (await program.account.incident.fetch(incident)).deadline.toNumber(),
       ),
     )
     await waitPastClusterTime(env.connection, Math.max(...deadlines))
@@ -124,9 +122,9 @@ describe.skipIf(!reachable)('close_expired_incident', () => {
 
   it('refuses to close an incident whose window is still open', async () => {
     const [target, policySeq] = await coveredProtocol()
-    const { seq } = await openIncident(program, env, target, policySeq)
+    const { incident } = await openIncident(program, env, target, policySeq)
 
-    const error = await closeExpiredIncident(program, env, target, seq).catch(
+    const error = await closeExpiredIncident(program, env, target, incident).catch(
       (thrown: unknown) => thrown,
     )
 
@@ -135,20 +133,17 @@ describe.skipIf(!reachable)('close_expired_incident', () => {
   })
 
   it('closes an expired incident without paying, and the bond becomes pool capital', async () => {
-    const { target, seq, bond } = expiring
+    const { target, incident: opened, bond } = expiring
     const poolBefore = await program.account.pool.fetch(target.pool)
     const vaultBefore = (await getAccount(env.connection, target.vault)).amount
     const openerToken = await env.assetAccount(
-      (await program.account.incident.fetch(findIncident(program.programId, target.protocol, seq)))
-        .opener,
+      (await program.account.incident.fetch(opened)).opener,
     )
     const openerBefore = (await getAccount(env.connection, openerToken)).amount
 
-    await closeExpiredIncident(program, env, target, seq)
+    await closeExpiredIncident(program, env, target, opened)
 
-    const incident = await program.account.incident.fetch(
-      findIncident(program.programId, target.protocol, seq),
-    )
+    const incident = await program.account.incident.fetch(opened)
     expect(incident.status).toEqual({ closedNoPayout: {} })
     expect(incident.payout.toNumber()).toBe(0)
     expect(incident.shortfall.toNumber()).toBe(0)
@@ -172,9 +167,9 @@ describe.skipIf(!reachable)('close_expired_incident', () => {
   })
 
   it('refuses to close an incident the quorum confirmed while its policy is in force', async () => {
-    const { target, seq } = payable
+    const { target, incident } = payable
 
-    const error = await closeExpiredIncident(program, env, target, seq).catch(
+    const error = await closeExpiredIncident(program, env, target, incident).catch(
       (thrown: unknown) => thrown,
     )
 
@@ -184,19 +179,13 @@ describe.skipIf(!reachable)('close_expired_incident', () => {
     expect((error as AnchorError).error.errorCode.code).toBe('IncidentPayable')
 
     // And the path it points at is open, deadline or not.
-    await resolve(program, env, target, seq)
-    expect(
-      (
-        await program.account.incident.fetch(findIncident(program.programId, target.protocol, seq))
-      ).status,
-    ).toEqual({ paidOut: {} })
+    await resolve(program, env, target, incident)
+    expect((await program.account.incident.fetch(incident)).status).toEqual({ paidOut: {} })
   })
 
   it('returns the bond when the quorum confirmed an incident its policy outlived', async () => {
-    const { target, seq } = lapsed
-    const incidentBefore = await program.account.incident.fetch(
-      findIncident(program.programId, target.protocol, seq),
-    )
+    const { target, incident: opened } = lapsed
+    const incidentBefore = await program.account.incident.fetch(opened)
     const openerToken = await env.assetAccount(incidentBefore.opener)
     const openerBefore = (await getAccount(env.connection, openerToken)).amount
     const poolBefore = await program.account.pool.fetch(target.pool)
@@ -204,15 +193,13 @@ describe.skipIf(!reachable)('close_expired_incident', () => {
 
     // `resolve` cannot end this one: the policy ran out before anyone came to settle
     // it (FR-016), so without this instruction the pool's capital would stay frozen.
-    const rejected = await resolve(program, env, target, seq).catch((thrown: unknown) => thrown)
+    const rejected = await resolve(program, env, target, opened).catch((thrown: unknown) => thrown)
     expect(rejected).toBeInstanceOf(AnchorError)
     expect((rejected as AnchorError).error.errorCode.code).toBe('PolicyNotActive')
 
-    await closeExpiredIncident(program, env, target, seq)
+    await closeExpiredIncident(program, env, target, opened)
 
-    const incident = await program.account.incident.fetch(
-      findIncident(program.programId, target.protocol, seq),
-    )
+    const incident = await program.account.incident.fetch(opened)
     expect(incident.status).toEqual({ closedNoPayout: {} })
     expect(incident.payout.toNumber()).toBe(0)
     // The bond is what a claim costs to make, and this claim was not a false one —
@@ -227,9 +214,12 @@ describe.skipIf(!reachable)('close_expired_incident', () => {
   })
 
   it('refuses to close the same incident twice', async () => {
-    const error = await closeExpiredIncident(program, env, expiring.target, expiring.seq).catch(
-      (thrown: unknown) => thrown,
-    )
+    const error = await closeExpiredIncident(
+      program,
+      env,
+      expiring.target,
+      expiring.incident,
+    ).catch((thrown: unknown) => thrown)
 
     // Closed is as final as paid out: releasing the same incident twice would credit
     // the pool a bond it holds once and unfreeze capital no incident froze.

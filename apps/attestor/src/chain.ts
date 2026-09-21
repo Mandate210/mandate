@@ -5,8 +5,6 @@
 // network. Same split as `watch.ts` and `connectionWatchRpc`.
 
 import { BN, type Program } from '@coral-xyz/anchor'
-import type { DeclarationEntry, ObservedTransaction } from '@mandate/shared'
-import { base58Decode, flattenInstructions } from '@mandate/shared'
 import {
   type DrainCover,
   findAttestation,
@@ -17,12 +15,11 @@ import {
   findPolicy,
   findVault,
 } from '@mandate/sdk'
+import type { DeclarationEntry, ObservedTransaction } from '@mandate/shared'
+import { base58Decode, flattenInstructions } from '@mandate/shared'
 import { getAssociatedTokenAddressSync } from '@solana/spl-token'
 import { type Connection, type Keypair, PublicKey, SystemProgram } from '@solana/web3.js'
 import type { ActChain, AttestVerdict, IncidentRef, ProtocolState } from './act'
-
-/** `Incident.trigger_sig` sits after the account discriminator and `policy`. */
-const TRIGGER_SIG_OFFSET = 8 + 32
 
 /**
  * A transaction as the rule needs it.
@@ -180,26 +177,19 @@ export const createChain = ({
     },
 
     /**
-     * The incident already carrying this trigger signature, if any.
+     * The incident for this trigger signature, if it exists.
      *
-     * A `memcmp` on the stored signature rather than a walk over every incident the
-     * protocol ever had: it is one call whose cost does not grow with the protocol's
-     * history. The filter takes base58, which is what a signature already is.
+     * One derivation and one account read: the address is a function of the protocol
+     * and the signature (T070), so there is nothing to search. Before that this was a
+     * `getProgramAccounts` with a `memcmp` on the stored signature and a walk back over
+     * the protocol's counter to tell which protocol the hit belonged to.
      */
     findIncidentByTrigger: async (protocol, signature): Promise<IncidentRef | null> => {
-      const key = new PublicKey(protocol)
-      const found = await program.account.incident.all([
-        { memcmp: { offset: TRIGGER_SIG_OFFSET, bytes: signature } },
-      ])
-
-      for (const { publicKey, account } of found) {
-        // `all` cannot filter on the seeds, so the protocol is confirmed by re-deriving
-        // the address: an incident of another protocol may carry the same signature.
-        const seq = await seqOfIncident(program, key, publicKey)
-        if (seq === null) continue
-        return { seq, open: 'open' in account.status }
-      }
-      return null
+      const address = findIncident(programId, new PublicKey(protocol), base58Decode(signature))
+      const account = await program.account.incident.fetchNullable(address)
+      return account === null
+        ? null
+        : { address: address.toBase58(), open: 'open' in account.status }
     },
 
     openIncident: async ({ protocol, policySeq, signature }) => {
@@ -208,16 +198,17 @@ export const createChain = ({
         program.account.protocol.fetch(key),
         program.account.config.fetch(findConfig(programId)),
       ])
-      const seq = (await program.account.protocol.fetch(key)).nextIncidentSeq.toNumber()
+      const triggerSig = base58Decode(signature)
+      const incident = findIncident(programId, key, triggerSig)
 
       await program.methods
-        .openIncident(new BN(policySeq), base58Decode(signature))
+        .openIncident(new BN(policySeq), triggerSig)
         .accountsPartial({
           opener: attestor.publicKey,
           protocol: key,
           pool,
           policy: findPolicy(programId, key, policySeq),
-          incident: findIncident(programId, key, seq),
+          incident,
           bondSource: getAssociatedTokenAddressSync(config.assetMint, attestor.publicKey),
           vault: findVault(config.assetMint, pool),
           systemProgram: SystemProgram.programId,
@@ -225,20 +216,17 @@ export const createChain = ({
         .signers([attestor])
         .rpc()
 
-      return seq
+      return incident.toBase58()
     },
 
-    hasAttested: async (protocol, incidentSeq) => {
-      const incident = findIncident(programId, new PublicKey(protocol), incidentSeq)
-      const attestation = findAttestation(programId, incident, attestor.publicKey)
+    hasAttested: async (incident) => {
+      const attestation = findAttestation(programId, new PublicKey(incident), attestor.publicKey)
       return (await connection.getAccountInfo(attestation)) !== null
     },
 
-    incidentOpen: async (protocol, incidentSeq) => {
-      const incident = await program.account.incident.fetchNullable(
-        findIncident(programId, new PublicKey(protocol), incidentSeq),
-      )
-      return incident !== null && 'open' in incident.status
+    incidentOpen: async (incident) => {
+      const account = await program.account.incident.fetchNullable(new PublicKey(incident))
+      return account !== null && 'open' in account.status
     },
 
     /**
@@ -247,21 +235,19 @@ export const createChain = ({
      * in the program. Rounding down would let a set of three clear a 60% quorum on one
      * attestation.
      */
-    quorumReached: async (protocol, incidentSeq) => {
-      const incident = await program.account.incident.fetchNullable(
-        findIncident(programId, new PublicKey(protocol), incidentSeq),
-      )
-      if (incident === null || !('open' in incident.status)) return false
+    quorumReached: async (incident) => {
+      const account = await program.account.incident.fetchNullable(new PublicKey(incident))
+      if (account === null || !('open' in account.status)) return false
 
       const { quorumBps } = await program.account.config.fetch(findConfig(programId))
-      const needed = Math.ceil((incident.setSize * quorumBps) / 10_000)
-      return incident.votesUnauthorized >= needed
+      const needed = Math.ceil((account.setSize * quorumBps) / 10_000)
+      return account.votesUnauthorized >= needed
     },
 
-    resolve: async (protocol, incidentSeq) => {
+    resolve: async (protocol, incident) => {
       const key = new PublicKey(protocol)
-      const incident = findIncident(programId, key, incidentSeq)
-      const stored = await program.account.incident.fetch(incident)
+      const address = new PublicKey(incident)
+      const stored = await program.account.incident.fetch(address)
       const [{ pool }, policy] = await Promise.all([
         program.account.protocol.fetch(key),
         program.account.policy.fetch(stored.policy),
@@ -269,12 +255,12 @@ export const createChain = ({
       const { assetMint } = await program.account.config.fetch(findConfig(programId))
 
       await program.methods
-        .resolve(new BN(incidentSeq))
+        .resolve()
         .accountsPartial({
           protocol: key,
           pool,
           policy: stored.policy,
-          incident,
+          incident: address,
           vault: findVault(assetMint, pool),
           // The beneficiary and the opener are paid in the settlement asset, so both
           // need an account for it. Derived, not created: `resolve` cannot open one,
@@ -285,18 +271,17 @@ export const createChain = ({
         .rpc()
     },
 
-    attest: async ({ protocol, incidentSeq, verdict }) => {
-      const key = new PublicKey(protocol)
-      const incident = findIncident(programId, key, incidentSeq)
+    attest: async ({ protocol, incident, verdict }) => {
+      const address = new PublicKey(incident)
 
       await program.methods
-        .attest(new BN(incidentSeq), verdictArgument(verdict))
+        .attest(verdictArgument(verdict))
         .accountsPartial({
-          protocol: key,
-          incident,
+          protocol: new PublicKey(protocol),
+          incident: address,
           attestorAuthority: attestor.publicKey,
           attestor: findAttestor(programId, attestor.publicKey),
-          attestation: findAttestation(programId, incident, attestor.publicKey),
+          attestation: findAttestation(programId, address, attestor.publicKey),
           systemProgram: SystemProgram.programId,
         })
         .signers([attestor])
@@ -308,22 +293,3 @@ export const createChain = ({
 /** Anchor spells an enum variant as a single-key object. */
 const verdictArgument = (verdict: AttestVerdict) =>
   verdict === 'unauthorized' ? { unauthorized: {} } : { authorized: {} }
-
-/**
- * Which sequence number an incident address belongs to.
- *
- * The account carries no sequence of its own — it is in the seeds — so the only way
- * back is to re-derive. Walking from the protocol's counter downwards finds a recent
- * incident in a step or two, which is the case that matters: the one being raced over.
- */
-const seqOfIncident = async (
-  program: Program<DrainCover>,
-  protocol: PublicKey,
-  incident: PublicKey,
-): Promise<number | null> => {
-  const { nextIncidentSeq } = await program.account.protocol.fetch(protocol)
-  for (let seq = nextIncidentSeq.toNumber() - 1; seq >= 0; seq -= 1) {
-    if (findIncident(program.programId, protocol, seq).equals(incident)) return seq
-  }
-  return null
-}

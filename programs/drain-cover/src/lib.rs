@@ -107,13 +107,14 @@ pub mod drain_cover {
 
     /// Records one attestor's verdict on an open incident (FR-007). One attestor,
     /// one attestation — held by the address itself (FR-009).
-    pub fn attest(ctx: Context<Attest>, incident_seq: u64, verdict: Verdict) -> Result<()> {
-        instructions::attest::handle_attest(ctx, incident_seq, verdict)
+    pub fn attest(ctx: Context<Attest>, verdict: Verdict) -> Result<()> {
+        instructions::attest::handle_attest(ctx, verdict)
     }
 
     /// Records a suspected unauthorized privileged action against a policy
     /// (FR-006). The trigger signature is a claim; the bond is what it costs to
-    /// make one.
+    /// make one. The incident's address is derived from the signature, so the same
+    /// transaction cannot be opened twice.
     pub fn open_incident(
         ctx: Context<OpenIncident>,
         policy_seq: u64,
@@ -125,17 +126,14 @@ pub mod drain_cover {
     /// Settles an incident whose quorum has been reached: pays the beneficiary and
     /// returns the bond, in the same operation that establishes the quorum (FR-010,
     /// FR-012, FR-013).
-    pub fn resolve(ctx: Context<Resolve>, incident_seq: u64) -> Result<()> {
-        instructions::resolve::handle_resolve(ctx, incident_seq)
+    pub fn resolve(ctx: Context<Resolve>) -> Result<()> {
+        instructions::resolve::handle_resolve(ctx)
     }
 
     /// Closes an incident whose window ran out without a quorum: no payout, the
     /// capital it froze is released and the bond becomes pool capital (FR-011).
-    pub fn close_expired_incident(
-        ctx: Context<CloseExpiredIncident>,
-        incident_seq: u64,
-    ) -> Result<()> {
-        instructions::close_expired_incident::handle_close_expired_incident(ctx, incident_seq)
+    pub fn close_expired_incident(ctx: Context<CloseExpiredIncident>) -> Result<()> {
+        instructions::close_expired_incident::handle_close_expired_incident(ctx)
     }
 
     /// Admits an attestor to the permissive set or removes one (FR-008).

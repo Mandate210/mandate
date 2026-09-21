@@ -56,11 +56,40 @@ export const findDeclarationEntry = (
 export const findAttestor = (programId: PublicKey, authority: PublicKey): PublicKey =>
   derive(programId, [seed(SEEDS.attestor), authority.toBuffer()])
 
+/** A transaction signature is 64 bytes; anything else is not one. */
+export const TRIGGER_SIG_LENGTH = 64
+
+/**
+ * The two seeds a trigger signature contributes to an incident's address —
+ * `trigger_seeds` in `programs/drain-cover/src/state/incident.rs`, byte for byte.
+ *
+ * A seed is capped at 32 bytes, so the signature goes in as two halves rather than
+ * as a hash: the address follows from the signature and the protocol alone, which is
+ * what lets anyone with an explorer reproduce it (SC-007).
+ */
+export const triggerSeeds = (triggerSig: ArrayLike<number>): [Buffer, Buffer] => {
+  if (triggerSig.length !== TRIGGER_SIG_LENGTH) {
+    throw new RangeError(
+      `a trigger signature is ${TRIGGER_SIG_LENGTH} bytes, got ${triggerSig.length}`,
+    )
+  }
+  // `ArrayLike` because a signature arrives as `number[]` from the IDL client and as
+  // `Uint8Array` from a base58 decoder, and neither side should have to convert.
+  const bytes = Buffer.from(Uint8Array.from(triggerSig))
+  return [bytes.subarray(0, 32), bytes.subarray(32)]
+}
+
+/**
+ * An incident is addressed by the transaction that caused it, so one event on one
+ * protocol has exactly one possible incident address — «one incident per event» is
+ * held by the runtime, not by clients agreeing to check first (T070).
+ */
 export const findIncident = (
   programId: PublicKey,
   protocol: PublicKey,
-  seq: number | bigint,
-): PublicKey => derive(programId, [seed(SEEDS.incident), protocol.toBuffer(), seqSeed(seq)])
+  triggerSig: ArrayLike<number>,
+): PublicKey =>
+  derive(programId, [seed(SEEDS.incident), protocol.toBuffer(), ...triggerSeeds(triggerSig)])
 
 /**
  * A pool's vault: the associated token account of the pool PDA.

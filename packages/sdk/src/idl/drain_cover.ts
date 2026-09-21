@@ -35,32 +35,12 @@ export type DrainCover = {
         },
         {
           "name": "incident",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  105,
-                  110,
-                  99,
-                  105,
-                  100,
-                  101,
-                  110,
-                  116
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "protocol"
-              },
-              {
-                "kind": "arg",
-                "path": "incidentSeq"
-              }
-            ]
-          }
+          "docs": [
+            "Verified against the signature it stores: the account is only at this address",
+            "if `open_incident` put it there for exactly this trigger and this protocol, so",
+            "no argument is needed to name it — the address is the argument."
+          ],
+          "writable": true
         },
         {
           "name": "attestorAuthority",
@@ -137,10 +117,6 @@ export type DrainCover = {
         }
       ],
       "args": [
-        {
-          "name": "incidentSeq",
-          "type": "u64"
-        },
         {
           "name": "verdict",
           "type": {
@@ -226,32 +202,12 @@ export type DrainCover = {
         },
         {
           "name": "incident",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  105,
-                  110,
-                  99,
-                  105,
-                  100,
-                  101,
-                  110,
-                  116
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "protocol"
-              },
-              {
-                "kind": "arg",
-                "path": "incidentSeq"
-              }
-            ]
-          }
+          "docs": [
+            "Bound to `protocol` by seeds derived from its own stored signature, as in",
+            "`resolve`: nothing but the address names the incident, which is what lets a",
+            "sweeper close whatever it finds by listing accounts (T071)."
+          ],
+          "writable": true
         },
         {
           "name": "vault",
@@ -272,12 +228,7 @@ export type DrainCover = {
           "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         }
       ],
-      "args": [
-        {
-          "name": "incidentSeq",
-          "type": "u64"
-        }
-      ]
+      "args": []
     },
     {
       "name": "initialize",
@@ -507,7 +458,8 @@ export type DrainCover = {
       "docs": [
         "Records a suspected unauthorized privileged action against a policy",
         "(FR-006). The trigger signature is a claim; the bond is what it costs to",
-        "make one."
+        "make one. The incident's address is derived from the signature, so the same",
+        "transaction cannot be opened twice."
       ],
       "discriminator": [
         141,
@@ -608,33 +560,13 @@ export type DrainCover = {
         },
         {
           "name": "incident",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  105,
-                  110,
-                  99,
-                  105,
-                  100,
-                  101,
-                  110,
-                  116
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "protocol"
-              },
-              {
-                "kind": "account",
-                "path": "protocol.next_incident_seq",
-                "account": "protocol"
-              }
-            ]
-          }
+          "docs": [
+            "Addressed by the trigger, so this `init` is the whole of «one incident per",
+            "event»: a second opener for the same transaction fails here, atomically,",
+            "before its bond has moved (T070). Two protocols touched by one transaction",
+            "still get one incident each — the protocol is in the seeds too."
+          ],
+          "writable": true
         },
         {
           "name": "bondSource",
@@ -984,32 +916,12 @@ export type DrainCover = {
         },
         {
           "name": "incident",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  105,
-                  110,
-                  99,
-                  105,
-                  100,
-                  101,
-                  110,
-                  116
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "protocol"
-              },
-              {
-                "kind": "arg",
-                "path": "incidentSeq"
-              }
-            ]
-          }
+          "docs": [
+            "The seeds bind the incident to `protocol`, and through it to the pool that",
+            "pays — without them an incident of one protocol could be settled out of",
+            "another's vault. They come from the signature the account stores (T070)."
+          ],
+          "writable": true
         },
         {
           "name": "vault",
@@ -1036,12 +948,7 @@ export type DrainCover = {
           "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         }
       ],
-      "args": [
-        {
-          "name": "incidentSeq",
-          "type": "u64"
-        }
-      ]
+      "args": []
     },
     {
       "name": "revokeDeclaration",
@@ -1940,6 +1847,13 @@ export type DrainCover = {
         "enters as a *claim* by whoever opened the incident. What makes it evidence is",
         "independent attestors agreeing (FR-007…FR-010).",
         "",
+        "The account lives at the address `trigger_seeds` derives from that signature and",
+        "the protocol, which is what makes «one incident per event» a property of the",
+        "runtime: a second opener for the same transaction fails at `init`, before a bond",
+        "moves. Three attestors watching the same transaction were measured opening two",
+        "or three incidents for it on devnet — 22 of 45 triggers — when the address came",
+        "from a counter instead.",
+        "",
         "Every field here is paid for in rent and fees on each incident, which SC-008",
         "caps at 1 USD — so this account carries no reserve fields."
       ],
@@ -2250,11 +2164,11 @@ export type DrainCover = {
           {
             "name": "nextPolicySeq",
             "docs": [
-              "Policies, declaration entries and incidents are addressed by",
-              "`(protocol, seq)`, so the sequence needs a monotonic source. Keeping the",
-              "counters here rather than in `Config` keeps protocols independent: two",
-              "registrations never contend for the same number, and a busy protocol does",
-              "not push another one's addresses around."
+              "Policies and declaration entries are addressed by `(protocol, seq)`, so the",
+              "sequence needs a monotonic source. Keeping the counters here rather than in",
+              "`Config` keeps protocols independent: two registrations never contend for",
+              "the same number, and a busy protocol does not push another one's addresses",
+              "around."
             ],
             "type": "u64"
           },
@@ -2263,7 +2177,15 @@ export type DrainCover = {
             "type": "u64"
           },
           {
-            "name": "nextIncidentSeq",
+            "name": "incidentCount",
+            "docs": [
+              "Incidents opened against this protocol, ever. Not an address source — an",
+              "incident is addressed by its trigger (`trigger_seeds`) — but it lets a reader",
+              "check «exactly this many were opened» without enumerating program accounts,",
+              "which is what the end-to-end scenario does to prove the control case opened",
+              "nothing. Same slot and width as the sequence counter it replaced, so the",
+              "layout is the one already deployed."
+            ],
             "type": "u64"
           }
         ]

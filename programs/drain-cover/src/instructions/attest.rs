@@ -2,20 +2,23 @@ use anchor_lang::prelude::*;
 
 use crate::errors::DrainCoverError;
 use crate::state::{
-    Attestation, Attestor, Incident, IncidentStatus, Protocol, Verdict, ATTESTATION_SEED,
-    ATTESTOR_SEED, INCIDENT_SEED,
+    trigger_seeds, Attestation, Attestor, Incident, IncidentStatus, Protocol, Verdict,
+    ATTESTATION_SEED, ATTESTOR_SEED, INCIDENT_SEED,
 };
 
 #[derive(Accounts)]
-#[instruction(incident_seq: u64)]
 pub struct Attest<'info> {
     pub protocol: Account<'info, Protocol>,
+    /// Verified against the signature it stores: the account is only at this address
+    /// if `open_incident` put it there for exactly this trigger and this protocol, so
+    /// no argument is needed to name it — the address is the argument.
     #[account(
         mut,
         seeds = [
             INCIDENT_SEED,
             protocol.key().as_ref(),
-            &incident_seq.to_le_bytes(),
+            trigger_seeds(&incident.trigger_sig)[0],
+            trigger_seeds(&incident.trigger_sig)[1],
         ],
         bump,
     )]
@@ -68,7 +71,7 @@ pub fn validate_attest(
     Ok(())
 }
 
-pub fn handle_attest(ctx: Context<Attest>, _incident_seq: u64, verdict: Verdict) -> Result<()> {
+pub fn handle_attest(ctx: Context<Attest>, verdict: Verdict) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
     let incident = &mut ctx.accounts.incident;
 

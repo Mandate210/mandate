@@ -1,5 +1,5 @@
 import type { Program } from '@coral-xyz/anchor'
-import { type DrainCover, createProgram, findConfig, findIncident } from '@mandate/sdk'
+import { type DrainCover, createProgram, findConfig } from '@mandate/sdk'
 import { getAccount } from '@solana/spl-token'
 import type { Keypair, PublicKey } from '@solana/web3.js'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -52,15 +52,13 @@ describe.skipIf(!reachable)('US1 — the full cycle to a payout', () => {
   let policy: PublicKey
   let beneficiaryToken: PublicKey
 
-  let incidentSeq: number
+  let incidentAccount: PublicKey
   let opener: Keypair
   let bond: bigint
   let triggerSig: number[]
   /** One per attestor that voted, in the order they voted. */
   const attestations: PublicKey[] = []
   let needed: number
-
-  const incidentAccount = () => findIncident(program.programId, target.protocol, incidentSeq)
 
   beforeAll(async () => {
     env = await setupTestEnv()
@@ -108,11 +106,11 @@ describe.skipIf(!reachable)('US1 — the full cycle to a payout', () => {
   it('records the privileged transaction as a claim, backed by a bond', async () => {
     triggerSig = triggerSignature(3)
     const opened = await openIncident(program, env, target, policySeq, { triggerSig })
-    incidentSeq = opened.seq
+    incidentAccount = opened.incident
     opener = opened.opener
     bond = opened.bond
 
-    const incident = await program.account.incident.fetch(incidentAccount())
+    const incident = await program.account.incident.fetch(incidentAccount)
     expect(incident.status).toEqual({ open: {} })
     expect([...incident.triggerSig]).toEqual(triggerSig)
     expect(incident.policy.equals(policy)).toBe(true)
@@ -127,15 +125,15 @@ describe.skipIf(!reachable)('US1 — the full cycle to a payout', () => {
   })
 
   it('moves no money while the attestations are short of the quorum', async () => {
-    const incident = await program.account.incident.fetch(incidentAccount())
+    const incident = await program.account.incident.fetch(incidentAccount)
     needed = quorumNeeded(incident.setSize, quorumBps)
     const beneficiaryBefore = (await getAccount(env.connection, beneficiaryToken)).amount
 
     for (const attestor of attestors.slice(0, needed - 1)) {
-      attestations.push(await attest(program, target, incidentSeq, attestor))
+      attestations.push(await attest(program, target, incidentAccount, attestor))
     }
 
-    const tallied = await program.account.incident.fetch(incidentAccount())
+    const tallied = await program.account.incident.fetch(incidentAccount)
     expect(tallied.votesUnauthorized).toBe(needed - 1)
     expect(tallied.status).toEqual({ open: {} })
     // A verdict is not a decision: nothing has been paid, and the treasury has not
@@ -152,15 +150,15 @@ describe.skipIf(!reachable)('US1 — the full cycle to a payout', () => {
       throw new Error(`${attestors.length} attestors admitted for a quorum of ${needed}`)
     }
 
-    attestations.push(await attest(program, target, incidentSeq, decisive))
-    expect((await program.account.incident.fetch(incidentAccount())).votesUnauthorized).toBe(needed)
+    attestations.push(await attest(program, target, incidentAccount, decisive))
+    expect((await program.account.incident.fetch(incidentAccount)).votesUnauthorized).toBe(needed)
 
     const beneficiaryBefore = (await getAccount(env.connection, beneficiaryToken)).amount
     const openerToken = await env.assetAccount(opener.publicKey)
     const openerBefore = (await getAccount(env.connection, openerToken)).amount
 
     // Nobody signs for this, and nothing about it is discretionary (FR-012).
-    await resolve(program, env, target, incidentSeq)
+    await resolve(program, env, target, incidentAccount)
 
     // SC-006 with zero discrepancy: one dollar-denominated asset, an absolute
     // retention and no conversion anywhere, so there is nothing to round.
@@ -168,7 +166,7 @@ describe.skipIf(!reachable)('US1 — the full cycle to a payout', () => {
       beneficiaryBefore + PAYABLE,
     )
 
-    const incident = await program.account.incident.fetch(incidentAccount())
+    const incident = await program.account.incident.fetch(incidentAccount)
     expect(incident.status).toEqual({ paidOut: {} })
     expect(BigInt(incident.payout.toString())).toBe(PAYABLE)
     // The pool had far more than it owed, so nothing was left unpaid (FR-013).
@@ -189,7 +187,7 @@ describe.skipIf(!reachable)('US1 — the full cycle to a payout', () => {
   })
 
   it('leaves the decision reconstructible from chain state alone', async () => {
-    const incident = await program.account.incident.fetch(incidentAccount())
+    const incident = await program.account.incident.fetch(incidentAccount)
 
     // The trigger transaction, the verdicts that carried it and the amount are all on
     // chain and readable without our indexer (FR-011; SC-007 goes further in T056).

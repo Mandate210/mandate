@@ -89,7 +89,7 @@ pub fn handle_register_protocol(
         new_policies_paused: false,
         next_policy_seq: 0,
         next_declaration_seq: 0,
-        next_incident_seq: 0,
+        incident_count: 0,
     });
 
     ctx.accounts.pool.set_inner(Pool {

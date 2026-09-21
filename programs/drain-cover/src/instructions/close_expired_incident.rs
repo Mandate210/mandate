@@ -4,11 +4,11 @@ use anchor_spl::token::{transfer, Token, TokenAccount, Transfer};
 use crate::errors::DrainCoverError;
 use crate::instructions::resolve::quorum_threshold;
 use crate::state::{
-    Config, Incident, IncidentStatus, Policy, Pool, Protocol, CONFIG_SEED, INCIDENT_SEED, POOL_SEED,
+    trigger_seeds, Config, Incident, IncidentStatus, Policy, Pool, Protocol, CONFIG_SEED,
+    INCIDENT_SEED, POOL_SEED,
 };
 
 #[derive(Accounts)]
-#[instruction(incident_seq: u64)]
 pub struct CloseExpiredIncident<'info> {
     #[account(seeds = [CONFIG_SEED], bump)]
     pub config: Account<'info, Config>,
@@ -20,12 +20,16 @@ pub struct CloseExpiredIncident<'info> {
     /// was. It is here because whether `resolve` could still pay this incident
     /// depends on it (FR-016).
     pub policy: Account<'info, Policy>,
+    /// Bound to `protocol` by seeds derived from its own stored signature, as in
+    /// `resolve`: nothing but the address names the incident, which is what lets a
+    /// sweeper close whatever it finds by listing accounts (T071).
     #[account(
         mut,
         seeds = [
             INCIDENT_SEED,
             protocol.key().as_ref(),
-            &incident_seq.to_le_bytes(),
+            trigger_seeds(&incident.trigger_sig)[0],
+            trigger_seeds(&incident.trigger_sig)[1],
         ],
         bump,
         has_one = policy,
@@ -80,10 +84,7 @@ pub fn validate_close(
     Ok(())
 }
 
-pub fn handle_close_expired_incident(
-    ctx: Context<CloseExpiredIncident>,
-    _incident_seq: u64,
-) -> Result<()> {
+pub fn handle_close_expired_incident(ctx: Context<CloseExpiredIncident>) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
 
     let needed = quorum_threshold(

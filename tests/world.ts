@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import { BN, type Program } from '@coral-xyz/anchor'
 import {
   type DrainCover,
@@ -317,12 +318,20 @@ export const releaseAttestors = async (
   }
 }
 
-/** Sixty-four bytes standing in for a transaction signature. */
-export const triggerSignature = (fill = 7): number[] => Array.from({ length: 64 }, () => fill)
+/**
+ * Sixty-four bytes standing in for a transaction signature.
+ *
+ * Random by default, because the signature is now the incident's address: two
+ * incidents on one protocol with the same bytes are one incident, and a suite that
+ * reused a constant would trip over its own earlier tests on a shared ledger. A
+ * `fill` pins the bytes where a test wants to recognise them afterwards.
+ */
+export const triggerSignature = (fill?: number): number[] =>
+  fill === undefined ? [...randomBytes(64)] : Array.from({ length: 64 }, () => fill)
 
 export interface OpenedIncident {
+  /** Derived from the protocol and the trigger signature (T070). */
   incident: PublicKey
-  seq: number
   /** Funded, holds no more asset than the bond it just paid. */
   opener: Keypair
   bond: bigint
@@ -343,8 +352,7 @@ export const openIncident = async (
   const triggerSig = options.triggerSig ?? triggerSignature()
   const bondSource = await env.assetAccount(opener.publicKey, bond)
 
-  const seq = (await program.account.protocol.fetch(target.protocol)).nextIncidentSeq.toNumber()
-  const incident = findIncident(program.programId, target.protocol, seq)
+  const incident = findIncident(program.programId, target.protocol, triggerSig)
 
   await program.methods
     .openIncident(new BN(policySeq), triggerSig)
@@ -361,25 +369,25 @@ export const openIncident = async (
     .signers([opener])
     .rpc()
 
-  return { incident, seq, opener, bond, triggerSig }
+  return { incident, opener, bond, triggerSig }
 }
 
-/** One attestor's verdict on an open incident (FR-007). */
+/**
+ * One attestor's verdict on an open incident (FR-007). The incident is named by its
+ * address and nothing else: the program verifies it against the signature the account
+ * stores, so there is no sequence number to pass.
+ */
 export const attest = async (
   program: Program<DrainCover>,
   target: RegisteredProtocol,
-  incidentSeq: number,
+  incident: PublicKey,
   attestor: Keypair,
   verdict: 'unauthorized' | 'authorized' = 'unauthorized',
 ): Promise<PublicKey> => {
-  const incident = findIncident(program.programId, target.protocol, incidentSeq)
   const attestation = findAttestation(program.programId, incident, attestor.publicKey)
 
   await program.methods
-    .attest(
-      new BN(incidentSeq),
-      verdict === 'unauthorized' ? { unauthorized: {} } : { authorized: {} },
-    )
+    .attest(verdict === 'unauthorized' ? { unauthorized: {} } : { authorized: {} })
     .accountsPartial({
       protocol: target.protocol,
       incident,
@@ -402,14 +410,13 @@ export const resolve = async (
   program: Program<DrainCover>,
   env: TestEnv,
   target: RegisteredProtocol,
-  incidentSeq: number,
+  incident: PublicKey,
 ): Promise<void> => {
-  const incident = findIncident(program.programId, target.protocol, incidentSeq)
   const stored = await program.account.incident.fetch(incident)
   const policy = await program.account.policy.fetch(stored.policy)
 
   await program.methods
-    .resolve(new BN(incidentSeq))
+    .resolve()
     .accountsPartial({
       protocol: target.protocol,
       pool: target.pool,
@@ -430,13 +437,12 @@ export const closeExpiredIncident = async (
   program: Program<DrainCover>,
   env: TestEnv,
   target: RegisteredProtocol,
-  incidentSeq: number,
+  incident: PublicKey,
 ): Promise<void> => {
-  const incident = findIncident(program.programId, target.protocol, incidentSeq)
   const stored = await program.account.incident.fetch(incident)
 
   await program.methods
-    .closeExpiredIncident(new BN(incidentSeq))
+    .closeExpiredIncident()
     .accountsPartial({
       protocol: target.protocol,
       pool: target.pool,

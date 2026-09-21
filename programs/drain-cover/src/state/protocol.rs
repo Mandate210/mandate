@@ -26,12 +26,18 @@ pub struct Protocol {
     pub pool: Pubkey,
     /// Stops new policies for this protocol only (FR-028).
     pub new_policies_paused: bool,
-    /// Policies, declaration entries and incidents are addressed by
-    /// `(protocol, seq)`, so the sequence needs a monotonic source. Keeping the
-    /// counters here rather than in `Config` keeps protocols independent: two
-    /// registrations never contend for the same number, and a busy protocol does
-    /// not push another one's addresses around.
+    /// Policies and declaration entries are addressed by `(protocol, seq)`, so the
+    /// sequence needs a monotonic source. Keeping the counters here rather than in
+    /// `Config` keeps protocols independent: two registrations never contend for
+    /// the same number, and a busy protocol does not push another one's addresses
+    /// around.
     pub next_policy_seq: u64,
     pub next_declaration_seq: u64,
-    pub next_incident_seq: u64,
+    /// Incidents opened against this protocol, ever. Not an address source — an
+    /// incident is addressed by its trigger (`trigger_seeds`) — but it lets a reader
+    /// check «exactly this many were opened» without enumerating program accounts,
+    /// which is what the end-to-end scenario does to prove the control case opened
+    /// nothing. Same slot and width as the sequence counter it replaced, so the
+    /// layout is the one already deployed.
+    pub incident_count: u64,
 }

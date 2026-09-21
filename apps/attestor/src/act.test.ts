@@ -44,6 +44,9 @@ const pauseEntry: DeclarationEntry = {
   revokedAt: null,
 }
 
+/** The address the fake opens at; any base58 string does, the actor never derives one. */
+const OPENED = 'IncidentOpenedHere'
+
 interface FakeOptions {
   transaction?: ObservedTransaction | null
   protocol?: ProtocolState | null
@@ -64,15 +67,15 @@ interface FakeOptions {
 
 interface Fake extends ActChain {
   readonly opened: { policySeq: number; signature: string }[]
-  readonly attestations: { incidentSeq: number; verdict: AttestVerdict }[]
+  readonly attestations: { incident: string; verdict: AttestVerdict }[]
   readonly triggerLookups: number
-  readonly resolved: number[]
+  readonly resolved: string[]
 }
 
 const fake = (options: FakeOptions = {}): Fake => {
   const opened: { policySeq: number; signature: string }[] = []
-  const attestations: { incidentSeq: number; verdict: AttestVerdict }[] = []
-  const resolved: number[] = []
+  const attestations: { incident: string; verdict: AttestVerdict }[] = []
+  const resolved: string[] = []
   let triggerLookups = 0
   let attemptedOpen = false
   let attested = options.attested ?? false
@@ -105,21 +108,21 @@ const fake = (options: FakeOptions = {}): Fake => {
       attemptedOpen = true
       if (options.openFails) throw new Error('account already in use')
       opened.push({ policySeq, signature })
-      return 3
+      return OPENED
     },
     hasAttested: async () => attested,
-    attest: async ({ incidentSeq, verdict }) => {
+    attest: async ({ incident, verdict }) => {
       if (options.attestFails) {
         if (options.attestedAfterFailure) attested = true
         throw new Error('attestation already exists')
       }
-      attestations.push({ incidentSeq, verdict })
+      attestations.push({ incident, verdict })
     },
     incidentOpen: async () => options.incidentStillOpen ?? true,
     quorumReached: async () => options.quorumReached ?? false,
-    resolve: async (_protocol, incidentSeq) => {
+    resolve: async (_protocol, incident) => {
       if (options.resolveFails) throw new Error('IncidentNotOpen')
-      resolved.push(incidentSeq)
+      resolved.push(incident)
     },
   }
 }
@@ -127,7 +130,7 @@ const fake = (options: FakeOptions = {}): Fake => {
 describe('createActor — deciding', () => {
   it('ignores a transaction the cluster will not serve', async () => {
     const chain = fake({ transaction: null })
-    expect(await createActor({ chain, openJitterMs: 0 }).act(delivered())).toEqual({
+    expect(await createActor({ chain }).act(delivered())).toEqual({
       kind: 'ignored',
       reason: 'unfetchable',
     })
@@ -137,7 +140,7 @@ describe('createActor — deciding', () => {
   it('ignores a protocol that is no longer registered', async () => {
     // The watcher outlives a deregistration, so this arrives in normal operation.
     const chain = fake({ protocol: null })
-    expect(await createActor({ chain, openJitterMs: 0 }).act(delivered())).toEqual({
+    expect(await createActor({ chain }).act(delivered())).toEqual({
       kind: 'ignored',
       reason: 'unknown-protocol',
     })
@@ -146,7 +149,7 @@ describe('createActor — deciding', () => {
   it('ignores what the rule says is none of the protocol’s business', async () => {
     // The watcher deals in mentions, so what it delivers is a superset on purpose.
     const chain = fake({ transaction: observed(PAUSE, [STRANGER]), protocol: { privileged: [] } })
-    expect(await createActor({ chain, openJitterMs: 0 }).act(delivered())).toEqual({
+    expect(await createActor({ chain }).act(delivered())).toEqual({
       kind: 'ignored',
       reason: 'not-privileged',
     })
@@ -155,7 +158,7 @@ describe('createActor — deciding', () => {
 
   it('opens nothing on a declared transaction', async () => {
     const chain = fake()
-    expect(await createActor({ chain, openJitterMs: 0 }).act(delivered())).toEqual({
+    expect(await createActor({ chain }).act(delivered())).toEqual({
       kind: 'ignored',
       reason: 'declared',
     })
@@ -166,15 +169,15 @@ describe('createActor — deciding', () => {
   it('opens an incident and attests on an undeclared one', async () => {
     const chain = fake({ transaction: observed(DRAIN) })
 
-    expect(await createActor({ chain, openJitterMs: 0 }).act(delivered())).toEqual({
+    expect(await createActor({ chain }).act(delivered())).toEqual({
       kind: 'attested',
       verdict: 'unauthorized',
-      incidentSeq: 3,
+      incident: OPENED,
       opened: true,
       settled: false,
     })
     expect(chain.opened).toEqual([{ policySeq: 7, signature: 'sig' }])
-    expect(chain.attestations).toEqual([{ incidentSeq: 3, verdict: 'unauthorized' }])
+    expect(chain.attestations).toEqual([{ incident: OPENED, verdict: 'unauthorized' }])
   })
 
   it('judges by the declaration, not by who signed', async () => {
@@ -187,7 +190,7 @@ describe('createActor — deciding', () => {
       },
     })
 
-    const outcome = await createActor({ chain, openJitterMs: 0 }).act(delivered())
+    const outcome = await createActor({ chain }).act(delivered())
     expect(outcome).toMatchObject({ kind: 'attested', verdict: 'unauthorized' })
   })
 })
@@ -198,7 +201,7 @@ describe('createActor — not opening what the program would refuse', () => {
     // capital on a claim that could never pay out (FR-016).
     const chain = fake({ transaction: observed(DRAIN), policySeq: null })
 
-    expect(await createActor({ chain, openJitterMs: 0 }).act(delivered())).toEqual({
+    expect(await createActor({ chain }).act(delivered())).toEqual({
       kind: 'not-opened',
       reason: 'no-policy-in-force',
     })
@@ -208,10 +211,10 @@ describe('createActor — not opening what the program would refuse', () => {
   it('does not attest on a settled incident', async () => {
     const chain = fake({
       transaction: observed(DRAIN),
-      incident: { seq: 2, open: false },
+      incident: { address: 'incident-2', open: false },
     })
 
-    expect(await createActor({ chain, openJitterMs: 0 }).act(delivered())).toEqual({
+    expect(await createActor({ chain }).act(delivered())).toEqual({
       kind: 'ignored',
       reason: 'incident-settled',
     })
@@ -223,12 +226,15 @@ describe('createActor — several attestors racing', () => {
   it('attests on an existing incident rather than opening a second one', async () => {
     // One event, one incident. A second would freeze the pool's capital twice and put
     // two bonds at risk over one compromise.
-    const chain = fake({ transaction: observed(DRAIN), incident: { seq: 2, open: true } })
+    const chain = fake({
+      transaction: observed(DRAIN),
+      incident: { address: 'incident-2', open: true },
+    })
 
-    expect(await createActor({ chain, openJitterMs: 0 }).act(delivered())).toEqual({
+    expect(await createActor({ chain }).act(delivered())).toEqual({
       kind: 'attested',
       verdict: 'unauthorized',
-      incidentSeq: 2,
+      incident: 'incident-2',
       opened: false,
       settled: false,
     })
@@ -241,13 +247,13 @@ describe('createActor — several attestors racing', () => {
     const chain = fake({
       transaction: observed(DRAIN),
       openFails: true,
-      incidentAfterOpen: { seq: 5, open: true },
+      incidentAfterOpen: { address: 'incident-5', open: true },
     })
 
-    expect(await createActor({ chain, openJitterMs: 0 }).act(delivered())).toEqual({
+    expect(await createActor({ chain }).act(delivered())).toEqual({
       kind: 'attested',
       verdict: 'unauthorized',
-      incidentSeq: 5,
+      incident: 'incident-5',
       opened: false,
       settled: false,
     })
@@ -260,7 +266,7 @@ describe('createActor — several attestors racing', () => {
     // other reason and swallowing it would lose a compromise silently.
     const chain = fake({ transaction: observed(DRAIN), openFails: true })
 
-    await expect(createActor({ chain, openJitterMs: 0 }).act(delivered())).rejects.toThrow('account already in use')
+    await expect(createActor({ chain }).act(delivered())).rejects.toThrow('account already in use')
   })
 })
 
@@ -269,13 +275,13 @@ describe('createActor — one attestor, one attestation (FR-009)', () => {
     // A restart sweeps back over history, so re-delivery is routine.
     const chain = fake({
       transaction: observed(DRAIN),
-      incident: { seq: 2, open: true },
+      incident: { address: 'incident-2', open: true },
       attested: true,
     })
 
-    expect(await createActor({ chain, openJitterMs: 0 }).act(delivered())).toEqual({
+    expect(await createActor({ chain }).act(delivered())).toEqual({
       kind: 'already-attested',
-      incidentSeq: 2,
+      incident: 'incident-2',
     })
     expect(chain.attestations).toEqual([])
   })
@@ -283,25 +289,25 @@ describe('createActor — one attestor, one attestation (FR-009)', () => {
   it('treats a rejected duplicate attestation as work already done', async () => {
     const chain = fake({
       transaction: observed(DRAIN),
-      incident: { seq: 2, open: true },
+      incident: { address: 'incident-2', open: true },
       attestFails: true,
       attestedAfterFailure: true,
     })
 
-    expect(await createActor({ chain, openJitterMs: 0 }).act(delivered())).toEqual({
+    expect(await createActor({ chain }).act(delivered())).toEqual({
       kind: 'already-attested',
-      incidentSeq: 2,
+      incident: 'incident-2',
     })
   })
 
   it('rethrows an attestation failure that is not a duplicate', async () => {
     const chain = fake({
       transaction: observed(DRAIN),
-      incident: { seq: 2, open: true },
+      incident: { address: 'incident-2', open: true },
       attestFails: true,
     })
 
-    await expect(createActor({ chain, openJitterMs: 0 }).act(delivered())).rejects.toThrow(
+    await expect(createActor({ chain }).act(delivered())).rejects.toThrow(
       'attestation already exists',
     )
   })
@@ -311,12 +317,12 @@ describe('createActor — voting an incident down (FR-007)', () => {
   it('attests «authorized» on an incident about a transaction it finds declared', async () => {
     // A set that can only ever say «unauthorized» cannot clear a false incident, and the
     // bond backing it would never be forfeited.
-    const chain = fake({ incident: { seq: 4, open: true } })
+    const chain = fake({ incident: { address: 'incident-4', open: true } })
 
-    expect(await createActor({ chain, openJitterMs: 0 }).act(delivered())).toEqual({
+    expect(await createActor({ chain }).act(delivered())).toEqual({
       kind: 'attested',
       verdict: 'authorized',
-      incidentSeq: 4,
+      incident: 'incident-4',
       opened: false,
       settled: false,
     })
@@ -327,10 +333,10 @@ describe('createActor — voting an incident down (FR-007)', () => {
     const chain = fake({
       transaction: observed(PAUSE, [STRANGER]),
       protocol: { privileged: [] },
-      incident: { seq: 4, open: true },
+      incident: { address: 'incident-4', open: true },
     })
 
-    expect(await createActor({ chain, openJitterMs: 0 }).act(delivered())).toEqual({
+    expect(await createActor({ chain }).act(delivered())).toEqual({
       kind: 'ignored',
       reason: 'not-privileged',
     })
@@ -346,33 +352,36 @@ describe('createActor — closing the loop (FR-012)', () => {
     // decision made and the money not sent.
     const chain = fake({
       transaction: observed(DRAIN),
-      incident: { seq: 2, open: true },
+      incident: { address: 'incident-2', open: true },
       quorumReached: true,
     })
 
-    expect(await createActor({ chain, openJitterMs: 0 }).act(delivered())).toEqual({
+    expect(await createActor({ chain }).act(delivered())).toEqual({
       kind: 'attested',
       verdict: 'unauthorized',
-      incidentSeq: 2,
+      incident: 'incident-2',
       opened: false,
       settled: true,
     })
-    expect(chain.resolved).toEqual([2])
+    expect(chain.resolved).toEqual(['incident-2'])
   })
 
   it('does not try to pay out before the quorum is there', async () => {
-    const chain = fake({ transaction: observed(DRAIN), incident: { seq: 2, open: true } })
+    const chain = fake({
+      transaction: observed(DRAIN),
+      incident: { address: 'incident-2', open: true },
+    })
 
-    await createActor({ chain, openJitterMs: 0 }).act(delivered())
+    await createActor({ chain }).act(delivered())
     expect(chain.resolved).toEqual([])
   })
 
   it('never settles on an «authorized» vote', async () => {
     // Quorum counts one verdict only (FR-010), so an authorized attestation cannot be
     // the one that completes it — asking would be a wasted read at best.
-    const chain = fake({ incident: { seq: 4, open: true }, quorumReached: true })
+    const chain = fake({ incident: { address: 'incident-4', open: true }, quorumReached: true })
 
-    expect(await createActor({ chain, openJitterMs: 0 }).act(delivered())).toMatchObject({
+    expect(await createActor({ chain }).act(delivered())).toMatchObject({
       verdict: 'authorized',
       settled: false,
     })
@@ -384,60 +393,15 @@ describe('createActor — closing the loop (FR-012)', () => {
     // lost either way — taking the worker down over it would cost the next compromise.
     const chain = fake({
       transaction: observed(DRAIN),
-      incident: { seq: 2, open: true },
+      incident: { address: 'incident-2', open: true },
       quorumReached: true,
       resolveFails: true,
     })
 
-    expect(await createActor({ chain, openJitterMs: 0 }).act(delivered())).toMatchObject({
+    expect(await createActor({ chain }).act(delivered())).toMatchObject({
       kind: 'attested',
       settled: false,
     })
-  })
-})
-
-describe('createActor — staggering the herd', () => {
-  it('looks again after the stagger and joins the incident that appeared', async () => {
-    // Every attestor makes the first check in the same instant, so the first check
-    // alone cannot prevent a duplicate. This second look is what does.
-    const chain = fake({
-      transaction: observed(DRAIN),
-      incidentAfterOpen: null,
-      incident: null,
-    })
-    // The incident appears between the two lookups, as another attestor's would.
-    let lookups = 0
-    const racing: ActChain = {
-      ...chain,
-      findIncidentByTrigger: async () => {
-        lookups += 1
-        return lookups === 1 ? null : { seq: 9, open: true }
-      },
-    }
-
-    const outcome = await createActor({
-      chain: racing,
-      openJitterMs: 10,
-      random: () => 0.5,
-      sleep: async () => {},
-    }).act(delivered())
-
-    expect(outcome).toMatchObject({ kind: 'attested', incidentSeq: 9, opened: false })
-    expect(chain.opened).toEqual([])
-  })
-
-  it('opens when the second look still finds nothing', async () => {
-    const chain = fake({ transaction: observed(DRAIN) })
-
-    const outcome = await createActor({
-      chain,
-      openJitterMs: 10,
-      random: () => 0,
-      sleep: async () => {},
-    }).act(delivered())
-
-    expect(outcome).toMatchObject({ kind: 'attested', opened: true })
-    expect(chain.opened).toHaveLength(1)
   })
 })
 
@@ -448,12 +412,12 @@ describe('createActor — attesting into a closing window', () => {
     // refusal is the system working.
     const chain = fake({
       transaction: observed(DRAIN),
-      incident: { seq: 2, open: true },
+      incident: { address: 'incident-2', open: true },
       attestFails: true,
       incidentStillOpen: false,
     })
 
-    expect(await createActor({ chain, openJitterMs: 0 }).act(delivered())).toEqual({
+    expect(await createActor({ chain }).act(delivered())).toEqual({
       kind: 'ignored',
       reason: 'incident-settled',
     })
@@ -462,12 +426,12 @@ describe('createActor — attesting into a closing window', () => {
   it('still raises when the incident is open and this attestor has not voted', async () => {
     const chain = fake({
       transaction: observed(DRAIN),
-      incident: { seq: 2, open: true },
+      incident: { address: 'incident-2', open: true },
       attestFails: true,
       incidentStillOpen: true,
     })
 
-    await expect(createActor({ chain, openJitterMs: 0 }).act(delivered())).rejects.toThrow(
+    await expect(createActor({ chain }).act(delivered())).rejects.toThrow(
       'attestation already exists',
     )
   })

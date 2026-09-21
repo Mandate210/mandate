@@ -1,11 +1,5 @@
 import { AnchorError, BN, type Program } from '@coral-xyz/anchor'
-import {
-  type DrainCover,
-  createProgram,
-  findConfig,
-  findIncident,
-  findPolicy,
-} from '@mandate/sdk'
+import { type DrainCover, createProgram, findConfig, findIncident, findPolicy } from '@mandate/sdk'
 import { getAccount } from '@solana/spl-token'
 import { Keypair, SystemProgram } from '@solana/web3.js'
 import { beforeAll, describe, expect, it } from 'vitest'
@@ -68,7 +62,7 @@ describe.skipIf(!reachable)('open_incident', () => {
     const vaultBefore = await getAccount(env.connection, target.vault)
     const epochBefore = await epoch()
 
-    const { incident, seq, opener, bond, triggerSig } = await openIncident(
+    const { incident, opener, bond, triggerSig } = await openIncident(
       program,
       env,
       target,
@@ -76,7 +70,9 @@ describe.skipIf(!reachable)('open_incident', () => {
     )
     const epochAfter = await epoch()
 
-    expect(seq).toBe(0)
+    // The address is the trigger: anyone holding the signature can find the incident
+    // without asking the program which number it was given (SC-007).
+    expect(incident.equals(findIncident(program.programId, target.protocol, triggerSig))).toBe(true)
     const stored = await program.account.incident.fetch(incident)
     expect(stored.policy.equals(findPolicy(program.programId, target.protocol, policySeq))).toBe(
       true,
@@ -110,21 +106,74 @@ describe.skipIf(!reachable)('open_incident', () => {
     const openerAsset = await getAccount(env.connection, await env.assetAccount(opener.publicKey))
     expect(openerAsset.amount).toBe(0n)
 
-    expect((await program.account.protocol.fetch(target.protocol)).nextIncidentSeq.toNumber()).toBe(
-      1,
-    )
+    expect((await program.account.protocol.fetch(target.protocol)).incidentCount.toNumber()).toBe(1)
   })
 
-  it('gives the next incident its own address and counts it against the pool', async () => {
+  it('gives a second trigger its own incident and counts it against the pool', async () => {
     const before = (await program.account.pool.fetch(target.pool)).openIncidents
 
-    const { incident, seq } = await openIncident(program, env, target, policySeq, {
+    const { incident } = await openIncident(program, env, target, policySeq, {
       triggerSig: triggerSignature(9),
     })
 
-    expect(seq).toBe(1)
-    expect(incident.equals(findIncident(program.programId, target.protocol, 1))).toBe(true)
+    expect(
+      incident.equals(findIncident(program.programId, target.protocol, triggerSignature(9))),
+    ).toBe(true)
     expect((await program.account.pool.fetch(target.pool)).openIncidents).toBe(before + 1)
+    expect((await program.account.protocol.fetch(target.protocol)).incidentCount.toNumber()).toBe(2)
+  })
+
+  it('refuses a second incident for the same trigger, and takes no bond for it', async () => {
+    // T070. Three attestors see the same transaction in the same second and each try
+    // to open — measured on devnet at 22 duplicated triggers out of 45. The address
+    // is derived from the signature, so the second `init` fails in the runtime, the
+    // whole transaction with it, and the loser's bond never leaves its account.
+    const triggerSig = triggerSignature(11)
+    const { incident } = await openIncident(program, env, target, policySeq, { triggerSig })
+    const poolBefore = await program.account.pool.fetch(target.pool)
+    const loser = await env.fundedKeypair(2)
+    const loserBond = (await getAccount(env.connection, target.vault)).amount
+
+    const error = await openIncident(program, env, target, policySeq, {
+      opener: loser,
+      triggerSig,
+    }).catch((thrown: unknown) => thrown)
+
+    expect(error).toBeInstanceOf(Error)
+    expect(String(error)).toMatch(/already in use/)
+    // Nothing changed: one incident, one bond in the vault, the pool counted once.
+    expect((await program.account.incident.fetch(incident)).opener.equals(loser.publicKey)).toBe(
+      false,
+    )
+    expect((await getAccount(env.connection, target.vault)).amount).toBe(loserBond)
+    expect((await program.account.pool.fetch(target.pool)).openIncidents).toBe(
+      poolBefore.openIncidents,
+    )
+    expect((await program.account.protocol.fetch(target.protocol)).incidentCount.toNumber()).toBe(
+      poolBefore.openIncidents,
+    )
+  })
+
+  it('lets one transaction be an incident on each protocol it touched', async () => {
+    // The protocol is in the seeds too: a transaction that used the privileged keys
+    // of two covered protocols is a compromise of both, and each pool answers for
+    // its own policy.
+    const other = await registerProtocol(program, env)
+    await fundPool(program, env, other, asset(100_000))
+    const { seq: otherPolicy } = await issuePolicy(program, env, other, {
+      limit: asset(10_000),
+      retention: asset(1_000),
+      premium: asset(100),
+    })
+    const triggerSig = triggerSignature(13)
+
+    const first = await openIncident(program, env, target, policySeq, { triggerSig })
+    const second = await openIncident(program, env, other, otherPolicy, { triggerSig })
+
+    expect(first.incident.equals(second.incident)).toBe(false)
+    expect(
+      (await program.account.incident.fetch(second.incident)).policy.equals(second.incident),
+    ).toBe(false)
   })
 
   it('refuses a policy that is not in force', async () => {
@@ -153,18 +202,18 @@ describe.skipIf(!reachable)('open_incident', () => {
     await fundPool(program, env, other, asset(100_000))
     const opener = await env.fundedKeypair(2)
     const bondSource = await env.assetAccount(opener.publicKey, asset(1))
-    const seq = (await program.account.protocol.fetch(other.protocol)).nextIncidentSeq.toNumber()
+    const triggerSig = triggerSignature()
 
     // An incident on someone else's policy would lock capital in a pool that never
     // underwrote it. The policy is bound to the protocol by its seeds.
     const error = await program.methods
-      .openIncident(new BN(policySeq), triggerSignature())
+      .openIncident(new BN(policySeq), triggerSig)
       .accountsPartial({
         opener: opener.publicKey,
         protocol: other.protocol,
         pool: other.pool,
         policy: findPolicy(program.programId, target.protocol, policySeq),
-        incident: findIncident(program.programId, other.protocol, seq),
+        incident: findIncident(program.programId, other.protocol, triggerSig),
         bondSource,
         vault: other.vault,
         systemProgram: SystemProgram.programId,

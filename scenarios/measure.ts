@@ -156,7 +156,9 @@ const main = async (): Promise<void> => {
       `Only ${active} of ${attestorKeys.length} attestors can vote in epoch ${epoch}, and a quorum of the set of ${config.attestorCount} needs ${needed}. FR-008 admits an attestor from the epoch after the one it was admitted in, and this epoch has about ${hours.toFixed(1)}h to run. Nothing to fix — wait.`,
     )
   }
-  say(`epoch ${epoch}: ${active} attestors can vote, quorum needs ${needed} of ${config.attestorCount}\n`)
+  say(
+    `epoch ${epoch}: ${active} attestors can vote, quorum needs ${needed} of ${config.attestorCount}\n`,
+  )
 
   // ── Stage ─────────────────────────────────────────────────────────────────────
   //
@@ -251,30 +253,16 @@ const main = async (): Promise<void> => {
   for (let index = 0; index < SAMPLES; index += 1) {
     process.stdout.write(`  sample ${String(index + 1).padStart(2)}/${SAMPLES}  `)
 
-    // Read before firing, so the wait knows which account to watch without asking the
-    // cluster to search for it. Racing workers can only push this higher, never lower,
-    // and the trigger signature is verified on arrival either way.
-    const incidentSeq = (
-      await withRetry(() => program.account.protocol.fetch(target.protocol))
-    ).nextIncidentSeq.toNumber()
-
     // A different amount every time: two identical transfers inside one blockhash would
     // be the same transaction, and the second would be rejected as a duplicate.
     const signature = await sendWith(
       env.connection,
       env.payer,
-      [
-        createTransferInstruction(
-          treasury,
-          pocket,
-          privileged.publicKey,
-          (100 + index) * UNIT,
-        ),
-      ],
+      [createTransferInstruction(treasury, pocket, privileged.publicKey, (100 + index) * UNIT)],
       [privileged],
     )
 
-    const settled = await awaitPayout(program, env, target.protocol, signature, incidentSeq)
+    const settled = await awaitPayout(program, env, target.protocol, signature)
     if (settled === null) {
       failures.push(`sample ${index + 1} (${signature.slice(0, 12)}…) never paid out`)
       say('NOT SETTLED')
@@ -318,12 +306,16 @@ const main = async (): Promise<void> => {
   const microLamportsPerCu =
     quotes.length === 0
       ? 0
-      : percentile(quotes.map((quote) => quote.prioritizationFee), 0.95)
+      : percentile(
+          quotes.map((quote) => quote.prioritizationFee),
+          0.95,
+        )
   // Seven transactions carry an incident (T064), and 200k CU is the ceiling a client
   // would request for one of ours.
   const priorityLamports = Math.round((microLamportsPerCu * 200_000 * 7) / 1_000_000)
 
-  const usd = (lamports: number): string => ((lamports / LAMPORTS_PER_SOL) * SOL_PRICE_USD).toFixed(4)
+  const usd = (lamports: number): string =>
+    ((lamports / LAMPORTS_PER_SOL) * SOL_PRICE_USD).toFixed(4)
 
   say('\n────────────────────────────────────────────────')
   say(`samples          ${samples.length} settled of ${SAMPLES}`)
@@ -332,7 +324,9 @@ const main = async (): Promise<void> => {
   say(`        range    ${Math.min(...latencies)}s … ${Math.max(...latencies)}s`)
   say(`SC-008  worst    ${worstFee} lamports = $${usd(worstFee)}   (needs ≤ $1.00)`)
   say(`        median   ${medianFee} lamports = $${usd(medianFee)}`)
-  say(`        priority ${priorityLamports} lamports = $${usd(priorityLamports)} at ${microLamportsPerCu} µlamports/CU (p95 quoted)`)
+  say(
+    `        priority ${priorityLamports} lamports = $${usd(priorityLamports)} at ${microLamportsPerCu} µlamports/CU (p95 quoted)`,
+  )
   say(`        together $${usd(worstFee + priorityLamports)}`)
   say('────────────────────────────────────────────────')
 
@@ -353,7 +347,9 @@ const main = async (): Promise<void> => {
   const first = samples[0]
   if (first !== undefined) {
     say(`  trigger  https://explorer.solana.com/tx/${first.triggerSignature}?cluster=devnet`)
-    say(`  incident https://explorer.solana.com/address/${first.incident.toBase58()}?cluster=devnet`)
+    say(
+      `  incident https://explorer.solana.com/address/${first.incident.toBase58()}?cluster=devnet`,
+    )
   }
 
   if (verdicts.length > 0) {
@@ -370,24 +366,28 @@ const main = async (): Promise<void> => {
  * cluster time.
  *
  * **The incident is addressed, not searched for.** The obvious way to find it is a
- * `memcmp` on the stored trigger signature, which is what the attestor itself does —
- * but that is `getProgramAccounts`, the most expensive call a provider meters, and
- * polling it every second is what killed the first run of this script. Worse than the
- * crash: the quota it burned was the quota the attestors needed, so the script was
- * slowing down the very thing it was timing.
+ * `memcmp` on the stored trigger signature — but that is `getProgramAccounts`, the
+ * most expensive call a provider meters, and polling it every second is what killed
+ * the first run of this script. Worse than the crash: the quota it burned was the
+ * quota the attestors needed, so the script was slowing down the very thing it was
+ * timing.
  *
- * The sequence number is known instead, read off the protocol before the transaction
- * was fired, which turns the wait into a single-account fetch. The signature is still
- * checked on arrival — an incident at the expected sequence raised by something else
- * would otherwise be recorded as this sample's.
+ * Since T070 the address follows from the signature itself, so the wait is a single
+ * account fetch with nothing read ahead of time. The stored signature is still compared
+ * on arrival: it costs nothing, and it keeps this measurement honest about what it is
+ * measuring even if the derivation ever changed under it.
  */
 const awaitPayout = async (
   program: Program<DrainCover>,
   env: TestEnv,
   protocol: PublicKey,
   signature: string,
-  incidentSeq: number,
-): Promise<{ triggeredAt: number; paidAt: number; wallSeconds: number; incident: PublicKey } | null> => {
+): Promise<{
+  triggeredAt: number
+  paidAt: number
+  wallSeconds: number
+  incident: PublicKey
+} | null> => {
   const started = Date.now()
   const trigger = await withRetry(() =>
     env.connection.getTransaction(signature, {
@@ -398,15 +398,18 @@ const awaitPayout = async (
   const triggeredAt = trigger?.blockTime ?? 0
   if (triggeredAt === 0) return null
 
-  const incident = findIncident(program.programId, protocol, incidentSeq)
   const expected = base58Decode(signature)
+  const incident = findIncident(program.programId, protocol, expected)
 
   for (;;) {
     const account = await withRetry(() => program.account.incident.fetchNullable(incident))
 
     if (account !== null && 'paidOut' in account.status) {
       const raisedBy = [...account.triggerSig]
-      if (raisedBy.length !== expected.length || raisedBy.some((byte, at) => byte !== expected[at])) {
+      if (
+        raisedBy.length !== expected.length ||
+        raisedBy.some((byte, at) => byte !== expected[at])
+      ) {
         return null
       }
       // The newest transaction touching the incident is the `resolve` that paid it:

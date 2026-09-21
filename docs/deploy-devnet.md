@@ -15,6 +15,7 @@
 | `asset_mint` | `D7ucvLoxVmotii7izgwLwbgqMCEiDPuY97Zfybv56Uzx` — власний SPL-мінт, 6 знаків |
 | `Config.admin` | той самий ключ, що платив за деплой |
 | Набір атестаторів | 3, кворум 2 з 3 |
+| Версія програми | після апгрейду T070: інцидент адресується тригером; `Data Length` 431 000 |
 
 Explorer:
 `https://explorer.solana.com/address/DsRdHv4QRYQ7teVhwuLVttktF792gvDFQdiuraQ4eF4P?cluster=devnet`
@@ -83,6 +84,12 @@ wsl -e bash -lc "cd <repo> && anchor build"
 wsl -e bash -lc "cd <repo> && cargo build-sbf --manifest-path programs/drain-cover/Cargo.toml --arch v3"
 ```
 
+`cargo build-sbf` має бути з релізу Agave **4.2.0** (`Anchor.toml` → `solana_version`),
+а не з того, куди зараз вказує `active_release` — його переключають інші проєкти на
+цій самій машині. Реліз 3.1.10 іде з platform-tools v1.52, у яких немає sysroot для
+`sbpfv3`, і збірка падає на `blake3` з «can't find crate for core». Явний шлях:
+`~/.local/share/solana/install/releases/4.2.0/solana-release/bin/cargo-build-sbf`.
+
 Перевірка, що артефакт справді v3 — читається з ELF, а не з віри в порядок команд:
 
 ```bash
@@ -116,8 +123,15 @@ wsl -e bash -lc "solana address -k <repo>/target/deploy/drain_cover-keypair.json
 проєкт, `faucet.solana.com` — близько 2.5 SOL на добу. Платника поповнюють переказом.
 
 > ⚠️ **Запасу в програмному акаунті немає.** Деплой зроблений із точною довжиною, тож
-> перший апгрейд, що збільшує `.so` бодай на байт, спершу вимагає
-> `solana program extend DsRdHv4QRYQ7teVhwuLVttktF792gvDFQdiuraQ4eF4P <байтів> -u devnet`.
+> апгрейд, що збільшує `.so` бодай на байт, потребує розширення акаунта. CLI від 3.x
+> робить це сам (`solana program deploy` має прапорець `--no-auto-extend`, тобто
+> розширення — типова поведінка); ручний `solana program extend <id> <байтів> -u devnet`
+> потрібен лише зі старішим CLI. Рента на приріст усе одно береться з платника.
+> Апгрейд T070 (+888 байт `.so`) розширив акаунт до 431 000 байтів; CLI довів баланс
+> ProgramData рівно до рентної межі — `solana rent 431045` на devnet тепер дає
+> **2.190 SOL**, менше за 2.930 із таблиці вище: параметри ренти на devnet
+> змінилися, таблиця лишається як історія першого деплою. Надлишок і буфер повернулися
+> платнику в тій самій транзакції.
 > Без нього `solana program deploy` відмовить. Доплачується лише різниця ренти.
 
 ## Крок 4 — деплой
@@ -197,3 +211,36 @@ pnpm --filter @mandate/scenarios devnet:measure      # p95 і комісії
 - **Тимчасові ключі authority не повертають SOL.** `registerProtocol` створює їх у
   памʼяті, і після процесу залишок недосяжний — близько 0.165 SOL за прогін сценарію.
   На devnet прийнятно, на mainnet так робити не можна.
+
+---
+
+## Апгрейд задеплоєної програми
+
+Програма upgradeable, upgrade authority — платник деплою. Порядок:
+
+1. **Спершу — усе, що стара схема має закрити.** Апгрейд, який міняє адресацію
+   акаунтів (як T070 — інцидент став адресуватися тригером замість `(protocol, seq)`),
+   робить старі акаунти **недосяжними для будь-якої інструкції**: seeds-перевірка нової
+   програми їх не прийме. Відкриті інциденти треба закрити старою програмою до
+   апгрейду, інакше вони тримають застави й `open_incidents > 0` на пулах назавжди.
+2. **Платник має тримати ~3 SOL ліквідних.** Апгрейд пише буфер на повний розмір
+   `.so` (≈2.93 SOL за 421 КБ) — ця рента **повертається** після апгрейду, — плюс ренту
+   на приріст розміру, яка лишається. Faucet-и такого не дають, поповнення переказом.
+3. Збірка як у кроці 1, звірка адреси як у кроці 2, і:
+
+```bash
+wsl -e bash -lc "cd <repo> && anchor deploy --provider.cluster devnet --provider.wallet ~/.config/solana/mandate-devnet-deployer.json"
+wsl -e bash -lc "solana program show DsRdHv4QRYQ7teVhwuLVttktF792gvDFQdiuraQ4eF4P -u devnet"   # Data Length зріс, Last Deployed In Slot новий
+```
+
+4. Після апгрейду — `pnpm --filter @mandate/sdk sync:idl` уже мав бути зроблений до
+   коміту; `devnet:setup` перевіряє, що `Config`, мінт і атестатори на місці (їх
+   апгрейд не чіпає), а `compromise` на devnet — що цикл проходить на новій схемі.
+
+Так було зроблено для T070: 23 відкриті інциденти закриті старою програмою
+одноразовим скриптом (усі прострочені; той, що з кворумом, теж пішов через
+`close_expired_incident`, бо його поліс уже не чинний), апгрейд у слоті 501 840 307,
+далі `devnet:compromise` — 10 із 10, по одному інциденту на подію, найповільніший
+цикл 23.8 с.
+
+`Config` апгрейд не змінює: усе, що в ньому зафіксовано, лишається зафіксованим.

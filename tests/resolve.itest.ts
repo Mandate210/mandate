@@ -1,7 +1,7 @@
-import { AnchorError, BN, type Program } from '@coral-xyz/anchor'
-import { type DrainCover, createProgram, findConfig, findIncident } from '@mandate/sdk'
+import { AnchorError, type Program } from '@coral-xyz/anchor'
+import { type DrainCover, createProgram, findConfig } from '@mandate/sdk'
 import { getAccount } from '@solana/spl-token'
-import type { Keypair } from '@solana/web3.js'
+import type { Keypair, PublicKey } from '@solana/web3.js'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { type TestEnv, asset, setupTestEnv, validatorReachable } from './harness'
 import {
@@ -39,9 +39,7 @@ describe.skipIf(!reachable)('resolve', () => {
   let attestors: Keypair[]
   let quorumBps: number
   /** The incident settled by the first test, reused by the one after it. */
-  let settled: number
-
-  const incidentAt = (seq: number) => findIncident(program.programId, target.protocol, seq)
+  let settled: PublicKey
 
   beforeAll(async () => {
     env = await setupTestEnv()
@@ -71,17 +69,17 @@ describe.skipIf(!reachable)('resolve', () => {
     const beneficiaryToken = await env.assetAccount(target.treasury)
     const beneficiaryBefore = (await getAccount(env.connection, beneficiaryToken)).amount
 
-    const { seq } = await openIncident(program, env, target, policySeq)
-    settled = seq
+    const { incident: opened } = await openIncident(program, env, target, policySeq)
+    settled = opened
     for (const attestor of attestors) {
-      await attest(program, target, seq, attestor)
+      await attest(program, target, opened, attestor)
     }
     const openerToken = await env.assetAccount(
-      (await program.account.incident.fetch(incidentAt(seq))).opener,
+      (await program.account.incident.fetch(opened)).opener,
     )
     const openerBefore = (await getAccount(env.connection, openerToken)).amount
 
-    await resolve(program, env, target, seq)
+    await resolve(program, env, target, opened)
 
     // SC-006: exactly the limit less the retention, no rounding anywhere on the way —
     // the retention is an absolute amount and there is a single asset, so there is
@@ -90,7 +88,7 @@ describe.skipIf(!reachable)('resolve', () => {
       beneficiaryBefore + PAYABLE,
     )
 
-    const incident = await program.account.incident.fetch(incidentAt(seq))
+    const incident = await program.account.incident.fetch(opened)
     expect(incident.status).toEqual({ paidOut: {} })
     expect(BigInt(incident.payout.toString())).toBe(PAYABLE)
     expect(incident.shortfall.toNumber()).toBe(0)
@@ -106,9 +104,7 @@ describe.skipIf(!reachable)('resolve', () => {
     )
     expect(pool.openIncidents).toBe(poolBefore.openIncidents)
 
-    const policy = await program.account.policy.fetch(
-      (await program.account.incident.fetch(incidentAt(seq))).policy,
-    )
+    const policy = await program.account.policy.fetch(incident.policy)
     expect(BigInt(policy.remainingLimit.toString())).toBe(LIMIT - PAYABLE)
     // What is left is the retention, which is never payable — so the policy is spent
     // and the pool stops reserving anything for it.
@@ -140,25 +136,20 @@ describe.skipIf(!reachable)('resolve', () => {
       premium: asset(500),
     })
 
-    const { seq } = await openIncident(program, env, other, otherPolicy)
-    const incident = await program.account.incident.fetch(
-      findIncident(program.programId, other.protocol, seq),
-    )
+    const { incident: opened } = await openIncident(program, env, other, otherPolicy)
+    const incident = await program.account.incident.fetch(opened)
     // One short of what this incident's own set size demands.
     const short = quorumNeeded(incident.setSize, quorumBps) - 1
     for (const attestor of attestors.slice(0, short)) {
-      await attest(program, other, seq, attestor)
+      await attest(program, other, opened, attestor)
     }
 
-    const error = await resolve(program, env, other, seq).catch((thrown: unknown) => thrown)
+    const error = await resolve(program, env, other, opened).catch((thrown: unknown) => thrown)
 
     expect(error).toBeInstanceOf(AnchorError)
     expect((error as AnchorError).error.errorCode.code).toBe('QuorumNotReached')
     // Still open, still counted against the pool: nothing was decided.
-    expect(
-      (await program.account.incident.fetch(findIncident(program.programId, other.protocol, seq)))
-        .status,
-    ).toEqual({ open: {} })
+    expect((await program.account.incident.fetch(opened)).status).toEqual({ open: {} })
     expect((await program.account.pool.fetch(other.pool)).openIncidents).toBe(1)
   })
 
@@ -170,25 +161,23 @@ describe.skipIf(!reachable)('resolve', () => {
       retention: asset(5_000),
       premium: asset(500),
     })
-    const seq = (await openIncident(program, env, third, thirdPolicy)).seq
+    const opened = (await openIncident(program, env, third, thirdPolicy)).incident
     for (const attestor of attestors) {
-      await attest(program, third, seq, attestor)
+      await attest(program, third, opened, attestor)
     }
 
-    const incident = await program.account.incident.fetch(
-      findIncident(program.programId, third.protocol, seq),
-    )
+    const incident = await program.account.incident.fetch(opened)
     const thief = await env.fundedKeypair(1)
 
     // The beneficiary is fixed at issuance (FR-004). Presenting a different account
     // here fails on the token owner constraint, not on our arithmetic.
     const error = await program.methods
-      .resolve(new BN(seq))
+      .resolve()
       .accountsPartial({
         protocol: third.protocol,
         pool: third.pool,
         policy: incident.policy,
-        incident: findIncident(program.programId, third.protocol, seq),
+        incident: opened,
         vault: third.vault,
         beneficiaryToken: await env.assetAccount(thief.publicKey),
         openerToken: await env.assetAccount(incident.opener),

@@ -3,12 +3,12 @@ use anchor_spl::token::{transfer, Token, TokenAccount, Transfer};
 
 use crate::errors::DrainCoverError;
 use crate::state::{
-    Config, Incident, IncidentStatus, Policy, Pool, Protocol, CONFIG_SEED, INCIDENT_SEED,
-    POLICY_SEED, POOL_SEED,
+    trigger_seeds, Config, Incident, IncidentStatus, Policy, Pool, Protocol, CONFIG_SEED,
+    INCIDENT_SEED, POLICY_SEED, POOL_SEED,
 };
 
 #[derive(Accounts)]
-#[instruction(policy_seq: u64)]
+#[instruction(policy_seq: u64, trigger_sig: [u8; 64])]
 pub struct OpenIncident<'info> {
     #[account(seeds = [CONFIG_SEED], bump)]
     pub config: Account<'info, Config>,
@@ -28,6 +28,10 @@ pub struct OpenIncident<'info> {
         bump,
     )]
     pub policy: Account<'info, Policy>,
+    /// Addressed by the trigger, so this `init` is the whole of «one incident per
+    /// event»: a second opener for the same transaction fails here, atomically,
+    /// before its bond has moved (T070). Two protocols touched by one transaction
+    /// still get one incident each — the protocol is in the seeds too.
     #[account(
         init,
         payer = opener,
@@ -35,7 +39,8 @@ pub struct OpenIncident<'info> {
         seeds = [
             INCIDENT_SEED,
             protocol.key().as_ref(),
-            &protocol.next_incident_seq.to_le_bytes(),
+            trigger_seeds(&trigger_sig)[0],
+            trigger_seeds(&trigger_sig)[1],
         ],
         bump,
     )]
@@ -133,8 +138,8 @@ pub fn handle_open_incident(
     });
 
     let protocol = &mut ctx.accounts.protocol;
-    protocol.next_incident_seq = protocol
-        .next_incident_seq
+    protocol.incident_count = protocol
+        .incident_count
         .checked_add(1)
         .ok_or(DrainCoverError::MathOverflow)?;
 

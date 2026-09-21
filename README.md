@@ -76,9 +76,11 @@ Worth knowing before drawing conclusions:
   the nodes belong to one party, its independence is arithmetic rather than real.
 - **No mainnet and no external audit.** Neither is close, and both come before
   anything touches real money.
-- Two defects that only appear under real network latency are open and block the
-  next milestone: attestors race to open two incidents on one event, and nothing
-  ever closes an incident whose window expired, so pool capital stays frozen.
+- One defect that only appears under real network latency is open and blocks the
+  next milestone: nothing ever closes an incident whose window expired, so pool
+  capital stays frozen. (The other one — attestors racing to open two incidents on
+  one event — is closed: an incident is now addressed by the transaction that
+  triggered it, so a second one cannot exist.)
 
 ## Layout
 

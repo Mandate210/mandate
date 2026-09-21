@@ -4,12 +4,11 @@ use anchor_spl::token::{transfer, Token, TokenAccount, Transfer};
 use crate::errors::DrainCoverError;
 use crate::instructions::initialize::BPS_DENOMINATOR;
 use crate::state::{
-    Config, Incident, IncidentStatus, Policy, PolicyStatus, Pool, Protocol, CONFIG_SEED,
-    INCIDENT_SEED, POOL_SEED,
+    trigger_seeds, Config, Incident, IncidentStatus, Policy, PolicyStatus, Pool, Protocol,
+    CONFIG_SEED, INCIDENT_SEED, POOL_SEED,
 };
 
 #[derive(Accounts)]
-#[instruction(incident_seq: u64)]
 pub struct Resolve<'info> {
     #[account(seeds = [CONFIG_SEED], bump)]
     pub config: Account<'info, Config>,
@@ -21,12 +20,16 @@ pub struct Resolve<'info> {
     /// about when it opened, and that is not up for revision at settlement.
     #[account(mut)]
     pub policy: Account<'info, Policy>,
+    /// The seeds bind the incident to `protocol`, and through it to the pool that
+    /// pays — without them an incident of one protocol could be settled out of
+    /// another's vault. They come from the signature the account stores (T070).
     #[account(
         mut,
         seeds = [
             INCIDENT_SEED,
             protocol.key().as_ref(),
-            &incident_seq.to_le_bytes(),
+            trigger_seeds(&incident.trigger_sig)[0],
+            trigger_seeds(&incident.trigger_sig)[1],
         ],
         bump,
         has_one = policy,
@@ -81,7 +84,7 @@ pub fn settle_payout(owed: u64, available: u64) -> (u64, u64) {
     (payout, owed - payout)
 }
 
-pub fn handle_resolve(ctx: Context<Resolve>, _incident_seq: u64) -> Result<()> {
+pub fn handle_resolve(ctx: Context<Resolve>) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
 
     require!(

@@ -44,6 +44,11 @@ anchor build                                                      # IDL
 cargo build-sbf --manifest-path programs/drain-cover/Cargo.toml --arch v3
 ```
 
+`cargo build-sbf` has to come from the Agave **4.2.0** release, not from whatever
+`active_release` points at — other projects on the same machine switch it, and 3.1.10
+ships platform-tools without the `sbpfv3` sysroot («can't find crate for core» in
+`blake3`). Explicit path in `docs/deploy-devnet.md` → Крок 1.
+
 **After every program change, sync the IDL into the SDK:**
 
 ```bash

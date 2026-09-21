@@ -61,7 +61,7 @@ describe.skipIf(!reachable)('register_protocol', () => {
     // off these counters.
     expect(protocol.nextPolicySeq.toNumber()).toBe(0)
     expect(protocol.nextDeclarationSeq.toNumber()).toBe(0)
-    expect(protocol.nextIncidentSeq.toNumber()).toBe(0)
+    expect(protocol.incidentCount.toNumber()).toBe(0)
 
     const pool = await program.account.pool.fetch(poolPda)
     expect(pool.totalAssets.toNumber()).toBe(0)
