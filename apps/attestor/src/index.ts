@@ -16,7 +16,8 @@ import { base58Decode } from '@mandate/shared'
 import { Connection, Keypair } from '@solana/web3.js'
 import pino from 'pino'
 import { createActor } from './act'
-import { createChain } from './chain'
+import { createChain, createSweepChain } from './chain'
+import { DEFAULT_SWEEP_INTERVAL_SECONDS, createSweeper } from './sweep'
 import { type WatchedAddress, connectionWatchRpc, createWatcher } from './watch'
 
 const logger = pino({ name: 'attestor' })
@@ -32,6 +33,25 @@ const seconds = (name: string): number | undefined => {
   if (value === undefined || value === '') return undefined
   const parsed = Number(value)
   if (!Number.isFinite(parsed) || parsed <= 0) throw new Error(`${name} is not a positive number`)
+  return parsed
+}
+
+/**
+ * How often to sweep expired incidents, in seconds. `0` turns the sweep off.
+ *
+ * Off is a real choice, unlike the rest of the worker: sweeping is permissionless
+ * housekeeping that any party can do, so an operator running several attestors on one
+ * machine has no reason to have all of them doing it. It is on by default because the
+ * alternative — assuming somebody else will — is exactly how 17 incidents came to sit
+ * open on devnet holding pool capital (T071).
+ */
+const sweepInterval = (): number => {
+  const value = process.env.ATTESTOR_SWEEP_SECONDS
+  if (value === undefined || value === '') return DEFAULT_SWEEP_INTERVAL_SECONDS
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error('ATTESTOR_SWEEP_SECONDS is not a non-negative number')
+  }
   return parsed
 }
 
@@ -105,8 +125,22 @@ const main = async (): Promise<void> => {
     },
   })
 
+  // Housekeeping, not attestation: `close_expired_incident` and `resolve` take no
+  // signer, and this worker runs them only because it is the process that already has
+  // a key, an RPC and a program client (T071, FR-011, FR-019).
+  const intervalSeconds = sweepInterval()
+  const sweeper =
+    intervalSeconds === 0
+      ? null
+      : createSweeper({
+          chain: createSweepChain({ program, connection }),
+          logger,
+          intervalSeconds,
+        })
+
   const shutdown = (signal: string): void => {
     logger.info({ signal }, 'stopping')
+    sweeper?.stop()
     watcher
       .stop()
       .catch((error: unknown) => logger.error({ error }, 'failed to stop cleanly'))
@@ -120,6 +154,9 @@ const main = async (): Promise<void> => {
     'attestor started',
   )
   await watcher.start()
+  // After the watcher: a compromise happening right now matters more than an incident
+  // that has been sitting expired for hours.
+  await sweeper?.start()
 }
 
 main().catch((error: unknown) => {

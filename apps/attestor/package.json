@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "sweep": "tsx src/sweep-cli.ts",
     "start": "node dist/index.js",
     "build": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
@@ -28,6 +29,7 @@
   "exports": {
     "./act": "./src/act.ts",
     "./chain": "./src/chain.ts",
+    "./sweep": "./src/sweep.ts",
     "./watch": "./src/watch.ts"
   }
 }

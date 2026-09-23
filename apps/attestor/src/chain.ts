@@ -14,12 +14,14 @@ import {
   findIncident,
   findPolicy,
   findVault,
+  openIncidentsFilter,
 } from '@mandate/sdk'
 import type { DeclarationEntry, ObservedTransaction } from '@mandate/shared'
 import { base58Decode, flattenInstructions } from '@mandate/shared'
 import { getAssociatedTokenAddressSync } from '@solana/spl-token'
 import { type Connection, type Keypair, PublicKey, SystemProgram } from '@solana/web3.js'
 import type { ActChain, AttestVerdict, IncidentRef, ProtocolState } from './act'
+import type { SweepChain, SweepIncident, SweepPolicy } from './sweep'
 
 /**
  * A transaction as the rule needs it.
@@ -87,6 +89,43 @@ const stackHeightOf = (instruction: unknown): number | undefined => {
   if (typeof instruction !== 'object' || instruction === null) return undefined
   const value = (instruction as Record<string, unknown>).stackHeight
   return typeof value === 'number' ? value : undefined
+}
+
+/**
+ * Send `resolve` for an incident that has reached its quorum (FR-012).
+ *
+ * Shared by the attestor's own settle path and by the sweeper, which both send exactly
+ * this transaction for exactly the same reason. One copy, because an account list that
+ * drifted between them would fail in only one of the two places — and the sweeper's is
+ * the one nobody watches.
+ */
+const resolveIncident = async (
+  program: Program<DrainCover>,
+  protocol: PublicKey,
+  incident: PublicKey,
+): Promise<void> => {
+  const stored = await program.account.incident.fetch(incident)
+  const [{ pool }, policy] = await Promise.all([
+    program.account.protocol.fetch(protocol),
+    program.account.policy.fetch(stored.policy),
+  ])
+  const { assetMint } = await program.account.config.fetch(findConfig(program.programId))
+
+  await program.methods
+    .resolve()
+    .accountsPartial({
+      protocol,
+      pool,
+      policy: stored.policy,
+      incident,
+      vault: findVault(assetMint, pool),
+      // The beneficiary and the opener are paid in the settlement asset, so both need
+      // an account for it. Derived, not created: `resolve` cannot open one, and a
+      // beneficiary without an account is a policy that was issued wrong.
+      beneficiaryToken: getAssociatedTokenAddressSync(assetMint, policy.beneficiary, true),
+      openerToken: getAssociatedTokenAddressSync(assetMint, stored.opener, true),
+    })
+    .rpc()
 }
 
 export const createChain = ({
@@ -244,32 +283,8 @@ export const createChain = ({
       return account.votesUnauthorized >= needed
     },
 
-    resolve: async (protocol, incident) => {
-      const key = new PublicKey(protocol)
-      const address = new PublicKey(incident)
-      const stored = await program.account.incident.fetch(address)
-      const [{ pool }, policy] = await Promise.all([
-        program.account.protocol.fetch(key),
-        program.account.policy.fetch(stored.policy),
-      ])
-      const { assetMint } = await program.account.config.fetch(findConfig(programId))
-
-      await program.methods
-        .resolve()
-        .accountsPartial({
-          protocol: key,
-          pool,
-          policy: stored.policy,
-          incident: address,
-          vault: findVault(assetMint, pool),
-          // The beneficiary and the opener are paid in the settlement asset, so both
-          // need an account for it. Derived, not created: `resolve` cannot open one,
-          // and a beneficiary without an account is a policy that was issued wrong.
-          beneficiaryToken: getAssociatedTokenAddressSync(assetMint, policy.beneficiary, true),
-          openerToken: getAssociatedTokenAddressSync(assetMint, stored.opener, true),
-        })
-        .rpc()
-    },
+    resolve: async (protocol, incident) =>
+      resolveIncident(program, new PublicKey(protocol), new PublicKey(incident)),
 
     attest: async ({ protocol, incident, verdict }) => {
       const address = new PublicKey(incident)
@@ -293,3 +308,136 @@ export const createChain = ({
 /** Anchor spells an enum variant as a single-key object. */
 const verdictArgument = (verdict: AttestVerdict) =>
   verdict === 'unauthorized' ? { unauthorized: {} } : { authorized: {} }
+
+/**
+ * The real chain behind `SweepChain` (T071).
+ *
+ * Kept apart from `createChain` because it needs no key of its own: every instruction
+ * it sends is permissionless, so the only thing the provider contributes is the fee.
+ * That is what lets the one-shot command run under anybody's keypair — an underwriter
+ * unfreezing their own capital does not have to be an attestor.
+ */
+export const createSweepChain = ({
+  program,
+  connection,
+}: {
+  program: Program<DrainCover>
+  connection: Connection
+}): SweepChain => {
+  const programId = program.programId
+  let cachedConfig: { assetMint: PublicKey; quorumBps: number } | null = null
+
+  /**
+   * `Config`, read once.
+   *
+   * Both fields are fixed when the config is created and no instruction updates them —
+   * `set_attestor` moves `attestor_count`, which is deliberately not read here: an
+   * incident's quorum is counted against the `set_size` it recorded when it opened, not
+   * against the set as it stands now.
+   */
+  const loadConfig = async (): Promise<{ assetMint: PublicKey; quorumBps: number }> => {
+    if (cachedConfig === null) {
+      const account = await program.account.config.fetch(findConfig(programId))
+      cachedConfig = { assetMint: account.assetMint, quorumBps: account.quorumBps }
+    }
+    return cachedConfig
+  }
+
+  return {
+    /**
+     * Every open incident, with the protocol each one belongs to.
+     *
+     * Two `getProgramAccounts` a pass and no per-incident reads. `Incident` does not
+     * store its protocol — the protocol is in its address — so the owner is recovered
+     * by re-deriving the address from each registered protocol and the signature the
+     * account carries. That is arithmetic, not RPC: there are at most three protocols
+     * (`PLAN.md` → Helius credits, C-5), and re-deriving is also what proves the
+     * account really is the incident for that trigger.
+     *
+     * Filtered on `status` rather than listed whole: the program holds every incident
+     * it has ever opened, and the open ones are the handful there is work for.
+     */
+    listOpenIncidents: async (): Promise<SweepIncident[]> => {
+      const [protocols, incidents] = await Promise.all([
+        program.account.protocol.all(),
+        program.account.incident.all(openIncidentsFilter()),
+      ])
+
+      return incidents.flatMap(({ publicKey, account }) => {
+        const owner = protocols.find(({ publicKey: protocol }) =>
+          findIncident(programId, protocol, account.triggerSig).equals(publicKey),
+        )
+        // An incident whose protocol was deregistered between the two listings. It
+        // cannot be acted on without the protocol account, and the next pass will see
+        // it again.
+        if (owner === undefined) return []
+
+        return [
+          {
+            address: publicKey.toBase58(),
+            protocol: owner.publicKey.toBase58(),
+            policy: account.policy.toBase58(),
+            opener: account.opener.toBase58(),
+            deadline: account.deadline.toNumber(),
+            setSize: account.setSize,
+            votesUnauthorized: account.votesUnauthorized,
+          },
+        ]
+      })
+    },
+
+    loadPolicy: async (policy): Promise<SweepPolicy | null> => {
+      const account = await program.account.policy.fetchNullable(new PublicKey(policy))
+      return account === null
+        ? null
+        : {
+            startTs: account.startTs.toNumber(),
+            endTs: account.endTs.toNumber(),
+            premiumPaid: BigInt(account.premiumPaid.toString()),
+            exhausted: 'exhausted' in account.status,
+            beneficiary: account.beneficiary.toBase58(),
+          }
+    },
+
+    quorumBps: async () => (await loadConfig()).quorumBps,
+
+    settlementAccountExists: async (owner) => {
+      const { assetMint } = await loadConfig()
+      const token = getAssociatedTokenAddressSync(assetMint, new PublicKey(owner), true)
+      return (await connection.getAccountInfo(token)) !== null
+    },
+
+    incidentOpen: async (incident) => {
+      const account = await program.account.incident.fetchNullable(new PublicKey(incident))
+      return account !== null && 'open' in account.status
+    },
+
+    resolve: async (protocol, incident) =>
+      resolveIncident(program, new PublicKey(protocol), new PublicKey(incident)),
+
+    closeExpired: async (protocol, incident) => {
+      const key = new PublicKey(protocol)
+      const address = new PublicKey(incident)
+      const stored = await program.account.incident.fetch(address)
+      const [{ pool }, { assetMint }] = await Promise.all([
+        program.account.protocol.fetch(key),
+        loadConfig(),
+      ])
+
+      await program.methods
+        .closeExpiredIncident()
+        .accountsPartial({
+          protocol: key,
+          pool,
+          policy: stored.policy,
+          incident: address,
+          vault: findVault(assetMint, pool),
+          // Required in both branches, and only paid in one: Anchor deserialises it
+          // before the handler runs, so an opener that closed this account leaves an
+          // incident nobody can close. `sweep.ts` checks for it and reports it.
+          openerToken: getAssociatedTokenAddressSync(assetMint, stored.opener, true),
+        })
+        .rpc()
+    },
+  }
+}

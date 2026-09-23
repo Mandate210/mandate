@@ -6,6 +6,7 @@ import { type AnchorProvider, Program } from '@coral-xyz/anchor'
 import { PublicKey } from '@solana/web3.js'
 import { DRAIN_COVER_IDL, type DrainCover, PROGRAM_ID_FROM_IDL } from './idl'
 
+export * from './filters'
 export * from './idl'
 export * from './pdas'
 

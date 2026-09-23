@@ -17,7 +17,8 @@ is why the CLI is pinned there and not at 1.x).
 ```
 programs/drain-cover/   Anchor program — the only source of truth
 apps/api/               Hono read-only REST + indexer subscription
-apps/attestor/          worker: watch privileged addrs → compare → attest
+apps/attestor/          worker: watch privileged addrs → compare → attest,
+                        and sweep incidents the window left behind
 apps/web/               public status page, read-only
 packages/shared/        Zod schemas + declaration-matching rule (pure)
 packages/sdk/           typed program client + generated IDL
@@ -30,6 +31,7 @@ tests/                  Anchor integration tests (Vitest)
 pnpm gate        # lint + typecheck + test — must be green before every commit
 pnpm dev         # all apps
 pnpm lint:fix    # biome check --write
+pnpm --filter @mandate/attestor sweep   # one pass over expired incidents, then exit
 anchor build     # regenerates the IDL that packages/sdk depends on
 anchor deploy    # deploys to whatever cluster Anchor.toml points at
 ```
@@ -42,6 +44,17 @@ overwrites the `.so` the first wrote:
 ```bash
 anchor build                                                      # IDL
 cargo build-sbf --manifest-path programs/drain-cover/Cargo.toml --arch v3
+```
+
+**The local validator is the other way round: it refuses `--arch v3`** («Detected
+sbpf_version required by the executable which are not enabled»). So a `target/deploy/`
+left over from a devnet build cannot be deployed to `solana-test-validator`, and
+rebuilding does not fix it — cargo finds the crate fresh, does nothing, and leaves the
+v3 `.so` in place. Delete **only the `.so`** and build again:
+
+```bash
+rm target/deploy/drain_cover.so    # never the keypair beside it, and never cargo clean
+cargo build-sbf --manifest-path programs/drain-cover/Cargo.toml --arch v0
 ```
 
 `cargo build-sbf` has to come from the Agave **4.2.0** release, not from whatever
