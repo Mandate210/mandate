@@ -10,6 +10,7 @@ import {
   findIncident,
   findPolicy,
   findPool,
+  findPosition,
   findProtocol,
   findVault,
 } from '@mandate/sdk'
@@ -473,4 +474,45 @@ export const fundPool = async (
       source,
     })
     .rpc()
+}
+
+export interface DepositResult {
+  underwriter: Keypair
+  position: PublicKey
+}
+
+/**
+ * Capital into a pool from an address with no standing in the system (FR-017) — no
+ * admin, no allow-list, nothing but a signature and the asset.
+ *
+ * A fresh underwriter per call unless one is passed: a position belongs to an
+ * address, so reusing one turns the next deposit into the add-to-an-existing-position
+ * path, which is a different test.
+ */
+export const deposit = async (
+  program: Program<DrainCover>,
+  env: TestEnv,
+  target: RegisteredProtocol,
+  amount: bigint,
+  underwriter?: Keypair,
+): Promise<DepositResult> => {
+  const owner = underwriter ?? (await env.fundedKeypair(2))
+  const source = await env.assetAccount(owner.publicKey, amount)
+  const position = findPosition(program.programId, target.pool, owner.publicKey)
+
+  await program.methods
+    .deposit(new BN(amount.toString()))
+    .accountsPartial({
+      underwriter: owner.publicKey,
+      protocol: target.protocol,
+      pool: target.pool,
+      position,
+      vault: target.vault,
+      source,
+      systemProgram: SystemProgram.programId,
+    })
+    .signers([owner])
+    .rpc()
+
+  return { underwriter: owner, position }
 }

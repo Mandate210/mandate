@@ -11,6 +11,7 @@
 
 pub mod attest;
 pub mod close_expired_incident;
+pub mod deposit;
 pub mod initialize;
 pub mod issue_policy;
 pub mod open_incident;
@@ -28,6 +29,7 @@ pub mod submit_declaration;
 // rejects in CI.
 pub use attest::*;
 pub use close_expired_incident::*;
+pub use deposit::*;
 pub use initialize::*;
 pub use issue_policy::*;
 pub use open_incident::*;

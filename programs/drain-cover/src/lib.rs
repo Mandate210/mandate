@@ -63,6 +63,13 @@ pub mod drain_cover {
         instructions::service_fund_pool::handle_service_fund_pool(ctx, amount)
     }
 
+    /// Puts capital into a pool and issues shares against it (FR-017). Open to
+    /// any address: no identity check, no jurisdiction filter, nothing recorded
+    /// about the underwriter but the address that signs.
+    pub fn deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
+        instructions::deposit::handle_deposit(ctx, amount)
+    }
+
     /// Issues a policy against a pool and takes its premium (FR-003, FR-005).
     pub fn issue_policy(
         ctx: Context<IssuePolicy>,

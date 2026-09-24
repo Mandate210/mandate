@@ -94,4 +94,20 @@ pub enum DrainCoverError {
     /// quorum has already decided (FR-012).
     #[msg("Quorum was reached on a policy in force, so this incident settles rather than expires")]
     IncidentPayable,
+    /// Rounding is down, so a deposit worth less than one share would join the
+    /// pool's capital with nothing representing it — capital given away rather
+    /// than underwritten.
+    #[msg("Deposit is too small to be worth one share of this pool")]
+    DepositTooSmall,
+    /// Capital put in through `service_fund_pool` (T014) belongs to nobody, and a
+    /// first deposit priced one-for-one would take ownership of it. Refused rather
+    /// than absorbed: the instruction that creates this state is removed in T036,
+    /// and until then a pool is either seeded or underwritten, never both.
+    #[msg("Pool holds capital that no share represents, so it cannot take a first deposit")]
+    PoolHasUnsharedCapital,
+    /// A payout can take a pool's capital to exactly zero while shares remain
+    /// outstanding. There is then no price at which to issue new ones, and minting
+    /// at par would split the new capital with shares that are worth nothing.
+    #[msg("Pool has shares outstanding but no capital, so a deposit cannot be priced")]
+    PoolWipedOut,
 }

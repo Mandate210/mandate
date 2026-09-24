@@ -225,6 +225,137 @@
       "args": []
     },
     {
+      "name": "deposit",
+      "docs": [
+        "Puts capital into a pool and issues shares against it (FR-017). Open to",
+        "any address: no identity check, no jurisdiction filter, nothing recorded",
+        "about the underwriter but the address that signs."
+      ],
+      "discriminator": [
+        242,
+        35,
+        198,
+        137,
+        82,
+        225,
+        242,
+        182
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "docs": [
+            "Read for one thing only: the asset every pool settles in (FR-014)."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "underwriter",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocol",
+          "docs": [
+            "CHECK is unnecessary: the pool PDA is derived from this protocol, so a pool",
+            "that does not belong to it cannot be passed."
+          ]
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "protocol"
+              }
+            ]
+          }
+        },
+        {
+          "name": "position",
+          "docs": [
+            "Created on the first deposit and reused afterwards. `init_if_needed` rather",
+            "than a separate \"open a position\" instruction: a second instruction would be",
+            "one more thing for a client to get wrong, and opening a position decides",
+            "nothing."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "pool"
+              },
+              {
+                "kind": "account",
+                "path": "underwriter"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "source",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "initialize",
       "docs": [
         "Creates the one Config account for this deployment."
@@ -1427,6 +1558,19 @@
         131,
         40
       ]
+    },
+    {
+      "name": "UnderwriterPosition",
+      "discriminator": [
+        33,
+        87,
+        62,
+        126,
+        208,
+        123,
+        202,
+        22
+      ]
     }
   ],
   "errors": [
@@ -1589,6 +1733,21 @@
       "code": 6031,
       "name": "IncidentPayable",
       "msg": "Quorum was reached on a policy in force, so this incident settles rather than expires"
+    },
+    {
+      "code": 6032,
+      "name": "DepositTooSmall",
+      "msg": "Deposit is too small to be worth one share of this pool"
+    },
+    {
+      "code": 6033,
+      "name": "PoolHasUnsharedCapital",
+      "msg": "Pool holds capital that no share represents, so it cannot take a first deposit"
+    },
+    {
+      "code": 6034,
+      "name": "PoolWipedOut",
+      "msg": "Pool has shares outstanding but no capital, so a deposit cannot be priced"
     }
   ],
   "types": [
@@ -2053,7 +2212,21 @@
       "docs": [
         "Capital underwriting exactly one covered protocol, and the only source of its",
         "payouts (FR-002). Isolation is structural: each pool owns its own vault, so",
-        "there is no shared store to draw from by mistake."
+        "there is no shared store to draw from by mistake.",
+        "",
+        "**A share is a claim on a fraction of `total_assets`, not on a fixed amount.**",
+        "Everything that moves capital moves the value of a share with it: a premium",
+        "raises it (FR-018), a payout lowers it (FR-015). That is what makes both",
+        "proportional to holding and to time in the pool without a second ledger —",
+        "nothing accrued before a deposit is claimable, because the deposit was priced",
+        "against a pool that already held it.",
+        "",
+        "An earlier design carried premiums separately in an `acc_premium_per_share`",
+        "accumulator while `issue_policy` also credited them to `total_assets`, which",
+        "counted every premium twice: the pool would have owed more than it held. The",
+        "accumulator cannot be the answer on its own either — a pool that pays claims",
+        "has to be able to lose principal, and a share priced at a fixed amount has",
+        "nowhere to record that loss."
       ],
       "type": {
         "kind": "struct",
@@ -2067,6 +2240,11 @@
           },
           {
             "name": "total_assets",
+            "docs": [
+              "What the pool owns, as the program recorded it — never the vault balance.",
+              "A stray transfer into the vault must not become backing for a policy, and",
+              "open incidents' bonds sit in the vault outside this number (T018)."
+            ],
             "type": "u64"
           },
           {
@@ -2087,15 +2265,6 @@
               "Withdrawals are blocked while this is non-zero (FR-019)."
             ],
             "type": "u32"
-          },
-          {
-            "name": "acc_premium_per_share",
-            "docs": [
-              "Premium per share, scaled by `PREMIUM_ACC_SCALE`. An underwriter earns",
-              "the difference against its own checkpoint, which makes time-in-pool",
-              "implicit: nothing accrued before the deposit is claimable (FR-018)."
-            ],
-            "type": "u128"
           },
           {
             "name": "bump",
@@ -2181,6 +2350,41 @@
               "layout is the one already deployed."
             ],
             "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "UnderwriterPosition",
+      "docs": [
+        "One underwriter's stake in one pool (FR-017). The owner is in the PDA seeds,",
+        "so it is not repeated as a field.",
+        "",
+        "Shares, and nothing about premiums: what a position has earned is the",
+        "difference between what its shares are worth now and what they cost, and both",
+        "sides of that live in `Pool` (see the note on share price there)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "shares",
+            "type": "u64"
+          },
+          {
+            "name": "pending_withdraw",
+            "docs": [
+              "Amount requested for withdrawal. Set by T032, which also decides what it",
+              "stops participating in once requested."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "unlock_ts",
+            "docs": [
+              "When the requested withdrawal may be completed (FR-019)."
+            ],
+            "type": "i64"
           }
         ]
       }

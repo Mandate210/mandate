@@ -98,7 +98,6 @@ pub fn handle_register_protocol(
         total_shares: 0,
         locked_limit: 0,
         open_incidents: 0,
-        acc_premium_per_share: 0,
         bump: ctx.bumps.pool,
     });
 

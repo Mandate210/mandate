@@ -68,7 +68,6 @@ describe.skipIf(!reachable)('register_protocol', () => {
     expect(pool.totalShares.toNumber()).toBe(0)
     expect(pool.lockedLimit.toNumber()).toBe(0)
     expect(pool.openIncidents).toBe(0)
-    expect(pool.accPremiumPerShare.toNumber()).toBe(0)
 
     // The pool owns its vault, so capital can only leave when the program signs for
     // it — and the vault holds the settlement asset, not some other token (FR-002,

@@ -46,10 +46,10 @@ mod tests {
         // authority 32 + treasury 32 + privileged (4 + 16*32) + pool 32 + paused 1
         //   + three u64 sequence counters
         assert_eq!(Protocol::INIT_SPACE, 637);
-        // vault 32 + assets 8 + shares 8 + locked 8 + open 4 + acc 16 + bump 1
-        assert_eq!(Pool::INIT_SPACE, 77);
-        // shares 8 + checkpoint 16 + pending 8 + unlock 8
-        assert_eq!(UnderwriterPosition::INIT_SPACE, 40);
+        // vault 32 + assets 8 + shares 8 + locked 8 + open 4 + bump 1
+        assert_eq!(Pool::INIT_SPACE, 61);
+        // shares 8 + pending 8 + unlock 8
+        assert_eq!(UnderwriterPosition::INIT_SPACE, 24);
         // limit 8 + retention 8 + remaining 8 + start 8 + end 8 + premium 8
         //   + beneficiary 32 + status 1
         assert_eq!(Policy::INIT_SPACE, 81);
