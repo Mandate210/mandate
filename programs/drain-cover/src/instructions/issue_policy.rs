@@ -79,20 +79,10 @@ pub fn handle_issue_policy(
         DrainCoverError::NewPoliciesPaused
     );
 
-    let pool = &mut ctx.accounts.pool;
-
-    // FR-027 against the capital already in the pool, before the premium arriving with
-    // this very policy is credited: a policy must not be allowed to back itself.
-    //
-    // The whole limit is locked, not the payable part, because FR-020 and FR-027 are
-    // both written in terms of the limit. That over-locks by the retention, which can
-    // never be paid out — capital-inefficient but safe. Flagged in docs/PLAN.md as a
-    // question for the spec rather than quietly reinterpreted here.
-    let free = pool
-        .total_assets
-        .checked_sub(pool.locked_limit)
-        .ok_or(DrainCoverError::MathOverflow)?;
-    require!(limit <= free, DrainCoverError::LimitExceedsFreeCapital);
+    // FR-027 against the capital held before this premium, then the lock and the
+    // premium together — see `Pool::underwrite`. Booked before the transfer so a
+    // refusal costs no CPI; a failed transfer rolls the booking back with it.
+    ctx.accounts.pool.underwrite(limit, premium)?;
 
     transfer(
         CpiContext::new(
@@ -105,18 +95,6 @@ pub fn handle_issue_policy(
         ),
         premium,
     )?;
-
-    pool.locked_limit = pool
-        .locked_limit
-        .checked_add(limit)
-        .ok_or(DrainCoverError::MathOverflow)?;
-    // The premium becomes pool capital. Distributing it between underwriters by share
-    // and time is FR-018, which arrives with the accumulator in T031; until then there
-    // are no shares to distribute to.
-    pool.total_assets = pool
-        .total_assets
-        .checked_add(premium)
-        .ok_or(DrainCoverError::MathOverflow)?;
 
     ctx.accounts.policy.set_inner(Policy {
         limit,
