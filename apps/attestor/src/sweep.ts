@@ -23,6 +23,14 @@
 // sent. `resolve` has no deadline of its own (`handle_resolve`), so a sweep catches
 // that the moment it sees it.
 //
+// **So do expired policies (T067).** `locked_limit` holds every policy's remaining limit
+// until something gives it back, and nothing wakes up on `end_ts`. Without a caller,
+// `release_expired_policy` would be the same finding as T071 one level down: the pool's
+// capital stays reserved by cover that ended months ago, and `complete_withdraw` refuses
+// on a floor that backs nothing (FR-020). Releasing does not wait for the policy's
+// incidents — `resolve` cannot pay past `end_ts` (FR-016), so the two are independent,
+// and the program makes the same call (`validate_release`).
+//
 // The decision itself is a pure function, tested against the same boundaries as the
 // Rust guards it mirrors. Everything that touches an RPC is behind `SweepChain`, so
 // the whole module runs against a fake on a machine with no validator and no network —
@@ -57,6 +65,20 @@ export interface SweepPolicy {
   exhausted: boolean
   /** Fixed at issuance (FR-004); `resolve` pays here and cannot create the account. */
   beneficiary: string
+}
+
+/**
+ * A policy still holding its reservation on the pool: neither released on expiry nor
+ * exhausted by a payout. Those two are the statuses `release_expired_policy` refuses.
+ */
+export interface ReservedPolicy {
+  /** The policy account, base58. */
+  address: string
+  /** The protocol it belongs to — the policy's seeds and its pool come from this. */
+  protocol: string
+  /** The policy's sequence number: the instruction takes it, and the address follows. */
+  seq: number
+  endTs: number
 }
 
 export type SweepAction =
@@ -125,6 +147,17 @@ export const decideSweepAction = ({
 }
 
 /**
+ * Whether a reserved policy can be released now — `validate_release`.
+ *
+ * From `end_ts` on, the second itself included: `is_in_force` treats the end as
+ * exclusive, so the end second is already out of cover and there is no gap between
+ * «cannot pay» and «can be released». No incident condition, on purpose — see the note
+ * at the top of this file.
+ */
+export const policyReleasable = (policy: ReservedPolicy, now: number): boolean =>
+  now >= policy.endTs
+
+/**
  * Why an incident that is due cannot be acted on.
  *
  * Both instructions take the accounts they pay into as live `TokenAccount`s, and
@@ -165,10 +198,16 @@ export interface SweepReport {
   closed: string[]
   /** Still inside their window, or waiting for a deadline to make them closable. */
   waiting: number
-  /** Acted on by somebody else between the read and the write. Not a failure. */
+  /**
+   * Incidents and policies acted on by somebody else between the read and the write.
+   * Not a failure.
+   */
   lost: string[]
   blocked: { incident: string; reason: BlockedReason }[]
   failed: { incident: string; error: unknown }[]
+  /** Expired policies whose reservation this pass gave back (T067). */
+  released: string[]
+  releaseFailed: { policy: string; error: unknown }[]
 }
 
 /**
@@ -191,6 +230,12 @@ export interface SweepChain {
   resolve(protocol: string, incident: string): Promise<void>
   /** Closes with no payout and releases the pool's reservation (FR-011). Permissionless. */
   closeExpired(protocol: string, incident: string): Promise<void>
+  /** Every policy, of every registered protocol, still holding its reservation. */
+  listReservedPolicies(): Promise<ReservedPolicy[]>
+  /** Whether the policy still holds its reservation. */
+  policyReserved(policy: string): Promise<boolean>
+  /** Gives back an expired policy's reservation (FR-020). Permissionless. */
+  releaseExpiredPolicy(protocol: string, seq: number): Promise<void>
 }
 
 export interface SweepLogger {
@@ -297,6 +342,26 @@ export const createSweeper = ({
     )
   }
 
+  /** Same diagnosis as `act`: re-read the policy, not the error. */
+  const release = async (policy: ReservedPolicy, report: SweepReport): Promise<void> => {
+    try {
+      await chain.releaseExpiredPolicy(policy.protocol, policy.seq)
+    } catch (error) {
+      if (!(await chain.policyReserved(policy.address))) {
+        report.lost.push(policy.address)
+        return
+      }
+      report.releaseFailed.push({ policy: policy.address, error })
+      logger.error({ policy: policy.address, error }, 'policy release failed')
+      return
+    }
+    report.released.push(policy.address)
+    logger.info(
+      { policy: policy.address, protocol: policy.protocol },
+      'expired policy released its reservation',
+    )
+  }
+
   const sweepOnce = async (): Promise<SweepReport> => {
     const report: SweepReport = {
       scanned: 0,
@@ -306,6 +371,8 @@ export const createSweeper = ({
       lost: [],
       blocked: [],
       failed: [],
+      released: [],
+      releaseFailed: [],
     }
 
     if (sweeping) return report
@@ -360,6 +427,16 @@ export const createSweeper = ({
         }
         await act(incident, action, report)
       }
+
+      // After the incidents, though the order does not matter: releasing touches only
+      // `locked_limit` and the policy's status, which neither incident instruction
+      // reads to decide anything. Listed after the incident pass rather than with it so
+      // that one clock reading is not stretched across two listings.
+      const policies = await chain.listReservedPolicies()
+      const releaseAt = now()
+      for (const policy of policies) {
+        if (policyReleasable(policy, releaseAt)) await release(policy, report)
+      }
     } finally {
       sweeping = false
     }
@@ -400,8 +477,9 @@ export const summariseSweep = (report: SweepReport): string =>
     `scanned ${report.scanned}`,
     `resolved ${report.resolved.length}`,
     `closed ${report.closed.length}`,
+    `released ${report.released.length}`,
     `waiting ${report.waiting}`,
     `lost ${report.lost.length}`,
     `blocked ${report.blocked.length}`,
-    `failed ${report.failed.length}`,
+    `failed ${report.failed.length + report.releaseFailed.length}`,
   ].join(' · ')

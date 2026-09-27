@@ -95,6 +95,10 @@ pub fn handle_resolve(ctx: Context<Resolve>) -> Result<()> {
     // when the incident opened and not when the attestations arrived. A policy that
     // has run out or expired in the meantime pays nothing; the incident then waits
     // for its deadline and closes through close_expired_incident.
+    //
+    // `release_expired_policy` relies on this check: it frees an expired policy's
+    // reservation even while an incident on it is open, which is only safe because
+    // nothing past `end_ts` can pay. Loosen it and that release has to wait.
     require!(
         ctx.accounts.policy.is_in_force(now),
         DrainCoverError::PolicyNotActive

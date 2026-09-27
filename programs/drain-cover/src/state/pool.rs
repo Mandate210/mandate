@@ -82,6 +82,23 @@ impl Pool {
         self.total_assets = total_assets;
         Ok(())
     }
+
+    /// Gives back the reservation of a policy that can no longer pay (FR-020). The
+    /// amount is the policy's `remaining_limit`: `underwrite` locked the whole limit
+    /// and `resolve` took each payout off both, so what a policy still holds of
+    /// `locked_limit` is exactly what it has left. `total_assets` does not move —
+    /// the premium was earned when the cover was sold.
+    ///
+    /// Refused rather than saturated when the lock is smaller than the amount: that
+    /// would mean a reservation was released twice, and flooring at zero would hide
+    /// it while freeing capital that still backs other policies.
+    pub fn release(&mut self, amount: u64) -> Result<()> {
+        self.locked_limit = self
+            .locked_limit
+            .checked_sub(amount)
+            .ok_or(DrainCoverError::MathOverflow)?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -149,5 +166,20 @@ mod tests {
         let mut p = pool(100, 200);
         assert!(p.underwrite(1, 1).is_err());
         assert_eq!(state(&p), (100, 200));
+    }
+
+    #[test]
+    fn release_frees_the_lock_and_keeps_the_premium() {
+        let mut p = pool(1_000, 0);
+        p.underwrite(600, 20).unwrap();
+        p.release(600).unwrap();
+        assert_eq!(state(&p), (1_020, 0));
+    }
+
+    #[test]
+    fn release_of_more_than_is_locked_is_refused_not_floored() {
+        let mut p = pool(1_000, 300);
+        assert!(p.release(301).is_err());
+        assert_eq!(state(&p), (1_000, 300));
     }
 }

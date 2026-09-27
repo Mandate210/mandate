@@ -110,4 +110,12 @@ pub enum DrainCoverError {
     /// at par would split the new capital with shares that are worth nothing.
     #[msg("Pool has shares outstanding but no capital, so a deposit cannot be priced")]
     PoolWipedOut,
+    /// The end is exclusive, as in `Policy::is_in_force`: the policy covers up to
+    /// the second before `end_ts`, so its reservation is released from `end_ts` on.
+    #[msg("Policy period has not ended yet, so its limit is still reserved")]
+    PolicyNotExpired,
+    /// Released once — either on expiry, or by `resolve` when a payout exhausted the
+    /// policy. A second release would take the reservation of some other policy.
+    #[msg("Policy reservation has already been released")]
+    PolicyAlreadyReleased,
 }

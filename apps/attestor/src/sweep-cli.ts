@@ -51,17 +51,20 @@ const main = async (): Promise<void> => {
 
   for (const incident of report.resolved) console.log(`  paid out  ${incident}`)
   for (const incident of report.closed) console.log(`  closed    ${incident}`)
-  for (const incident of report.lost)
-    console.log(`  taken     ${incident} (settled by someone else)`)
+  for (const policy of report.released) console.log(`  released  ${policy}`)
+  for (const address of report.lost) console.log(`  taken     ${address} (settled by someone else)`)
   for (const { incident, reason } of report.blocked)
     console.error(`  BLOCKED   ${incident}: ${reason}`)
   for (const { incident, error } of report.failed) console.error(`  FAILED    ${incident}:`, error)
+  for (const { policy, error } of report.releaseFailed)
+    console.error(`  FAILED    ${policy}:`, error)
 
   console.log(summariseSweep(report))
 
   // A blocked incident is not a failed run, but it is capital that stays reserved until
   // somebody intervenes — so it gets the same attention as a failure.
-  if (report.failed.length > 0 || report.blocked.length > 0) process.exit(1)
+  if (report.failed.length > 0 || report.releaseFailed.length > 0 || report.blocked.length > 0)
+    process.exit(1)
 }
 
 main().catch((error: unknown) => {

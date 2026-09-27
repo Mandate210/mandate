@@ -1,7 +1,7 @@
 import type { Program } from '@coral-xyz/anchor'
 import { createSweepChain } from '@mandate/attestor/chain'
 import { type SweepChain, type SweepReport, createSweeper } from '@mandate/attestor/sweep'
-import { type DrainCover, createProgram, findConfig } from '@mandate/sdk'
+import { type DrainCover, createProgram, findConfig, findPolicy } from '@mandate/sdk'
 import { getAccount } from '@solana/spl-token'
 import type { Keypair, PublicKey } from '@solana/web3.js'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -60,7 +60,13 @@ describe.skipIf(!reachable)('the expired-incident sweep', () => {
   /** No attestations at all: the plain expiry, and the bond is forfeited. */
   let expiring: { target: RegisteredProtocol; incident: PublicKey; bond: bigint }
   /** Quorum reached, but its policy runs out before anyone settles it. */
-  let lapsed: { target: RegisteredProtocol; incident: PublicKey; bond: bigint; opener: PublicKey }
+  let lapsed: {
+    target: RegisteredProtocol
+    incident: PublicKey
+    bond: bigint
+    opener: PublicKey
+    policy: PublicKey
+  }
   /** Quorum reached on a policy still in force, and nobody called `resolve`. */
   let payable: { target: RegisteredProtocol; incident: PublicKey; beneficiary: PublicKey }
 
@@ -94,6 +100,10 @@ describe.skipIf(!reachable)('the expired-incident sweep', () => {
       ...real,
       listOpenIncidents: async () =>
         (await real.listOpenIncidents()).filter((incident) => ours.has(incident.protocol)),
+      // The ledger is shared, and other files leave expired policies on it whose
+      // reservations they may still be asserting on.
+      listReservedPolicies: async () =>
+        (await real.listReservedPolicies()).filter((policy) => ours.has(policy.protocol)),
     }
   }
 
@@ -129,6 +139,7 @@ describe.skipIf(!reachable)('the expired-incident sweep', () => {
       incident: lapsedOpened.incident,
       bond: lapsedOpened.bond,
       opener: lapsedOpened.opener.publicKey,
+      policy: findPolicy(program.programId, lapsedTarget.protocol, lapsedPolicy),
     }
 
     const [payableTarget, payablePolicy] = await coveredProtocol()
@@ -179,6 +190,20 @@ describe.skipIf(!reachable)('the expired-incident sweep', () => {
     expect(report.closed).toHaveLength(2)
     expect(report.failed).toEqual([])
     expect(report.blocked).toEqual([])
+  })
+
+  // The same pass, T067: the lapsed policy's reservation is given back even though its
+  // incident sat at quorum — `resolve` could not have paid it past `end_ts` anyway. The
+  // other two hold nothing to release: one still runs, the payout exhausted the other.
+  it('releases the reservation of the policy that lapsed, and only that one', async () => {
+    const pool = await program.account.pool.fetch(lapsed.target.pool)
+
+    expect(report.released).toEqual([lapsed.policy.toBase58()])
+    expect(report.releaseFailed).toEqual([])
+    expect(await program.account.policy.fetch(lapsed.policy)).toHaveProperty('status.expired')
+    expect(pool.lockedLimit.toString()).toBe(
+      (BigInt(poolsBefore.lapsed.lockedLimit.toString()) - LIMIT).toString(),
+    )
   })
 
   // Nobody called `resolve` after the quorum was reached — the case `act.ts` logs and
@@ -244,5 +269,6 @@ describe.skipIf(!reachable)('the expired-incident sweep', () => {
     expect(second.scanned).toBe(0)
     expect(second.resolved).toEqual([])
     expect(second.closed).toEqual([])
+    expect(second.released).toEqual([])
   })
 })

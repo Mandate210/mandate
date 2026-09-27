@@ -972,6 +972,92 @@ export type DrainCover = {
       ]
     },
     {
+      "name": "releaseExpiredPolicy",
+      "docs": [
+        "Releases the reservation of a policy whose period has ended, so that capital",
+        "no longer backing anything can be withdrawn (FR-020). No signer: anyone may",
+        "push it through once `end_ts` has passed."
+      ],
+      "discriminator": [
+        168,
+        184,
+        64,
+        128,
+        68,
+        179,
+        246,
+        56
+      ],
+      "accounts": [
+        {
+          "name": "protocol"
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "protocol"
+              }
+            ]
+          },
+          "relations": [
+            "protocol"
+          ]
+        },
+        {
+          "name": "policy",
+          "docs": [
+            "Bound to this protocol by its seeds, as in `open_incident`. `Policy` records",
+            "neither its protocol nor its pool, so without them an expired policy of one",
+            "protocol could be presented with another's pool and release a reservation",
+            "that backs live cover there."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  108,
+                  105,
+                  99,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "protocol"
+              },
+              {
+                "kind": "arg",
+                "path": "policySeq"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "policySeq",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "resolve",
       "docs": [
         "Settles an incident whose quorum has been reached: pays the beneficiary and",
@@ -1754,6 +1840,16 @@ export type DrainCover = {
       "code": 6034,
       "name": "poolWipedOut",
       "msg": "Pool has shares outstanding but no capital, so a deposit cannot be priced"
+    },
+    {
+      "code": 6035,
+      "name": "policyNotExpired",
+      "msg": "Policy period has not ended yet, so its limit is still reserved"
+    },
+    {
+      "code": 6036,
+      "name": "policyAlreadyReleased",
+      "msg": "Policy reservation has already been released"
     }
   ],
   "types": [

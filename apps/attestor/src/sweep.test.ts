@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
+  type ReservedPolicy,
   type SweepChain,
   type SweepIncident,
   type SweepPolicy,
   createSweeper,
   decideSweepAction,
   policyInForce,
+  policyReleasable,
   quorumThreshold,
   summariseSweep,
 } from './sweep'
@@ -106,28 +108,52 @@ describe('deciding what to do with an open incident', () => {
   })
 })
 
+const reserved = (overrides: Partial<ReservedPolicy> = {}): ReservedPolicy => ({
+  address: 'Policy1',
+  protocol: 'Protocol1',
+  seq: 0,
+  endTs: NOW,
+  ...overrides,
+})
+
+describe('releasing an expired policy', () => {
+  // `validate_release`: the end is exclusive in `is_in_force`, so the end second is
+  // already out of cover and already releasable — no gap, no overlap.
+  it('releases from the end second on', () => {
+    expect(policyReleasable(reserved({ endTs: NOW }), NOW)).toBe(true)
+    expect(policyReleasable(reserved({ endTs: NOW - 1 }), NOW)).toBe(true)
+    expect(policyReleasable(reserved({ endTs: NOW + 1 }), NOW)).toBe(false)
+  })
+})
+
+type FakeAction = 'resolve' | 'close' | 'release'
+
 interface FakeOptions {
   incidents?: SweepIncident[]
+  reserved?: ReservedPolicy[]
   policies?: Record<string, SweepPolicy | null>
   /** Owners with no settlement account; anyone not named here has one. */
   withoutSettlementAccount?: string[]
-  /** Incidents whose write throws. */
+  /** Incidents or policies whose write throws. */
   failing?: string[]
-  /** Incidents that are no longer open when the failure is diagnosed — a lost race. */
+  /**
+   * Incidents no longer open, or policies no longer reserved, when the failure is
+   * diagnosed — a lost race.
+   */
   closedByOthers?: string[]
   listFails?: boolean
 }
 
 interface Fake extends SweepChain {
-  readonly calls: { action: 'resolve' | 'close'; incident: string }[]
+  readonly calls: { action: FakeAction; incident: string }[]
 }
 
 const fake = (options: FakeOptions = {}): Fake => {
-  const calls: { action: 'resolve' | 'close'; incident: string }[] = []
+  const calls: { action: FakeAction; incident: string }[] = []
   const failing = new Set(options.failing ?? [])
   const closedByOthers = new Set(options.closedByOthers ?? [])
 
-  const write = async (action: 'resolve' | 'close', address: string): Promise<void> => {
+  const write = async (action: FakeAction, address: string): Promise<void> => {
     calls.push({ action, incident: address })
     if (failing.has(address) || closedByOthers.has(address)) {
       throw new Error(`refused: ${address}`)
@@ -149,6 +175,14 @@ const fake = (options: FakeOptions = {}): Fake => {
     incidentOpen: async (address) => !closedByOthers.has(address),
     resolve: async (_protocol, address) => write('resolve', address),
     closeExpired: async (_protocol, address) => write('close', address),
+    listReservedPolicies: async () => options.reserved ?? [],
+    policyReserved: async (address) => !closedByOthers.has(address),
+    releaseExpiredPolicy: async (protocol, seq) => {
+      const policy = (options.reserved ?? []).find(
+        (candidate) => candidate.protocol === protocol && candidate.seq === seq,
+      )
+      await write('release', policy?.address ?? `unknown ${protocol}/${seq}`)
+    },
   }
 }
 
@@ -319,12 +353,60 @@ describe('a sweep pass', () => {
   })
 })
 
+describe('a sweep pass over reserved policies', () => {
+  it('releases what has expired and leaves what still covers', async () => {
+    const chain = fake({
+      reserved: [
+        reserved({ address: 'ended', seq: 0, endTs: NOW - 60 }),
+        reserved({ address: 'running', seq: 1, endTs: NOW + 60 }),
+      ],
+    })
+    const report = await sweeper(chain).sweepOnce()
+
+    expect(report.released).toEqual(['ended'])
+    expect(chain.calls).toEqual([{ action: 'release', incident: 'ended' }])
+  })
+
+  // `resolve` cannot pay past `end_ts` (FR-016), so an incident still open on the
+  // policy is no reason to hold its reservation — the program agrees
+  // (`validate_release`). Both happen in the same pass.
+  it('releases a policy whose incident is still open', async () => {
+    const chain = fake({
+      incidents: [incident({ votesUnauthorized: 3, deadline: NOW + 60 })],
+      policies: { Policy1: inForcePolicy({ endTs: NOW - 1 }) },
+      reserved: [reserved({ endTs: NOW - 1 })],
+    })
+    const report = await sweeper(chain).sweepOnce()
+
+    expect(report.waiting).toBe(1)
+    expect(report.released).toEqual(['Policy1'])
+  })
+
+  it('counts a release someone else made first as lost, not failed', async () => {
+    const report = await sweeper(
+      fake({ reserved: [reserved()], closedByOthers: ['Policy1'] }),
+    ).sweepOnce()
+
+    expect(report.lost).toEqual(['Policy1'])
+    expect(report.releaseFailed).toEqual([])
+  })
+
+  it('reports a release that failed for a reason of its own', async () => {
+    const report = await sweeper(fake({ reserved: [reserved()], failing: ['Policy1'] })).sweepOnce()
+
+    expect(report.releaseFailed.map(({ policy }) => policy)).toEqual(['Policy1'])
+    expect(report.released).toEqual([])
+  })
+})
+
 describe('the summary line', () => {
   it('states what a pass did', async () => {
-    const report = await sweeper(fake({ incidents: [incident()] })).sweepOnce()
+    const report = await sweeper(
+      fake({ incidents: [incident()], reserved: [reserved()] }),
+    ).sweepOnce()
 
     expect(summariseSweep(report)).toBe(
-      'scanned 1 · resolved 0 · closed 1 · waiting 0 · lost 0 · blocked 0 · failed 0',
+      'scanned 1 · resolved 0 · closed 1 · released 1 · waiting 0 · lost 0 · blocked 0 · failed 0',
     )
   })
 })

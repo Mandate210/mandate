@@ -455,6 +455,25 @@ export const closeExpiredIncident = async (
     .rpc()
 }
 
+/**
+ * Gives back the reservation of a policy whose period has ended (FR-020, T067).
+ * Permissionless, like `resolve`: the caller only pays the fee.
+ */
+export const releaseExpiredPolicy = async (
+  program: Program<DrainCover>,
+  target: RegisteredProtocol,
+  seq: number,
+): Promise<void> => {
+  await program.methods
+    .releaseExpiredPolicy(new BN(seq))
+    .accountsPartial({
+      protocol: target.protocol,
+      pool: target.pool,
+      policy: findPolicy(program.programId, target.protocol, seq),
+    })
+    .rpc()
+}
+
 /** Capital in the pool without shares — the temporary service path (T014, gone in T036). */
 export const fundPool = async (
   program: Program<DrainCover>,

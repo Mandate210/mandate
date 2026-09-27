@@ -143,6 +143,16 @@ pub mod drain_cover {
         instructions::close_expired_incident::handle_close_expired_incident(ctx)
     }
 
+    /// Releases the reservation of a policy whose period has ended, so that capital
+    /// no longer backing anything can be withdrawn (FR-020). No signer: anyone may
+    /// push it through once `end_ts` has passed.
+    pub fn release_expired_policy(
+        ctx: Context<ReleaseExpiredPolicy>,
+        policy_seq: u64,
+    ) -> Result<()> {
+        instructions::release_expired_policy::handle_release_expired_policy(ctx, policy_seq)
+    }
+
     /// Admits an attestor to the permissive set or removes one (FR-008).
     /// Admission takes effect with the next epoch; removal, at once.
     pub fn set_attestor(

@@ -21,7 +21,7 @@ import { base58Decode, flattenInstructions } from '@mandate/shared'
 import { getAssociatedTokenAddressSync } from '@solana/spl-token'
 import { type Connection, type Keypair, PublicKey, SystemProgram } from '@solana/web3.js'
 import type { ActChain, AttestVerdict, IncidentRef, ProtocolState } from './act'
-import type { SweepChain, SweepIncident, SweepPolicy } from './sweep'
+import type { ReservedPolicy, SweepChain, SweepIncident, SweepPolicy } from './sweep'
 
 /**
  * A transaction as the rule needs it.
@@ -439,5 +439,58 @@ export const createSweepChain = ({
         })
         .rpc()
     },
+
+    /**
+     * Every policy still holding a reservation, for every registered protocol.
+     *
+     * Walked by sequence number, not listed with `getProgramAccounts`: `Policy` stores
+     * neither its protocol nor its own seq, and the instruction needs the seq — which
+     * the walk has in hand, the same way `findPolicyInForce` does it. One
+     * `getMultipleAccounts` per protocol.
+     */
+    listReservedPolicies: async (): Promise<ReservedPolicy[]> => {
+      const protocols = await program.account.protocol.all()
+      const perProtocol = await Promise.all(
+        protocols.map(async ({ publicKey: protocol, account }) => {
+          const seqs = Array.from({ length: account.nextPolicySeq.toNumber() }, (_, seq) => seq)
+          const addresses = seqs.map((seq) => findPolicy(programId, protocol, seq))
+          const policies = await program.account.policy.fetchMultiple(addresses)
+          return policies.flatMap((policy, index) =>
+            policy === null || !holdsReservation(policy.status)
+              ? []
+              : [
+                  {
+                    address: (addresses[index] as PublicKey).toBase58(),
+                    protocol: protocol.toBase58(),
+                    seq: seqs[index] as number,
+                    endTs: policy.endTs.toNumber(),
+                  },
+                ],
+          )
+        }),
+      )
+      return perProtocol.flat()
+    },
+
+    policyReserved: async (policy) => {
+      const account = await program.account.policy.fetchNullable(new PublicKey(policy))
+      return account !== null && holdsReservation(account.status)
+    },
+
+    releaseExpiredPolicy: async (protocol, seq) => {
+      const key = new PublicKey(protocol)
+      const { pool } = await program.account.protocol.fetch(key)
+      await program.methods
+        .releaseExpiredPolicy(new BN(seq))
+        .accountsPartial({ protocol: key, pool, policy: findPolicy(programId, key, seq) })
+        .rpc()
+    },
   }
 }
+
+/**
+ * `Pending` and `Active` still hold their remaining limit in `locked_limit`; `Expired`
+ * gave it back through `release_expired_policy`, `Exhausted` through `resolve`.
+ */
+const holdsReservation = (status: object): boolean =>
+  !('expired' in status) && !('exhausted' in status)
