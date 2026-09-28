@@ -380,20 +380,19 @@ locked_limit` (FR-020) — відмова чи частковий вивід (SC
 
 ### Postgres (Drizzle) — кеш
 
-```
-protocols(pubkey PK, treasury, privileged jsonb, paused, updated_slot)
-pools(pubkey PK, protocol FK, total_assets, total_shares, locked_limit, open_incidents, updated_slot)
-policies(pubkey PK, protocol FK, limit, retention, remaining_limit, start_ts, end_ts, status, updated_slot)
-declarations(pubkey PK, protocol FK, program_id, ix_discriminator, not_before,
-             not_after nullable, moves_funds, submitted_at, effective_at, revoked_at,
-             updated_slot)
-incidents(pubkey PK, protocol FK, policy FK, trigger_sig, opened_at, deadline,
-          yes, no, status, payout, shortfall, payout_sig, updated_slot)
-attestations(pubkey PK, incident FK, attestor, verdict, submitted_at, tx_sig, updated_slot)
-indexer_cursor(id PK, last_slot, last_sig)
-```
+Схема — `packages/db/src/schema.ts`, міграція — `packages/db/migrations/0000_init.sql` (T047). Таблиця на кожен тип акаунта (`config`, `protocols`, `pools`, `policies`, `declarations`, `incidents`, `attestations`) плюс `indexer_cursor`. Первинний ключ — адреса акаунта.
 
-`updated_slot` на кожному рядку — щоб перезапуск індексатора був ідемпотентним і не відкочував стан назад.
+**Рішення власника 2026-09-28 (T047):**
+
+- **Останній стан акаунтів плюс підписи, які віддає контракт** (`opened_signature`, `payout_signature`, `attestations.signature`, `trigger_slot`/`trigger_block_time` з RPC). Журналу транзакцій немає: історія живе на ланцюгу, кеш скидається без втрат і не з'їдає квоту 500 МБ.
+- **Без зовнішніх ключів.** Зв'язки гарантує ланцюг (сіди PDA), а індексатор чує оновлення в довільному порядку — пул може прийти раніше за свій протокол. Зв'язки проіндексовані; відсутній рядок читається як «ще не проіндексовано». Заразом FK не блокуватимуть `ALTER TYPE` під RLS (T060).
+- **Тести — PGlite у процесі**, без сокета: гейт і CI-джоба `typescript` лишаються «лише Node». Жива база вперше — в індексаторі (T048); Supabase-проєкт створюється перед T048.
+
+**Типи колонок:** `u64` → `numeric(20,0)`, у TS — десятковий рядок, як у контракті (Postgres `bigint` знаковий і переповнюється вище 2^63); `i64` (час, тривалості) і слоти → `bigint` у режимі `number`; `u32` (`open_incidents`) → `bigint`, бо не влазить у `integer`. Похідних полів (`state`, `in_force`, `utilization_bps`) у БД немає: вони рухаються з часом без жодного запису в ланцюг і рахуються на `as_of` функціями з `shared`. Одна БД — один program id: передеплой під новим id (T075) означає свіжий кеш, а не міграцію.
+
+`updated_slot` на кожному рядку, і **`upsertNewer`** замінює рядок лише даними з того самого або пізнішого слота — повтор backfill після живого оновлення не повертає старий стан, а перезапуск індексатора ідемпотентний. Той самий слот пропускається: RPC звітує стан на кінець слота, тож два звіти про один слот — один і той самий стан.
+
+**Два рядки підключення** (`.env.example`): `DATABASE_URL` — рантайм через transaction pooler `:6543` з `prepare: false`; `DATABASE_MIGRATION_URL` — DDL через session pooler `:5432`. Тест `schema.test.ts` — страж дрейфу: кожна колонка `schema.ts` мусить існувати після міграції з тією самою nullability (перевірено мутацією — зайва колонка без `generate` валить 7 тестів з 9).
 
 ---
 
