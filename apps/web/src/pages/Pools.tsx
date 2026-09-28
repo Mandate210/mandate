@@ -105,7 +105,7 @@ const Pools = () => {
       </div>
 
       <p className="mono text-[11px] text-dim-foreground">
-        Utilization above 80% suspends acceptance of new policies for that pool.
+        A policy's limit can only come from capital no other policy has reserved.
       </p>
     </div>
   )

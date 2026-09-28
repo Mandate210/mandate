@@ -1,17 +1,29 @@
 /**
- * All data in this file is invented for demonstration purposes.
- * No real protocol names, addresses or transaction signatures are used.
- * Signatures and addresses are truncated placeholders only.
+ * The pages' view of the demonstration data — **a temporary adapter**, not a source.
+ *
+ * The data itself lives in `fixtures.ts`, in the shape of the public API contract.
+ * This file turns those responses into what the pages were written against, so the
+ * contract could land (T046) without rewriting every screen at once. It disappears in
+ * T054/T055, when the pages read the contract directly.
+ *
+ * Nothing here adds a fact the contract does not carry. Where the pages once showed
+ * invented names, they now show shortened addresses; where they showed recurring
+ * windows and a «Spent» status the program has no notion of, they show the single
+ * window and the state an entry actually has.
  */
+import { type DeclarationEntryResponse, type EntryState, quorumNeeded } from '@mandate/shared'
+import { ATTESTOR_KEYS, CONFIG, DECLARATIONS, INCIDENT_DETAIL, PROTOCOL_DETAILS } from './fixtures'
 
 export type PolicyStatus = 'active' | 'none'
+
+export type DeclarationStatus = 'Pending' | 'Scheduled' | 'Effective' | 'Expired' | 'Revoked'
 
 export interface DeclarationEntry {
   operation: string
   window: string
   submitted: string
   effectiveFrom: string
-  status: 'Effective' | 'Pending' | 'Spent' | 'Revoked'
+  status: DeclarationStatus
 }
 
 export interface Protocol {
@@ -35,152 +47,76 @@ export interface Protocol {
   signers: { label: string; address: string }[]
 }
 
-export const PROTOCOLS: Protocol[] = [
-  {
-    id: 'meridian-perps',
-    name: 'Meridian Perps',
-    poolCapital: 4_200_000,
-    activeCoverage: 3_000_000,
-    utilization: 71,
-    attestors: 7,
-    quorum: 5,
-    policyStatus: 'active',
+/** `Abcd…wxyz` — enough to recognise an address, the way explorers abbreviate. */
+export const short = (address: string): string => `${address.slice(0, 4)}…${address.slice(-4)}`
+
+/** Base units to whole dollars, for display only. */
+const dollars = (amount: string): number =>
+  Number(BigInt(amount) / 10n ** BigInt(CONFIG.asset_decimals))
+
+const day = (ts: number): string => new Date(ts * 1000).toISOString().slice(0, 10)
+const minute = (ts: number): string =>
+  new Date(ts * 1000).toISOString().slice(0, 16).replace('T', ' ')
+const second = (ts: number): string =>
+  `${new Date(ts * 1000).toISOString().slice(0, 19).replace('T', ' ')} UTC`
+
+const STATUS: Record<EntryState, DeclarationStatus> = {
+  pending: 'Pending',
+  scheduled: 'Scheduled',
+  effective: 'Effective',
+  expired: 'Expired',
+  revoked: 'Revoked',
+}
+
+/** The instruction's name when its program publishes one; otherwise what the chain holds. */
+const operationOf = (entry: DeclarationEntryResponse): string =>
+  entry.instruction?.name ?? `${short(entry.program_id)} · ${entry.ix_discriminator}`
+
+const windowOf = (entry: DeclarationEntryResponse): string =>
+  entry.not_after === null
+    ? `from ${minute(entry.not_before)} UTC, permanent`
+    : `${minute(entry.not_before)} – ${minute(entry.not_after).slice(-5)} UTC`
+
+const declarationRow = (entry: DeclarationEntryResponse): DeclarationEntry => ({
+  operation: operationOf(entry),
+  window: windowOf(entry),
+  submitted: day(entry.submitted_at),
+  effectiveFrom: day(entry.effective_at),
+  status: STATUS[entry.state],
+})
+
+const QUORUM = quorumNeeded(CONFIG.attestor_count, CONFIG.quorum_bps)
+
+export const PROTOCOLS: Protocol[] = PROTOCOL_DETAILS.map((detail) => {
+  const policy = detail.policies.find((p) => p.in_force)
+  const limit = policy === undefined ? 0 : dollars(policy.limit)
+  const retention = policy === undefined ? 0 : dollars(policy.retention)
+  return {
+    id: detail.protocol.address,
+    name: short(detail.protocol.address),
+    poolCapital: dollars(detail.pool.total_assets),
+    activeCoverage: dollars(detail.pool.locked_limit),
+    utilization: Math.floor(detail.pool.utilization_bps / 100),
+    attestors: CONFIG.attestor_count,
+    quorum: QUORUM,
+    policyStatus: policy === undefined ? 'none' : 'active',
     coverage: {
-      limit: 3_000_000,
-      retentionPct: 20,
-      retentionAmount: 600_000,
-      payable: 2_400_000,
-      term: 'until 2026-12-31',
-      beneficiary: 'MerdN…8kQ2',
+      limit,
+      retentionPct: limit === 0 ? 0 : Math.round((retention / limit) * 100),
+      retentionAmount: retention,
+      payable: policy === undefined ? 0 : dollars(policy.payable),
+      term: policy === undefined ? '—' : `until ${day(policy.end_ts)}`,
+      beneficiary: short(policy?.beneficiary ?? detail.protocol.treasury),
     },
-    declaration: [
-      {
-        operation: 'Update funding rate params',
-        window: 'Tue 02:00–04:00 UTC',
-        submitted: '2026-07-14',
-        effectiveFrom: '2026-07-16',
-        status: 'Effective',
-      },
-      {
-        operation: 'Add collateral market',
-        window: 'one-off 2026-08-02',
-        submitted: '2026-07-30',
-        effectiveFrom: '2026-08-01',
-        status: 'Spent',
-      },
-      {
-        operation: 'Rotate oracle authority',
-        window: 'Thu 01:00–03:00 UTC',
-        submitted: '2026-08-08',
-        effectiveFrom: '2026-08-10',
-        status: 'Pending',
-      },
-    ],
-    signers: [
-      { label: 'council-1', address: 'A7hK…3nDv' },
-      { label: 'council-2', address: 'Qm2X…9tLb' },
-      { label: 'council-3', address: 'F4pR…6wZs' },
-      { label: 'council-4', address: 'Ub9C…1yKe' },
-      { label: 'council-5', address: 'Ns5T…7gHm' },
-    ],
-  },
-  {
-    id: 'solstice-lend',
-    name: 'Solstice Lend',
-    poolCapital: 1_150_000,
-    activeCoverage: 750_000,
-    utilization: 65,
-    attestors: 7,
-    quorum: 5,
-    policyStatus: 'active',
-    coverage: {
-      limit: 750_000,
-      retentionPct: 15,
-      retentionAmount: 112_500,
-      payable: 637_500,
-      term: 'until 2026-11-30',
-      beneficiary: 'SolsT…4vR7',
-    },
-    declaration: [
-      {
-        operation: 'Adjust reserve factor',
-        window: 'Mon 03:00–05:00 UTC',
-        submitted: '2026-06-22',
-        effectiveFrom: '2026-06-24',
-        status: 'Effective',
-      },
-      {
-        operation: 'List new lending market',
-        window: 'one-off 2026-07-19',
-        submitted: '2026-07-16',
-        effectiveFrom: '2026-07-18',
-        status: 'Spent',
-      },
-      {
-        operation: 'Raise liquidation threshold',
-        window: 'Wed 02:00–03:30 UTC',
-        submitted: '2026-08-05',
-        effectiveFrom: '2026-08-07',
-        status: 'Effective',
-      },
-      {
-        operation: 'Pause borrowing (emergency)',
-        window: 'any time',
-        submitted: '2026-05-02',
-        effectiveFrom: '2026-05-04',
-        status: 'Effective',
-      },
-    ],
-    signers: [
-      { label: 'council-1', address: 'Zc8M…2qPa' },
-      { label: 'council-2', address: 'Rv3J…8sXn' },
-      { label: 'council-3', address: 'Dk6W…4hTy' },
-      { label: 'council-4', address: 'Ly1B…5cVf' },
-      { label: 'council-5', address: 'Ha9G…3mQr' },
-    ],
-  },
-  {
-    id: 'kestrel-vaults',
-    name: 'Kestrel Vaults',
-    poolCapital: 380_000,
-    activeCoverage: 0,
-    utilization: 0,
-    attestors: 7,
-    quorum: 5,
-    policyStatus: 'none',
-    coverage: {
-      limit: 0,
-      retentionPct: 0,
-      retentionAmount: 0,
-      payable: 0,
-      term: '—',
-      beneficiary: 'KestV…2mB9',
-    },
-    declaration: [
-      {
-        operation: 'Update vault strategy weights',
-        window: 'Fri 04:00–06:00 UTC',
-        submitted: '2026-07-28',
-        effectiveFrom: '2026-07-30',
-        status: 'Effective',
-      },
-      {
-        operation: 'Rotate keeper authority',
-        window: 'one-off 2026-08-15',
-        submitted: '2026-08-09',
-        effectiveFrom: '2026-08-11',
-        status: 'Pending',
-      },
-    ],
-    signers: [
-      { label: 'council-1', address: 'Tw4N…7bLk' },
-      { label: 'council-2', address: 'Ev2S…9dRc' },
-      { label: 'council-3', address: 'Pj7Y…1fWx' },
-      { label: 'council-4', address: 'Cx5H…6nGt' },
-      { label: 'council-5', address: 'Ma3Q…8zJv' },
-    ],
-  },
-]
+    declaration: (
+      DECLARATIONS.find((d) => d.protocol === detail.protocol.address)?.entries ?? []
+    ).map(declarationRow),
+    signers: detail.protocol.privileged.map((address, i) => ({
+      label: `privileged ${i + 1}`,
+      address: short(address),
+    })),
+  }
+})
 
 export const getProtocol = (id?: string) => PROTOCOLS.find((p) => p.id === id)
 
@@ -205,32 +141,68 @@ export interface TimelineEvent {
   quorumReached?: boolean
 }
 
+const detail = INCIDENT_DETAIL
+const incident = detail.incident
+const payout = detail.payout
+const protocolOfIncident = PROTOCOL_DETAILS.find((p) => p.protocol.address === incident.protocol)
+const triggerAt = detail.trigger.block_time ?? incident.opened_at
+
+/** What the chain can say about the beneficiary: whether it is the protocol's own treasury. */
+const beneficiaryLabel =
+  payout !== null && payout.beneficiary === protocolOfIncident?.protocol.treasury
+    ? 'protocol treasury'
+    : 'beneficiary'
+
 export const INCIDENT = {
-  id: 'INC-0417',
-  protocolId: 'meridian-perps',
-  protocolName: 'Meridian Perps',
-  openedAt: '2026-08-11 09:14:02 UTC',
-  bond: 500,
-  quorumRequired: 5,
-  attestorSetSize: 7,
-  acceptanceWindow: 300,
-  payoutAmount: 2_400_000,
-  beneficiary: 'MerdN…8kQ2',
-  beneficiaryLabel: 'Meridian Perps treasury',
-  triggerSignature: '5xK2…9fPq',
-  payoutSignature: '7fLp…3sQe',
-  settledAt: 22,
+  /** The full address: it is what a route and the API name the incident by. */
+  id: incident.address,
+  label: short(incident.address),
+  protocolId: incident.protocol,
+  protocolName: short(incident.protocol),
+  triggerAt: second(triggerAt),
+  openedAt: second(incident.opened_at),
+  bond: dollars(incident.bond),
+  quorumRequired: incident.quorum_needed,
+  attestorSetSize: incident.set_size,
+  /** Seconds from the trigger to the opening: the window runs from the opening, not the trigger. */
+  openedAfter: incident.opened_at - triggerAt,
+  acceptanceWindow: incident.deadline - incident.opened_at,
+  payoutAmount: payout === null ? 0 : dollars(payout.amount),
+  beneficiary: short(payout?.beneficiary ?? ''),
+  beneficiaryLabel,
+  triggerSignature: short(incident.trigger_signature),
+  payoutSignature: payout === null ? '' : short(payout.signature),
+  settledAt: payout === null ? 0 : payout.at - triggerAt,
 }
 
-export const ATTESTOR_SET = [
-  'attestor-01',
-  'attestor-02',
-  'attestor-03',
-  'attestor-04',
-  'attestor-05',
-  'attestor-06',
-  'attestor-07',
-]
+const attestorName = (key: string): string =>
+  `attestor-${String(ATTESTOR_KEYS.indexOf(key) + 1).padStart(2, '0')}`
+
+export const ATTESTOR_SET = ATTESTOR_KEYS.map(attestorName)
+
+const effectiveAtTrigger = detail.verification.declaration_at_trigger.entries.filter(
+  (e) => e.state === 'effective',
+).length
+
+const attestationEvents: TimelineEvent[] = (() => {
+  let tally = 0
+  return detail.attestations.map((a) => {
+    if (a.verdict === 'unauthorized') tally += 1
+    const reached = a.verdict === 'unauthorized' && tally === incident.quorum_needed
+    return {
+      id: `ev-${attestorName(a.attestor)}`,
+      t: a.submitted_at - triggerAt,
+      kind: 'attestation',
+      title: 'Attestation',
+      attestor: attestorName(a.attestor),
+      verdict: a.verdict,
+      ...(a.verdict === 'unauthorized' ? { tally } : {}),
+      ...(reached ? { quorumReached: true } : {}),
+      signature: short(a.signature ?? ''),
+      timestamp: second(a.submitted_at),
+    }
+  })
+})()
 
 export const TIMELINE: TimelineEvent[] = [
   {
@@ -238,121 +210,53 @@ export const TIMELINE: TimelineEvent[] = [
     t: 0,
     kind: 'trigger',
     title: 'Privileged transaction',
-    signature: '5xK2…9fPq',
-    timestamp: '2026-08-11 09:14:02 UTC',
+    signature: short(detail.trigger.signature),
+    timestamp: second(triggerAt),
     lines: [
-      'signer 3 of 5 · durable nonce · outside maintenance window',
-      '✗ matches no effective declaration entry',
+      `signed by a privileged address of ${short(incident.protocol)}`,
+      `✗ matches no effective declaration entry (${effectiveAtTrigger} in force)`,
     ],
   },
   {
     id: 'ev-opened',
-    t: 4,
+    t: detail.opened.at - triggerAt,
     kind: 'opened',
     title: 'Incident opened',
-    signature: 'Bn6V…4xTd',
-    timestamp: '2026-08-11 09:14:06 UTC',
-    lines: ['bond 500 USDC', 'quorum 5 of 7 · attestations accepted until T+300s'],
+    signature: short(detail.opened.signature ?? ''),
+    timestamp: second(detail.opened.at),
+    lines: [
+      `bond ${usdc(dollars(incident.bond))}`,
+      `quorum ${incident.quorum_needed} of ${incident.set_size} · attestations accepted until T+${incident.deadline - triggerAt}s`,
+    ],
   },
-  {
-    id: 'ev-a02',
-    t: 9,
-    kind: 'attestation',
-    title: 'Attestation',
-    attestor: 'attestor-02',
-    verdict: 'unauthorized',
-    tally: 1,
-    signature: '9pQr…2Lm4',
-    timestamp: '2026-08-11 09:14:11 UTC',
-  },
-  {
-    id: 'ev-a05',
-    t: 12,
-    kind: 'attestation',
-    title: 'Attestation',
-    attestor: 'attestor-05',
-    verdict: 'unauthorized',
-    tally: 2,
-    signature: '3bTn…7yWc',
-    timestamp: '2026-08-11 09:14:14 UTC',
-  },
-  {
-    id: 'ev-a01',
-    t: 15,
-    kind: 'attestation',
-    title: 'Attestation',
-    attestor: 'attestor-01',
-    verdict: 'authorized',
-    signature: 'Hq4Z…1dRv',
-    timestamp: '2026-08-11 09:14:17 UTC',
-  },
-  {
-    id: 'ev-a03',
-    t: 18,
-    kind: 'attestation',
-    title: 'Attestation',
-    attestor: 'attestor-03',
-    verdict: 'unauthorized',
-    tally: 3,
-    signature: '8kMx…5tGa',
-    timestamp: '2026-08-11 09:14:20 UTC',
-  },
-  {
-    id: 'ev-a07',
-    t: 20,
-    kind: 'attestation',
-    title: 'Attestation',
-    attestor: 'attestor-07',
-    verdict: 'unauthorized',
-    tally: 4,
-    signature: '2wYb…6nJd',
-    timestamp: '2026-08-11 09:14:22 UTC',
-  },
-  {
-    id: 'ev-a04',
-    t: 22,
-    kind: 'attestation',
-    title: 'Attestation',
-    attestor: 'attestor-04',
-    verdict: 'unauthorized',
-    tally: 5,
-    quorumReached: true,
-    signature: '7fLp…3sQe',
-    timestamp: '2026-08-11 09:14:24 UTC',
-  },
-  {
-    id: 'ev-payout',
-    t: 22,
-    kind: 'payout',
-    title: 'PAYOUT 2,400,000 USDC → Meridian Perps treasury',
-    signature: '7fLp…3sQe',
-    timestamp: '2026-08-11 09:14:24 UTC',
-    lines: ['released by the same transaction that recorded the quorum'],
-  },
+  ...attestationEvents,
+  ...(payout === null
+    ? []
+    : [
+        {
+          id: 'ev-payout',
+          t: payout.at - triggerAt,
+          kind: 'payout' as const,
+          title: `PAYOUT ${usdc(dollars(payout.amount))} → ${beneficiaryLabel}`,
+          signature: short(payout.signature),
+          timestamp: second(payout.at),
+          lines: ['released by the same transaction that recorded the quorum'],
+        },
+      ]),
 ]
 
 export const ATTESTATIONS = TIMELINE.filter((e) => e.kind === 'attestation')
 
-/* Declaration snapshot as it stood when the incident opened */
-export const DECLARATION_SNAPSHOT = [
-  {
-    operation: 'Update funding rate params',
-    window: 'Tue 02:00–04:00 UTC',
-    effectiveFrom: '2026-07-16',
-    status: 'Effective',
-  },
-  {
-    operation: 'Add collateral market',
-    window: 'one-off 2026-08-02',
-    effectiveFrom: '2026-08-01',
-    status: 'Spent',
-  },
-  {
-    operation: 'Rotate oracle authority',
-    window: 'Thu 01:00–03:00 UTC',
-    effectiveFrom: '2026-08-10',
-    status: 'Pending — not yet effective',
-  },
-]
+/* Declaration as it stood at the trigger — the moment the rule evaluates it */
+export const DECLARATION_SNAPSHOT = detail.verification.declaration_at_trigger.entries.map(
+  (entry) => ({
+    operation: operationOf(entry),
+    window: windowOf(entry),
+    effectiveFrom: day(entry.effective_at),
+    status: STATUS[entry.state],
+  }),
+)
 
-export const usdc = (n: number) => `${n.toLocaleString('en-US', { maximumFractionDigits: 0 })} USDC`
+export function usdc(n: number) {
+  return `${n.toLocaleString('en-US', { maximumFractionDigits: 0 })} USDC`
+}

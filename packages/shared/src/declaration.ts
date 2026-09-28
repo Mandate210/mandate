@@ -236,6 +236,32 @@ export const entryCovers = (
 }
 
 /**
+ * Where an entry stands at `at`, for anyone reading a declaration rather than matching
+ * a transaction against it.
+ *
+ * `effective` means exactly what `entryCovers` means by declared — same boundaries,
+ * same inclusive ends — and a test holds the two together second by second. A page
+ * that said «effective» on some other rule would be telling the reader something the
+ * attestors do not act on.
+ *
+ * - `pending` — submitted, but the delay has not run out (FR-031);
+ * - `scheduled` — in force, but its window has not opened;
+ * - `effective` — covers a matching operation performed now;
+ * - `expired` — its window has closed;
+ * - `revoked` — revoked or narrowed away (FR-032). Wins over `expired`: that the
+ *   protocol withdrew it is the more informative fact.
+ */
+export type EntryState = 'pending' | 'scheduled' | 'effective' | 'expired' | 'revoked'
+
+export const entryStateAt = (entry: DeclarationEntry, at: number): EntryState => {
+  if (entry.revokedAt !== null && at >= entry.revokedAt) return 'revoked'
+  if (entry.notAfter !== null && at > entry.notAfter) return 'expired'
+  if (at < entry.effectiveAt) return 'pending'
+  if (at < entry.notBefore) return 'scheduled'
+  return 'effective'
+}
+
+/**
  * The verdict on one observed transaction.
  *
  * **The authority exercised sets the scope of what had to be declared**, and there are

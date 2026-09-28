@@ -66,7 +66,7 @@ const IncidentTimeline = () => {
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-2 border-t xl:border-t-0 xl:border-l border-border divide-x divide-border xl:divide-x-0 w-full xl:w-auto">
-            <Cell label="Incident" value={INCIDENT.id} />
+            <Cell label="Incident" value={INCIDENT.label} />
             <Cell label="Protocol" value={INCIDENT.protocolName} />
             <Cell
               label="Quorum"

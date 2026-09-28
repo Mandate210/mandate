@@ -5,6 +5,7 @@ import {
   type ObservedInstruction,
   type ObservedTransaction,
   entryCovers,
+  entryStateAt,
   evaluateTransaction,
   methodOf,
 } from './declaration'
@@ -141,6 +142,61 @@ describe('entryCovers', () => {
     const narrowed = entry({ notAfter: DURING })
     expect(entryCovers(narrowed, instruction, DURING)).toBe(true)
     expect(entryCovers(narrowed, instruction, DURING + 1)).toBe(false)
+  })
+})
+
+describe('entryStateAt', () => {
+  const instruction = ix(PROTOCOL_PROGRAM, PAUSE)
+
+  it('walks an entry through its life in order', () => {
+    const window = entry({ notBefore: EFFECTIVE + HOUR, notAfter: EFFECTIVE + 2 * HOUR })
+    // FR-031: submitted, but the delay has not run out.
+    expect(entryStateAt(window, EFFECTIVE - 1)).toBe('pending')
+    // In force, but its window has not opened yet.
+    expect(entryStateAt(window, EFFECTIVE)).toBe('scheduled')
+    expect(entryStateAt(window, EFFECTIVE + HOUR)).toBe('effective')
+    expect(entryStateAt(window, EFFECTIVE + 2 * HOUR)).toBe('effective')
+    expect(entryStateAt(window, EFFECTIVE + 2 * HOUR + 1)).toBe('expired')
+  })
+
+  it('never expires a permanent entry (FR-035)', () => {
+    const permanent = entry({ notAfter: null, movesFunds: false })
+    expect(entryStateAt(permanent, EFFECTIVE + 365 * 24 * HOUR)).toBe('effective')
+  })
+
+  it('reports a revocation from its second on, over any other reading (FR-032)', () => {
+    const revoked = entry({ revokedAt: DURING })
+    expect(entryStateAt(revoked, DURING - 1)).toBe('effective')
+    expect(entryStateAt(revoked, DURING)).toBe('revoked')
+    // Past the window too: that it was revoked is the more informative fact.
+    expect(entryStateAt(revoked, EFFECTIVE + 10 * HOUR)).toBe('revoked')
+    // Revoked before it ever took effect.
+    expect(entryStateAt(entry({ revokedAt: SUBMITTED + 1 }), EFFECTIVE)).toBe('revoked')
+  })
+
+  /**
+   * The point of having this function next to `entryCovers`: a page that says
+   * «effective» must mean exactly what the attestors mean when they call an operation
+   * declared. Checked second by second across every boundary rather than trusted.
+   */
+  it('says effective exactly when the entry covers a matching instruction', () => {
+    const shapes = [
+      entry(),
+      entry({ notBefore: SUBMITTED }),
+      entry({ notBefore: EFFECTIVE + HOUR, notAfter: EFFECTIVE + 2 * HOUR }),
+      entry({ notAfter: null, movesFunds: false }),
+      entry({ revokedAt: DURING }),
+      entry({ revokedAt: SUBMITTED + 1 }),
+      entry({ notAfter: DURING }),
+    ]
+    for (const shape of shapes) {
+      for (let at = SUBMITTED - 2; at <= EFFECTIVE + 3 * HOUR + 2; at += 1) {
+        const covers = entryCovers(shape, instruction, at)
+        if (covers !== (entryStateAt(shape, at) === 'effective')) {
+          throw new Error(`disagree at ${at} on ${JSON.stringify(shape)}`)
+        }
+      }
+    }
   })
 })
 

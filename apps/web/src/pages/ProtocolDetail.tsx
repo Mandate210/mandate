@@ -55,8 +55,8 @@ const ProtocolDetail = () => {
             <span className="h-1.5 w-1.5 rounded-full bg-alert animate-pulse-alert" />
             <span className="mono text-[11px] uppercase tracking-[0.14em] text-alert">
               {status === 'running'
-                ? `Incident ${INCIDENT.id} open`
-                : `Incident ${INCIDENT.id} settled — payout released`}
+                ? `Incident ${INCIDENT.label} open`
+                : `Incident ${INCIDENT.label} settled — payout released`}
             </span>
             <span className="mono text-[11px] text-muted-foreground">
               trigger {INCIDENT.triggerSignature}
@@ -134,7 +134,7 @@ const ProtocolDetail = () => {
       <Section title="Privileged addresses">
         <div className="px-4 py-4">
           <div className="mono text-[11px] uppercase tracking-[0.14em] text-muted-foreground mb-3">
-            Security Council — 5 signers
+            {protocol.signers.length} addresses watched by the attestors
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-px bg-border rounded-sm overflow-hidden">
             {protocol.signers.map((s) => (
@@ -203,8 +203,9 @@ const DeclStatus = ({ status }: { status: DeclarationEntry['status'] }) => (
     className={cn(
       'mono text-[10.5px] uppercase tracking-[0.12em] px-2 py-1 rounded-sm border inline-block',
       status === 'Effective' && 'border-border-strong text-foreground/85',
-      status === 'Spent' && 'border-border text-dim-foreground',
-      status === 'Pending' && 'border-border-strong text-muted-foreground',
+      status === 'Expired' && 'border-border text-dim-foreground',
+      (status === 'Pending' || status === 'Scheduled') &&
+        'border-border-strong text-muted-foreground',
       status === 'Revoked' && 'border-alert/50 text-alert',
     )}
   >

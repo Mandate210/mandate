@@ -1,46 +1,18 @@
+import { INCIDENT_DETAIL } from '@/lib/fixtures'
 import { ATTESTATIONS, ATTESTOR_SET, DECLARATION_SNAPSHOT, INCIDENT, usdc } from '@/lib/mockData'
 import { cn } from '@/lib/utils'
 import { ArrowLeft, Check, Copy } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
+/**
+ * What «Copy all as JSON» hands over: the incident exactly as `GET /incidents/:pubkey`
+ * returns it, full addresses and signatures included — the part a third party needs to
+ * repeat the decision from an RPC (SC-007). Abbreviations are for the screen only.
+ */
 const buildJson = () => ({
-  incident_id: INCIDENT.id,
-  protocol: INCIDENT.protocolName,
-  opened_at: INCIDENT.openedAt,
-  quorum_rule: {
-    required: INCIDENT.quorumRequired,
-    attestor_set_size: INCIDENT.attestorSetSize,
-    attestor_set: ATTESTOR_SET,
-    acceptance_window_seconds: INCIDENT.acceptanceWindow,
-  },
-  trigger_transaction: {
-    signature: INCIDENT.triggerSignature,
-    timestamp: INCIDENT.openedAt,
-    observations: [
-      'signer 3 of 5',
-      'durable nonce',
-      'outside maintenance window',
-      'matches no effective declaration entry',
-    ],
-  },
-  declaration_snapshot: DECLARATION_SNAPSHOT,
-  attestations: ATTESTATIONS.map((a) => ({
-    attestor: a.attestor,
-    verdict: a.verdict,
-    timestamp: a.timestamp,
-    signature: a.signature,
-  })),
-  non_responding_attestors: ATTESTOR_SET.filter((a) => !ATTESTATIONS.some((x) => x.attestor === a)),
-  payout: {
-    signature: INCIDENT.payoutSignature,
-    amount: `${INCIDENT.payoutAmount} USDC`,
-    beneficiary: INCIDENT.beneficiary,
-    beneficiary_label: INCIDENT.beneficiaryLabel,
-    settled_at: `T+${INCIDENT.settledAt}s`,
-    timestamp: '2026-08-11 09:14:24 UTC',
-  },
-  note: 'Demo — mock data. Addresses and signatures are truncated placeholders.',
+  note: 'Demo — invented data in the shape of the public API. Nothing here exists on chain.',
+  ...INCIDENT_DETAIL,
 })
 
 const VerificationTrail = () => {
@@ -72,7 +44,7 @@ const VerificationTrail = () => {
             to={`/incident/${INCIDENT.id}`}
             className="mono text-[11px] uppercase tracking-[0.14em] text-muted-foreground hover:text-foreground transition-colors duration-150 inline-flex items-center gap-1.5"
           >
-            <ArrowLeft className="h-3 w-3" /> Incident {INCIDENT.id}
+            <ArrowLeft className="h-3 w-3" /> Incident {INCIDENT.label}
           </Link>
           <h1 className="mt-3 mono text-[15px] uppercase tracking-[0.16em] font-medium">
             Verification trail
@@ -106,15 +78,13 @@ const VerificationTrail = () => {
       {/* 1 — trigger */}
       <Section index="01" title="Trigger transaction">
         <Row label="Signature" value={INCIDENT.triggerSignature} />
-        <Row label="Timestamp" value={INCIDENT.openedAt} />
-        <Row label="Signers" value="3 of 5 Security Council" />
-        <Row label="Nonce" value="durable nonce" />
-        <Row label="Maintenance window" value="outside declared window" alert />
+        <Row label="Timestamp" value={INCIDENT.triggerAt} />
+        <Row label="Signed by" value={`a privileged address of ${INCIDENT.protocolName}`} />
         <Row label="Declaration match" value="no effective entry matched" alert />
       </Section>
 
       {/* 2 — declaration snapshot */}
-      <Section index="02" title="Declaration entries effective when the incident opened" flush>
+      <Section index="02" title="Declaration as it stood at the trigger transaction" flush>
         <table className="w-full text-left">
           <thead>
             <tr className="rule-row bg-surface-raised/60">
@@ -198,7 +168,7 @@ const VerificationTrail = () => {
       <Section index="05" title="Quorum rule in force at that moment">
         <Row label="Rule" value={`${INCIDENT.quorumRequired} of ${INCIDENT.attestorSetSize}`} />
         <Row label="Attestor set" value={ATTESTOR_SET.join(', ')} />
-        <Row label="Acceptance window" value={`T+0s … T+${INCIDENT.acceptanceWindow}s`} />
+        <Row label="Acceptance window" value={`T+${INCIDENT.openedAfter}s … T+${INCIDENT.openedAfter + INCIDENT.acceptanceWindow}s`} />
         <Row label="Opening bond" value={usdc(INCIDENT.bond)} />
         <Row label="Settled at" value={`T+${INCIDENT.settledAt}s`} alert />
       </Section>
