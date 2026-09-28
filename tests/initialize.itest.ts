@@ -30,6 +30,7 @@ describe.skipIf(!reachable)('initialize', () => {
     expect(config.attestWindow.toNumber()).toBe(CONFIG_PARAMS.attestWindow)
     expect(config.quorumBps).toBe(CONFIG_PARAMS.quorumBps)
     expect(config.openBond.toNumber()).toBe(CONFIG_PARAMS.openBond)
+    expect(config.withdrawDelay.toNumber()).toBe(CONFIG_PARAMS.withdrawDelay)
     expect(config.paused).toBe(false)
   })
 

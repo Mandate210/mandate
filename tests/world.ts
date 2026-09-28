@@ -40,6 +40,13 @@ export const CONFIG_PARAMS = {
   attestWindow: 90,
   quorumBps: 6_000,
   openBond: 1_000_000,
+  /**
+   * Twenty seconds, where the recommended product value is seven days — for the same
+   * reason as `attestWindow`: completing a withdrawal (T033) waits for `unlock_ts` on
+   * the real cluster clock. Longer than one epoch crossing, so a test can still tell a
+   * request that is waiting from one that has matured.
+   */
+  withdrawDelay: 20,
 } as const
 
 export const configPresent = async (): Promise<boolean> => {
@@ -58,6 +65,7 @@ export const initializeConfig = (
       new BN(CONFIG_PARAMS.attestWindow),
       quorumBps,
       new BN(CONFIG_PARAMS.openBond),
+      new BN(CONFIG_PARAMS.withdrawDelay),
     )
     .accountsPartial({
       admin: env.payer.publicKey,
@@ -534,4 +542,26 @@ export const deposit = async (
     .rpc()
 
   return { underwriter: owner, position }
+}
+
+/**
+ * Starts the wait on withdrawing `shares` of `underwriter`'s position (FR-019, T032).
+ * `position` is passed rather than derived so that a test can offer somebody else's.
+ */
+export const requestWithdraw = async (
+  program: Program<DrainCover>,
+  target: RegisteredProtocol,
+  underwriter: Keypair,
+  shares: bigint,
+  position: PublicKey = findPosition(program.programId, target.pool, underwriter.publicKey),
+): Promise<void> => {
+  await program.methods
+    .requestWithdraw(new BN(shares.toString()))
+    .accountsPartial({
+      underwriter: underwriter.publicKey,
+      pool: target.pool,
+      position,
+    })
+    .signers([underwriter])
+    .rpc()
 }

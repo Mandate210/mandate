@@ -37,14 +37,21 @@ pub struct Initialize<'info> {
 /// slower motion: without a declaration delay, a compromised admin declares its
 /// own operation and executes it in the same breath (FR-031), and without an
 /// attestation window an incident never closes and the pool stays frozen
-/// (FR-019).
-pub fn validate_params(declaration_delay: i64, attest_window: i64, quorum_bps: u16) -> Result<()> {
+/// (FR-019), and without a withdrawal delay an underwriter who sees a compromise
+/// leaves before the incident about it is opened.
+pub fn validate_params(
+    declaration_delay: i64,
+    attest_window: i64,
+    withdraw_delay: i64,
+    quorum_bps: u16,
+) -> Result<()> {
     require!(
         quorum_bps > 0 && quorum_bps <= BPS_DENOMINATOR,
         DrainCoverError::InvalidQuorum
     );
     require!(declaration_delay > 0, DrainCoverError::InvalidDuration);
     require!(attest_window > 0, DrainCoverError::InvalidDuration);
+    require!(withdraw_delay > 0, DrainCoverError::InvalidDuration);
     Ok(())
 }
 
@@ -54,14 +61,16 @@ pub fn handle_initialize(
     attest_window: i64,
     quorum_bps: u16,
     open_bond: u64,
+    withdraw_delay: i64,
 ) -> Result<()> {
-    validate_params(declaration_delay, attest_window, quorum_bps)?;
+    validate_params(declaration_delay, attest_window, withdraw_delay, quorum_bps)?;
 
     ctx.accounts.config.set_inner(Config {
         admin: ctx.accounts.admin.key(),
         asset_mint: ctx.accounts.asset_mint.key(),
         declaration_delay,
         attest_window,
+        withdraw_delay,
         quorum_bps,
         attestor_count: 0,
         open_bond,
@@ -79,26 +88,28 @@ mod tests {
 
     #[test]
     fn accepts_sane_parameters() {
-        assert!(validate_params(DAY, DAY, 6_000).is_ok());
+        assert!(validate_params(DAY, DAY, DAY, 6_000).is_ok());
         // Unanimity is a legitimate choice, so the top of the range is inclusive.
-        assert!(validate_params(1, 1, BPS_DENOMINATOR).is_ok());
+        assert!(validate_params(1, 1, 1, BPS_DENOMINATOR).is_ok());
     }
 
     #[test]
     fn rejects_a_quorum_of_zero() {
-        assert!(validate_params(DAY, DAY, 0).is_err());
+        assert!(validate_params(DAY, DAY, DAY, 0).is_err());
     }
 
     #[test]
     fn rejects_a_quorum_above_one_hundred_percent() {
-        assert!(validate_params(DAY, DAY, BPS_DENOMINATOR + 1).is_err());
+        assert!(validate_params(DAY, DAY, DAY, BPS_DENOMINATOR + 1).is_err());
     }
 
     #[test]
     fn rejects_non_positive_durations() {
-        assert!(validate_params(0, DAY, 6_000).is_err());
-        assert!(validate_params(-1, DAY, 6_000).is_err());
-        assert!(validate_params(DAY, 0, 6_000).is_err());
-        assert!(validate_params(DAY, -1, 6_000).is_err());
+        assert!(validate_params(0, DAY, DAY, 6_000).is_err());
+        assert!(validate_params(-1, DAY, DAY, 6_000).is_err());
+        assert!(validate_params(DAY, 0, DAY, 6_000).is_err());
+        assert!(validate_params(DAY, -1, DAY, 6_000).is_err());
+        assert!(validate_params(DAY, DAY, 0, 6_000).is_err());
+        assert!(validate_params(DAY, DAY, -1, 6_000).is_err());
     }
 }

@@ -435,6 +435,10 @@ export type DrainCover = {
         {
           "name": "openBond",
           "type": "u64"
+        },
+        {
+          "name": "withdrawDelay",
+          "type": "i64"
         }
       ]
     },
@@ -1053,6 +1057,97 @@ export type DrainCover = {
       "args": [
         {
           "name": "policySeq",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "requestWithdraw",
+      "docs": [
+        "Starts the wait on withdrawing `shares` of the caller's position (FR-019).",
+        "Nothing moves and nothing is priced until the withdrawal completes; a new",
+        "request replaces the previous one and restarts the wait."
+      ],
+      "discriminator": [
+        137,
+        95,
+        187,
+        96,
+        250,
+        138,
+        31,
+        182
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "docs": [
+            "Read for one thing only: how long the wait is."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "underwriter",
+          "docs": [
+            "The owner of the position, and nobody else: the position's seeds contain",
+            "this key, so a request cannot be made on someone else's behalf."
+          ],
+          "signer": true
+        },
+        {
+          "name": "pool",
+          "docs": [
+            "Not read. It is here because the position is addressed by it, and typed so",
+            "that it is at least a pool of this program."
+          ]
+        },
+        {
+          "name": "position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "pool"
+              },
+              {
+                "kind": "account",
+                "path": "underwriter"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "shares",
           "type": "u64"
         }
       ]
@@ -1850,6 +1945,11 @@ export type DrainCover = {
       "code": 6036,
       "name": "policyAlreadyReleased",
       "msg": "Policy reservation has already been released"
+    },
+    {
+      "code": 6037,
+      "name": "withdrawExceedsShares",
+      "msg": "Withdrawal request exceeds the shares this position holds"
     }
   ],
   "types": [
@@ -1978,6 +2078,18 @@ export type DrainCover = {
               "Seconds an incident collects attestations before it closes without a",
               "payout. Without a deadline a frivolous incident would freeze the pool for",
               "good, because FR-019 blocks withdrawals while one is open."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "withdrawDelay",
+            "docs": [
+              "Seconds between an underwriter requesting a withdrawal and being able to",
+              "complete it (FR-019). What it covers is the gap between an event and the",
+              "incident about it: `open_incident` does not bound a trigger's age, so an",
+              "underwriter who sees a compromise first could otherwise request and leave",
+              "before any attestor has opened the incident that would have blocked them.",
+              "Shorter than attestor lag, and the block on open incidents protects nothing."
             ],
             "type": "i64"
           },
@@ -2476,15 +2588,18 @@ export type DrainCover = {
           {
             "name": "pendingWithdraw",
             "docs": [
-              "Amount requested for withdrawal. Set by T032, which also decides what it",
-              "stops participating in once requested."
+              "Shares requested for withdrawal — a count of shares, not an amount of the",
+              "asset, because the price is taken when the withdrawal completes (T033).",
+              "They stay in `shares` meanwhile and keep both earning and bearing losses:",
+              "the capital behind them is still backing policies. Zero means no request."
             ],
             "type": "u64"
           },
           {
             "name": "unlockTs",
             "docs": [
-              "When the requested withdrawal may be completed (FR-019)."
+              "When the requested withdrawal may be completed (FR-019). Meaningless while",
+              "`pending_withdraw` is zero."
             ],
             "type": "i64"
           }

@@ -30,6 +30,7 @@ pub mod drain_cover {
         attest_window: i64,
         quorum_bps: u16,
         open_bond: u64,
+        withdraw_delay: i64,
     ) -> Result<()> {
         instructions::initialize::handle_initialize(
             ctx,
@@ -37,6 +38,7 @@ pub mod drain_cover {
             attest_window,
             quorum_bps,
             open_bond,
+            withdraw_delay,
         )
     }
 
@@ -151,6 +153,13 @@ pub mod drain_cover {
         policy_seq: u64,
     ) -> Result<()> {
         instructions::release_expired_policy::handle_release_expired_policy(ctx, policy_seq)
+    }
+
+    /// Starts the wait on withdrawing `shares` of the caller's position (FR-019).
+    /// Nothing moves and nothing is priced until the withdrawal completes; a new
+    /// request replaces the previous one and restarts the wait.
+    pub fn request_withdraw(ctx: Context<RequestWithdraw>, shares: u64) -> Result<()> {
+        instructions::request_withdraw::handle_request_withdraw(ctx, shares)
     }
 
     /// Admits an attestor to the permissive set or removes one (FR-008).

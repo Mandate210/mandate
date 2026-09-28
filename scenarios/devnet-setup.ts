@@ -39,6 +39,13 @@ const DECLARATION_DELAY = 30
 const ATTEST_WINDOW = 90
 const QUORUM_BPS = 6_000
 const OPEN_BOND = 1_000_000
+/**
+ * Five minutes where the recommended product value is seven days, compressed for the
+ * same reason as the declaration delay: a withdrawal on this deployment has to be
+ * demonstrable in one sitting. Permanent, like everything in `Config` — see
+ * `docs/deploy-devnet.md` → «Що фіксується назавжди».
+ */
+const WITHDRAW_DELAY = 300
 
 /** Three, so the quorum is two of three — the smallest set where the deciding vote
  * comes from somebody other than whoever opened the incident. */
@@ -76,7 +83,13 @@ const main = async (): Promise<void> => {
   if (existing === null) {
     say('creating Config — this fixes admin, asset mint and every duration forever…')
     await program.methods
-      .initialize(new BN(DECLARATION_DELAY), new BN(ATTEST_WINDOW), QUORUM_BPS, new BN(OPEN_BOND))
+      .initialize(
+        new BN(DECLARATION_DELAY),
+        new BN(ATTEST_WINDOW),
+        QUORUM_BPS,
+        new BN(OPEN_BOND),
+        new BN(WITHDRAW_DELAY),
+      )
       .accountsPartial({
         admin: env.payer.publicKey,
         assetMint: env.assetMint,
@@ -98,7 +111,9 @@ const main = async (): Promise<void> => {
         `Config's asset mint is ${existing.assetMint.toBase58()}, but devnet-state.json names ${env.assetMint.toBase58()}. One of the two belongs to a different deployment.`,
       )
     }
-    say(`Config already exists — delay ${existing.declarationDelay.toNumber()}s, window ${existing.attestWindow.toNumber()}s, quorum ${existing.quorumBps} bps, set of ${existing.attestorCount}\n`)
+    say(
+      `Config already exists — delay ${existing.declarationDelay.toNumber()}s, window ${existing.attestWindow.toNumber()}s, quorum ${existing.quorumBps} bps, set of ${existing.attestorCount}\n`,
+    )
   }
 
   // ── Attestors ─────────────────────────────────────────────────────────────────
@@ -123,14 +138,18 @@ const main = async (): Promise<void> => {
       findAttestor(program.programId, attestor.publicKey),
     )
     if (account?.inSet) {
-      say(`  ${attestor.publicKey.toBase58()}  already in the set from epoch ${account.activeFromEpoch.toString()}`)
+      say(
+        `  ${attestor.publicKey.toBase58()}  already in the set from epoch ${account.activeFromEpoch.toString()}`,
+      )
       continue
     }
     await setAttestor(program, env, attestor.publicKey)
     const admitted = await program.account.attestor.fetch(
       findAttestor(program.programId, attestor.publicKey),
     )
-    say(`  ${attestor.publicKey.toBase58()}  votes from epoch ${admitted.activeFromEpoch.toString()}`)
+    say(
+      `  ${attestor.publicKey.toBase58()}  votes from epoch ${admitted.activeFromEpoch.toString()}`,
+    )
   }
 
   // ── When can anything be measured ─────────────────────────────────────────────

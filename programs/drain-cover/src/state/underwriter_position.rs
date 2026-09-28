@@ -12,9 +12,12 @@ pub const POSITION_SEED: &[u8] = b"position";
 #[derive(InitSpace)]
 pub struct UnderwriterPosition {
     pub shares: u64,
-    /// Amount requested for withdrawal. Set by T032, which also decides what it
-    /// stops participating in once requested.
+    /// Shares requested for withdrawal — a count of shares, not an amount of the
+    /// asset, because the price is taken when the withdrawal completes (T033).
+    /// They stay in `shares` meanwhile and keep both earning and bearing losses:
+    /// the capital behind them is still backing policies. Zero means no request.
     pub pending_withdraw: u64,
-    /// When the requested withdrawal may be completed (FR-019).
+    /// When the requested withdrawal may be completed (FR-019). Meaningless while
+    /// `pending_withdraw` is zero.
     pub unlock_ts: i64,
 }

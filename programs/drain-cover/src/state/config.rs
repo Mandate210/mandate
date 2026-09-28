@@ -22,6 +22,13 @@ pub struct Config {
     /// payout. Without a deadline a frivolous incident would freeze the pool for
     /// good, because FR-019 blocks withdrawals while one is open.
     pub attest_window: i64,
+    /// Seconds between an underwriter requesting a withdrawal and being able to
+    /// complete it (FR-019). What it covers is the gap between an event and the
+    /// incident about it: `open_incident` does not bound a trigger's age, so an
+    /// underwriter who sees a compromise first could otherwise request and leave
+    /// before any attestor has opened the incident that would have blocked them.
+    /// Shorter than attestor lag, and the block on open incidents protects nothing.
+    pub withdraw_delay: i64,
     /// Share of the active set that must classify an incident as unauthorized
     /// for the payout to fire (FR-010), in basis points.
     pub quorum_bps: u16,

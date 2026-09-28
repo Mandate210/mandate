@@ -118,4 +118,9 @@ pub enum DrainCoverError {
     /// policy. A second release would take the reservation of some other policy.
     #[msg("Policy reservation has already been released")]
     PolicyAlreadyReleased,
+    /// Shares are what a request holds, and a position cannot put up more of them
+    /// than it has. Refused rather than capped: a capped request would start the
+    /// clock on an amount the underwriter did not ask for.
+    #[msg("Withdrawal request exceeds the shares this position holds")]
+    WithdrawExceedsShares,
 }

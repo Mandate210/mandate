@@ -40,9 +40,9 @@ mod tests {
 
     #[test]
     fn layouts_are_the_size_they_are_meant_to_be() {
-        // admin 32 + asset_mint 32 + delay 8 + window 8 + quorum 2 + attestors 2
-        //   + bond 8 + paused 1
-        assert_eq!(Config::INIT_SPACE, 93);
+        // admin 32 + asset_mint 32 + delay 8 + window 8 + withdraw delay 8
+        //   + quorum 2 + attestors 2 + bond 8 + paused 1
+        assert_eq!(Config::INIT_SPACE, 101);
         // authority 32 + treasury 32 + privileged (4 + 16*32) + pool 32 + paused 1
         //   + three u64 sequence counters
         assert_eq!(Protocol::INIT_SPACE, 637);

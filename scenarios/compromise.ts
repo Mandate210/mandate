@@ -82,6 +82,9 @@ const DECLARATION_DELAY = 30
 const ATTEST_WINDOW = 90
 const QUORUM_BPS = 6_000
 const OPEN_BOND = 1_000_000
+/** Nothing here withdraws, so the value only has to be valid. Kept as short as the
+ * integration suite's so that neither ledger surprises whoever reuses it. */
+const WITHDRAW_DELAY = 20
 
 /** SC-005. */
 const CYCLE_BUDGET_SECONDS = 180
@@ -157,7 +160,13 @@ const ensureScenarioConfig = async (program: Program<DrainCover>, env: TestEnv):
   }
 
   await program.methods
-    .initialize(new BN(DECLARATION_DELAY), new BN(ATTEST_WINDOW), QUORUM_BPS, new BN(OPEN_BOND))
+    .initialize(
+      new BN(DECLARATION_DELAY),
+      new BN(ATTEST_WINDOW),
+      QUORUM_BPS,
+      new BN(OPEN_BOND),
+      new BN(WITHDRAW_DELAY),
+    )
     .accountsPartial({
       admin: env.payer.publicKey,
       assetMint: env.assetMint,
