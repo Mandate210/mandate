@@ -6,19 +6,31 @@
 
 ## Поточний деплой
 
+З 2026-09-29 (T075) — нова програма під новим id: `Config` виріс на `withdraw_delay`
+(T032), `Pool` змінився в T030, а синглтон `Config` на devnet перестворити неможливо.
+
 | | |
 |---|---|
-| Program | `DsRdHv4QRYQ7teVhwuLVttktF792gvDFQdiuraQ4eF4P` |
-| ProgramData | `8diP1FWsLiEL1owXJnfrH982b5b7JpEzCJk3a2T2o9xm` |
+| Program | `HMtvDKR9i4WKxfMfC7fGXXiiReh3APGoNsiCcrbCzMHk` |
+| ProgramData | `FHm4ztzeop3KzHiGJqDnYw16kCq1wVF3QAcVsU6LE5xm` |
 | Upgrade authority | `EktFLdpBnTNLRMSmLiAkKPZt7KQTZ9hrbDcJP2947Mjf` |
-| `Config` PDA | `E6p1VaW7wtvXX5saT1TjTayWVCTzXaE7vnSbKNkBeHKv` |
-| `asset_mint` | `D7ucvLoxVmotii7izgwLwbgqMCEiDPuY97Zfybv56Uzx` — власний SPL-мінт, 6 знаків |
+| `Config` PDA | `4Pgfj3PskiJk3rHQYbvtPJGhBGBBPbGnFPxeQDvtNCEu` |
+| `asset_mint` | `D7ucvLoxVmotii7izgwLwbgqMCEiDPuY97Zfybv56Uzx` — власний SPL-мінт, 6 знаків; той самий, що в попередньому деплої |
 | `Config.admin` | той самий ключ, що платив за деплой |
-| Набір атестаторів | 3, кворум 2 з 3 |
-| Версія програми | після апгрейду T070: інцидент адресується тригером; `Data Length` 431 000 |
+| Набір атестаторів | ті самі 3 ключі з `devnet-state.json`, прийняті наново; голосують з епохи 1171; кворум 2 з 3 |
+| Версія програми | `main` на T032, `--arch v3`; деплой у слоті 505 664 002, `Data Length` 471 968 |
 
 Explorer:
-`https://explorer.solana.com/address/DsRdHv4QRYQ7teVhwuLVttktF792gvDFQdiuraQ4eF4P?cluster=devnet`
+`https://explorer.solana.com/address/HMtvDKR9i4WKxfMfC7fGXXiiReh3APGoNsiCcrbCzMHk?cluster=devnet`
+
+### Попередній деплой — лишається живим
+
+`DsRdHv4QRYQ7teVhwuLVttktF792gvDFQdiuraQ4eF4P` (програма T070, `Config`
+`E6p1VaW7wtvXX5saT1TjTayWVCTzXaE7vnSbKNkBeHKv`). На ньому виміряно M1: інциденти,
+атестації й виплати лишаються читабельними в explorer разом з акаунтами, які їх
+пояснюють. **Не закривати**: `solana program close` повернув би ≈3 SOL, але
+незворотно — цей id більше не задеплоїти, а слід M1 втратить програму, на яку
+посилається. Ключ програми — `drain_cover-keypair-DsRd-t070.json` поруч з іншими.
 
 ---
 
@@ -32,7 +44,7 @@ Explorer:
 |---|---|
 | `declaration_delay` | **30 с** |
 | `attest_window` | 90 с |
-| `withdraw_delay` | 300 с — **з наступного деплою**: поле з'явилось у T032, поточний деплой (T070) його не має |
+| `withdraw_delay` | 300 с — з деплою T075; у попередньому (T070) поля немає |
 | `quorum_bps` | 6000 |
 | `open_bond` | 1 000 000 базових одиниць |
 | `admin` | фіксується при створенні |
@@ -59,7 +71,7 @@ Explorer:
 
 | Файл | Що це | Робоча копія |
 |---|---|---|
-| `drain_cover-keypair.json` | ключ програми — визначає її адресу | `target/deploy/drain_cover-keypair.json` |
+| `drain_cover-keypair.json` | ключ програми — визначає її адресу (`HMtv…`) | `target/deploy/drain_cover-keypair.json` |
 | `devnet-deployer.json` | платник деплою й upgrade authority | `~/.config/solana/mandate-devnet-deployer.json` |
 | `devnet-state.json` | адреса мінта й ключі атестаторів | — |
 
@@ -103,7 +115,7 @@ wsl -e bash -lc "readelf -h <repo>/target/deploy/drain_cover.so | grep -i flags"
 
 ```bash
 wsl -e bash -lc "solana address -k <repo>/target/deploy/drain_cover-keypair.json"
-# DsRdHv4QRYQ7teVhwuLVttktF792gvDFQdiuraQ4eF4P
+# HMtvDKR9i4WKxfMfC7fGXXiiReh3APGoNsiCcrbCzMHk
 ```
 
 Має збігтися з `declare_id!`, обома кластерами в `Anchor.toml` і `PROGRAM_ID` у
@@ -162,7 +174,7 @@ wsl -e bash -lc "cd <repo> && solana program deploy \
 Перевірка після:
 
 ```bash
-wsl -e bash -lc "solana program show DsRdHv4QRYQ7teVhwuLVttktF792gvDFQdiuraQ4eF4P -u devnet"
+wsl -e bash -lc "solana program show HMtvDKR9i4WKxfMfC7fGXXiiReh3APGoNsiCcrbCzMHk -u devnet"
 ```
 
 Дивитися на три поля: `ProgramData Address` (є = деплой пройшов), `Authority` і
@@ -232,7 +244,7 @@ pnpm --filter @mandate/scenarios devnet:measure      # p95 і комісії
 
 ```bash
 wsl -e bash -lc "cd <repo> && anchor deploy --provider.cluster devnet --provider.wallet ~/.config/solana/mandate-devnet-deployer.json"
-wsl -e bash -lc "solana program show DsRdHv4QRYQ7teVhwuLVttktF792gvDFQdiuraQ4eF4P -u devnet"   # Data Length зріс, Last Deployed In Slot новий
+wsl -e bash -lc "solana program show HMtvDKR9i4WKxfMfC7fGXXiiReh3APGoNsiCcrbCzMHk -u devnet"   # Data Length зріс, Last Deployed In Slot новий
 ```
 
 4. Після апгрейду — `pnpm --filter @mandate/sdk sync:idl` уже мав бути зроблений до

@@ -7,10 +7,10 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-drain_cover = "DsRdHv4QRYQ7teVhwuLVttktF792gvDFQdiuraQ4eF4P"
+drain_cover = "HMtvDKR9i4WKxfMfC7fGXXiiReh3APGoNsiCcrbCzMHk"
 
 [programs.localnet]
-drain_cover = "DsRdHv4QRYQ7teVhwuLVttktF792gvDFQdiuraQ4eF4P"
+drain_cover = "HMtvDKR9i4WKxfMfC7fGXXiiReh3APGoNsiCcrbCzMHk"
 
 [registry]
 url = "https://api.apr.dev"

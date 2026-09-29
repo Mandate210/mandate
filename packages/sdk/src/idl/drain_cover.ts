@@ -5,7 +5,7 @@
  * IDL can be found at `target/idl/drain_cover.json`.
  */
 export type DrainCover = {
-  "address": "DsRdHv4QRYQ7teVhwuLVttktF792gvDFQdiuraQ4eF4P",
+  "address": "HMtvDKR9i4WKxfMfC7fGXXiiReh3APGoNsiCcrbCzMHk",
   "metadata": {
     "name": "drainCover",
     "version": "0.1.0",

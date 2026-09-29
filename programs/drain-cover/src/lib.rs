@@ -15,7 +15,7 @@ pub use state::Verdict;
 // or talks to, an address nobody controls — and fails silently, because each file
 // is individually valid. `anchor keys sync` only rewrites the configured cluster,
 // so the other one is updated by hand.
-declare_id!("DsRdHv4QRYQ7teVhwuLVttktF792gvDFQdiuraQ4eF4P");
+declare_id!("HMtvDKR9i4WKxfMfC7fGXXiiReh3APGoNsiCcrbCzMHk");
 
 // Every instruction is registered here, which is why instruction tasks cannot run
 // in parallel — they all touch this file.

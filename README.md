@@ -41,10 +41,14 @@ The control matters as much as the count: a maintenance operation the protocol h
 declared in advance is left alone. Without that, "ten of ten" is equally the score
 of a system that opens an incident on everything it sees.
 
-**Deployed:** program `DsRdHv4QRYQ7teVhwuLVttktF792gvDFQdiuraQ4eF4P` on Solana
-[devnet](https://explorer.solana.com/address/DsRdHv4QRYQ7teVhwuLVttktF792gvDFQdiuraQ4eF4P?cluster=devnet).
-Every incident, every attestation and every payout is readable there by anyone,
-without asking us for anything.
+**Deployed:** program `HMtvDKR9i4WKxfMfC7fGXXiiReh3APGoNsiCcrbCzMHk` on Solana
+[devnet](https://explorer.solana.com/address/HMtvDKR9i4WKxfMfC7fGXXiiReh3APGoNsiCcrbCzMHk?cluster=devnet).
+The numbers above were measured on the previous deployment,
+[`DsRdHv4QRYQ7teVhwuLVttktF792gvDFQdiuraQ4eF4P`](https://explorer.solana.com/address/DsRdHv4QRYQ7teVhwuLVttktF792gvDFQdiuraQ4eF4P?cluster=devnet),
+which stays live: its configuration is fixed at creation, so a program with a
+changed account layout had to go out under a new address. Every incident, every
+attestation and every payout on either is readable by anyone, without asking us
+for anything.
 
 **Interface:** [a demo of the flow](https://mandate210.github.io/mandate/),
 running on mock data — the protocols, the incident and the amounts in it are
