@@ -43,10 +43,12 @@ of a system that opens an incident on everything it sees.
 
 **Deployed:** program `HMtvDKR9i4WKxfMfC7fGXXiiReh3APGoNsiCcrbCzMHk` on Solana
 [devnet](https://explorer.solana.com/address/HMtvDKR9i4WKxfMfC7fGXXiiReh3APGoNsiCcrbCzMHk?cluster=devnet).
-The numbers above were measured on the previous deployment,
+The numbers above were first measured on the previous deployment,
 [`DsRdHv4QRYQ7teVhwuLVttktF792gvDFQdiuraQ4eF4P`](https://explorer.solana.com/address/DsRdHv4QRYQ7teVhwuLVttktF792gvDFQdiuraQ4eF4P?cluster=devnet),
 which stays live: its configuration is fixed at creation, so a program with a
-changed account layout had to go out under a new address. Every incident, every
+changed account layout had to go out under a new address. The same two runs,
+repeated on the current program on 2026-09-30, gave ten of ten recognised, the
+slowest full cycle at 15.8s, p95 at 12s and $0.008 in fees. Every incident, every
 attestation and every payout on either is readable by anyone, without asking us
 for anything.
 
