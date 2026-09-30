@@ -32,6 +32,7 @@ pnpm gate        # lint + typecheck + test — must be green before every commit
 pnpm dev         # all apps
 pnpm lint:fix    # biome check --write
 pnpm --filter @mandate/attestor sweep   # one pass over expired incidents, then exit
+pnpm --filter @mandate/api census        # one census of the program into the cache, then exit
 anchor build     # regenerates the IDL that packages/sdk depends on
 anchor deploy    # deploys to whatever cluster Anchor.toml points at
 ```

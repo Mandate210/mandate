@@ -147,3 +147,49 @@ describe('upsertNewer', () => {
     expect(await db.select().from(schema.pools)).toHaveLength(1)
   })
 })
+
+describe('upsertNewer — columns a census cannot see', () => {
+  const attestation = (overrides: Partial<typeof schema.attestations.$inferInsert> = {}) => ({
+    address: 'Atte1111111111111111111111111111111111111111',
+    incident: 'Inci1111111111111111111111111111111111111111',
+    attestor: 'Auth1111111111111111111111111111111111111111',
+    verdict: 'unauthorized' as const,
+    submittedAt: 1_700_000_000,
+    signature: null,
+    updatedSlot: 10,
+    ...overrides,
+  })
+  const read = async () =>
+    (
+      await db
+        .select()
+        .from(schema.attestations)
+        .where(eq(schema.attestations.address, attestation().address))
+    )[0]
+
+  beforeEach(async () => {
+    await db.delete(schema.attestations)
+    await upsertNewer(db, schema.attestations, [attestation({ signature: 'Sig1' })])
+  })
+
+  it('keeps a stored signature when a later census row carries none', async () => {
+    await upsertNewer(db, schema.attestations, [attestation({ updatedSlot: 11 })], {
+      keep: [schema.attestations.signature],
+    })
+    expect(await read()).toMatchObject({ updatedSlot: 11, signature: 'Sig1' })
+  })
+
+  it('still writes a signature that arrives where there was none', async () => {
+    await db.delete(schema.attestations)
+    await upsertNewer(db, schema.attestations, [attestation()])
+    await upsertNewer(db, schema.attestations, [attestation({ signature: 'Sig2' })], {
+      keep: [schema.attestations.signature],
+    })
+    expect((await read())?.signature).toBe('Sig2')
+  })
+
+  it('erases it without `keep` — which is why state columns stay out of it', async () => {
+    await upsertNewer(db, schema.attestations, [attestation({ updatedSlot: 11 })])
+    expect((await read())?.signature).toBeNull()
+  })
+})

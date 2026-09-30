@@ -9,6 +9,7 @@ import { DRAIN_COVER_IDL, type DrainCover, PROGRAM_ID_FROM_IDL } from './idl'
 export * from './filters'
 export * from './idl'
 export * from './pdas'
+export * from './transaction'
 
 export const PROGRAM_ID = new PublicKey(PROGRAM_ID_FROM_IDL)
 
