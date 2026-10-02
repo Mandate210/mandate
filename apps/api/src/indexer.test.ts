@@ -1,130 +1,27 @@
-import { fileURLToPath } from 'node:url'
 import { BN } from '@coral-xyz/anchor'
-import { PGlite } from '@electric-sql/pglite'
 import { type Db, schema } from '@mandate/db'
-import type { ObservedTransaction } from '@mandate/shared'
 import { eq } from 'drizzle-orm'
-import { drizzle } from 'drizzle-orm/pglite'
-import { migrate } from 'drizzle-orm/pglite/migrator'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import {
-  addresses,
-  attestTx,
-  attestationOf,
-  encode,
-  fields,
-  keys,
-  openTx,
-  programId,
-  registerTx,
-  resolveTx,
-  worldAccounts,
-} from './fixtures'
-import { type IndexerRpc, createIndexer } from './indexer'
+import { A, B, CLUSTER_TIME, INCIDENT, PROTOCOL, fakeCluster } from './fake-cluster'
+import { addresses, attestTx, encode, fields, keys, openTx, programId, resolveTx } from './fixtures'
+import { createIndexer } from './indexer'
+import { type TestDb, openTestDb } from './test-db'
 
-let client: PGlite
+let testDb: TestDb
 let db: Db
 
 beforeAll(async () => {
-  client = new PGlite()
-  const pglite = drizzle(client, { schema })
-  await migrate(pglite, {
-    migrationsFolder: fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)),
-  })
-  db = pglite as unknown as Db
+  testDb = await openTestDb()
+  db = testDb.db
 })
 
 afterAll(async () => {
-  await client.close()
+  await testDb.close()
 })
 
 beforeEach(async () => {
-  for (const table of [
-    schema.config,
-    schema.protocols,
-    schema.pools,
-    schema.policies,
-    schema.declarations,
-    schema.incidents,
-    schema.attestations,
-    schema.indexerCursor,
-  ]) {
-    await db.delete(table)
-  }
+  await testDb.clear()
 })
-
-const A = attestationOf(keys.attestorA).toBase58()
-const B = attestationOf(keys.attestorB).toBase58()
-const INCIDENT = addresses.incident.toBase58()
-const PROTOCOL = addresses.protocol.toBase58()
-
-/**
- * A cluster that holds the fixture world and remembers what was asked of it. Each
- * account's history is newest first, as `getSignaturesForAddress` returns it.
- */
-const fakeCluster = async () => {
-  let accounts = await worldAccounts()
-  let slot = 100
-  const transactions = new Map<string, ObservedTransaction>([
-    ['SigRegister', registerTx()],
-    ['SigOpen', openTx()],
-    ['SigAttestA', attestTx(keys.attestorA, 'SigAttestA')],
-    ['SigAttestB', attestTx(keys.attestorB, 'SigAttestB')],
-    ['SigResolve', resolveTx()],
-  ])
-  const history = new Map<string, string[]>([
-    [PROTOCOL, ['SigResolve', 'SigOpen', 'SigRegister']],
-    [INCIDENT, ['SigResolve', 'SigAttestB', 'SigAttestA', 'SigOpen']],
-    [A, ['SigAttestA']],
-    [B, ['SigAttestB']],
-  ])
-  const calls: string[] = []
-  let logs: ((signature: string, failed: boolean) => void) | undefined
-
-  const rpc: IndexerRpc = {
-    programAccounts: async () => {
-      calls.push('programAccounts')
-      return { slot, accounts }
-    },
-    accounts: async (wanted) => {
-      calls.push('accounts')
-      return { slot, accounts: accounts.filter((account) => wanted.includes(account.address)) }
-    },
-    transaction: async (signature) => {
-      calls.push(`transaction:${signature}`)
-      return transactions.get(signature) ?? null
-    },
-    signatures: async (address) => {
-      calls.push(`signatures:${address}`)
-      return [...(history.get(address) ?? [])]
-    },
-    signatureSlot: async () => 90,
-    blockTime: async (at) => (at === 90 ? 1_709_999_999 : null),
-    mintDecimals: async () => 6,
-    onProgramLogs: (callback) => {
-      calls.push('subscribe')
-      logs = callback
-      return () => {
-        logs = undefined
-      }
-    },
-  }
-
-  return {
-    rpc,
-    calls,
-    setSlot: (next: number) => {
-      slot = next
-    },
-    replace: async (address: string, data: Buffer) => {
-      accounts = accounts.map((account) =>
-        account.address === address ? { address, data } : account,
-      )
-    },
-    emit: (signature: string, failed = false) => logs?.(signature, failed),
-    subscribed: () => logs !== undefined,
-  }
-}
 
 const incidentRow = async () =>
   (await db.select().from(schema.incidents).where(eq(schema.incidents.address, INCIDENT)))[0]
@@ -214,11 +111,11 @@ describe('census', () => {
     expect(await incidentRow()).toMatchObject({ shortfall: '0', updatedSlot: 200 })
   })
 
-  it('records the slot it read at, for /health', async () => {
+  it('records the slot it read at and its cluster time, which the api reports as as_of', async () => {
     const cluster = await fakeCluster()
     await createIndexer({ rpc: cluster.rpc, db, programId }).census()
     expect(await db.select().from(schema.indexerCursor)).toEqual([
-      { id: 'census', lastSlot: 100, lastSignature: null },
+      { id: 'census', lastSlot: 100, lastSignature: null, blockTime: CLUSTER_TIME },
     ])
   })
 })

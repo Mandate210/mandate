@@ -3,12 +3,14 @@
 // No authentication anywhere by design: every endpoint serves public data
 // (FR-030) and every state change happens through a signed transaction (FR-034).
 //
-// T048 starts the indexer; the routes arrive with T049…T052.
+// T048 started the indexer; T049 the first routes, and T050…T052 add the rest.
 
+import { serve } from '@hono/node-server'
 import { createDb } from '@mandate/db'
 import { PROGRAM_ID } from '@mandate/sdk'
 import { Connection } from '@solana/web3.js'
 import pino from 'pino'
+import { createApp } from './app'
 import { loadRepoEnv } from './env'
 import { connectionIndexerRpc, createIndexer } from './indexer'
 
@@ -36,10 +38,18 @@ const main = async (): Promise<void> => {
     programId: PROGRAM_ID,
     logger,
   })
+  // Listening before the first census: until it lands the routes answer 503, and after
+  // a restart they serve the previous watermark — honestly dated by `as_of`.
+  const app = createApp({ db, tip: () => connection.getSlot('confirmed'), logger })
+  const server = serve({ fetch: app.fetch, port: Number(process.env.PORT ?? 3000) }, (info) =>
+    logger.info({ port: info.port }, 'api listening'),
+  )
+
   const report = await indexer.start()
   logger.info(report, 'indexer: first census')
 
   const shutdown = () => {
+    server.close()
     indexer
       .stop()
       .then(close)

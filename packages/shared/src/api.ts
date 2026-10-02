@@ -330,6 +330,26 @@ export const quorumNeeded = (setSize: number, quorumBps: number): number =>
 export const payable = (remainingLimit: bigint, retention: bigint): bigint =>
   remainingLimit > retention ? remainingLimit - retention : 0n
 
+/**
+ * `Policy::is_in_force` at `now`: start inclusive, end exclusive — and, as the program
+ * has it, never for an exhausted policy or one whose premium was never paid. The period
+ * alone is not the rule: a page that showed an exhausted policy as covering would
+ * promise a payout `open_incident` refuses.
+ */
+export const isInForce = (
+  policy: {
+    status: z.infer<typeof policyStatusSchema>
+    premiumPaid: bigint
+    startTs: number
+    endTs: number
+  },
+  now: number,
+): boolean =>
+  policy.status !== 'exhausted' &&
+  policy.premiumPaid > 0n &&
+  now >= policy.startTs &&
+  now < policy.endTs
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type AsOf = z.infer<typeof asOfSchema>

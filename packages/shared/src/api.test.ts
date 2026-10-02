@@ -4,6 +4,7 @@ import {
   discriminatorHexSchema,
   errorResponseSchema,
   incidentsQuerySchema,
+  isInForce,
   payable,
   pubkeySchema,
   quorumNeeded,
@@ -116,5 +117,30 @@ describe('derived fields', () => {
   it('floors payable at zero once the retention swallows what is left', () => {
     expect(payable(1_000n, 200n)).toBe(800n)
     expect(payable(150n, 200n)).toBe(0n)
+  })
+
+  describe('isInForce, as Policy::is_in_force', () => {
+    const policy = { status: 'active', premiumPaid: 1n, startTs: 100, endTs: 200 } as const
+
+    it('holds from the start second up to, not including, the end', () => {
+      expect(isInForce(policy, 99)).toBe(false)
+      expect(isInForce(policy, 100)).toBe(true)
+      expect(isInForce(policy, 199)).toBe(true)
+      expect(isInForce(policy, 200)).toBe(false)
+    })
+
+    it('never holds for an exhausted policy, even inside its period', () => {
+      expect(isInForce({ ...policy, status: 'exhausted' }, 150)).toBe(false)
+    })
+
+    it('never holds without a paid premium', () => {
+      expect(isInForce({ ...policy, premiumPaid: 0n }, 150)).toBe(false)
+    })
+
+    it('goes by the clock, not by the stored status', () => {
+      // `status` moves only when an instruction writes it; time does not wait for one.
+      expect(isInForce({ ...policy, status: 'pending' }, 150)).toBe(true)
+      expect(isInForce({ ...policy, status: 'expired' }, 150)).toBe(true)
+    })
   })
 })

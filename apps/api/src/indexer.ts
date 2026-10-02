@@ -198,11 +198,21 @@ export const createIndexer = ({
     await upsertNewer(db, schema.attestations, rows.attestations, { keep: KEEP.attestations })
   }
 
+  /**
+   * Records where the chain was last read, with the cluster time of that slot: the API
+   * reports it as `as_of` and computes `in_force` at it (T049). One `getBlockTime` per
+   * census and per followed transaction — the slot read, not the transaction's own, is
+   * the moment the written rows describe.
+   */
   const setCursor = async (id: string, lastSlot: number, lastSignature: string | null) => {
+    const blockTime = await rpc.blockTime(lastSlot)
     await db
       .insert(schema.indexerCursor)
-      .values({ id, lastSlot, lastSignature })
-      .onConflictDoUpdate({ target: schema.indexerCursor.id, set: { lastSlot, lastSignature } })
+      .values({ id, lastSlot, lastSignature, blockTime })
+      .onConflictDoUpdate({
+        target: schema.indexerCursor.id,
+        set: { lastSlot, lastSignature, blockTime },
+      })
   }
 
   // ── Provenance ──────────────────────────────────────────────────────────────────

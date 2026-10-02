@@ -1,0 +1,1 @@
+ALTER TABLE "indexer_cursor" ADD COLUMN "block_time" bigint;

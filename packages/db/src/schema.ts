@@ -195,9 +195,15 @@ export const attestations = pgTable(
   (t) => [index('attestations_incident_idx').on(t.incident)],
 )
 
-/** Where the indexer stopped, so a restart resumes rather than starts over. */
+/**
+ * Where the indexer last read the chain: `census` for the last full census, `live` for
+ * the last transaction it followed. The later of the two is the API's `as_of` (T049),
+ * so each carries the cluster time of its slot — what derived fields are computed at.
+ * `null` only if the node could not say when the slot was produced.
+ */
 export const indexerCursor = pgTable('indexer_cursor', {
   id: text('id').primaryKey(),
   lastSlot: slot('last_slot').notNull(),
   lastSignature: key('last_signature'),
+  blockTime: i64('block_time'),
 })
