@@ -38,6 +38,7 @@ import {
   relate,
   toRows,
 } from './accounts'
+import { idlAddress, instructionNamesFromIdl } from './idl'
 
 /** Every read the indexer makes, so that tests can stand in for the cluster. */
 export interface IndexerRpc {
@@ -55,6 +56,8 @@ export interface IndexerRpc {
   signatureSlot(signature: string): Promise<number | null>
   blockTime(slot: number): Promise<number | null>
   mintDecimals(mint: string): Promise<number>
+  /** Any account, whoever owns it — for a declared program's IDL. */
+  foreignAccount(address: string): Promise<{ owner: string; data: Buffer } | null>
   /** Calls back with each signature that ran the program; returns the unsubscribe. */
   onProgramLogs(callback: (signature: string, failed: boolean) => void): () => void
 }
@@ -96,6 +99,8 @@ export type CensusReport = {
   written: Record<keyof Rows, number>
   unplaced: number
   filled: number
+  /** Declarations whose instruction name changed — set, renamed or cleared. */
+  named: number
 }
 
 export const createIndexer = ({
@@ -323,6 +328,50 @@ export const createIndexer = ({
     return filled
   }
 
+  // ── Instruction names ───────────────────────────────────────────────────────────
+
+  /**
+   * Names declarations from their programs' on-chain IDL (T050), and **re-reads it every
+   * time**: the IDL belongs to the declared program's upgrade authority and can change,
+   * so the cache follows the chain as it is now — a cache dropped and rebuilt reaches the
+   * same names. A name the IDL no longer gives is cleared, not kept.
+   *
+   * One read per distinct declared program. The IDL account is accepted only when the
+   * program owns it: its address is a `createWithSeed` off the program's own PDA, so
+   * nobody else can create it, and the owner check makes that explicit.
+   */
+  const nameInstructions = async (only?: readonly string[]): Promise<number> => {
+    const scope = only === undefined ? undefined : [...new Set(only)]
+    if (scope !== undefined && scope.length === 0) return 0
+    const rows = await db
+      .select({
+        address: schema.declarations.address,
+        programId: schema.declarations.programId,
+        ixDiscriminator: schema.declarations.ixDiscriminator,
+        instructionName: schema.declarations.instructionName,
+      })
+      .from(schema.declarations)
+      .where(scope === undefined ? undefined : inArray(schema.declarations.programId, scope))
+
+    let named = 0
+    for (const program of new Set(rows.map((row) => row.programId))) {
+      const account = await rpc.foreignAccount(await idlAddress(program))
+      const names =
+        account !== null && account.owner === program ? instructionNamesFromIdl(account.data) : null
+      for (const row of rows) {
+        if (row.programId !== program) continue
+        const name = names?.get(row.ixDiscriminator) ?? null
+        if (name === row.instructionName) continue
+        await db
+          .update(schema.declarations)
+          .set({ instructionName: name })
+          .where(eq(schema.declarations.address, row.address))
+        named += 1
+      }
+    }
+    return named
+  }
+
   // ── The two paths ───────────────────────────────────────────────────────────────
 
   const census = async (): Promise<CensusReport> => {
@@ -356,12 +405,13 @@ export const createIndexer = ({
       )
     }
     const filled = await recoverProvenance()
+    const named = await nameInstructions()
     await setCursor('census', read.slot, null)
 
     const written = Object.fromEntries(
       Object.entries(rows).map(([table, list]) => [table, list.length]),
     ) as Record<keyof Rows, number>
-    return { slot: read.slot, written, unplaced: unplaced.length, filled }
+    return { slot: read.slot, written, unplaced: unplaced.length, filled, named }
   }
 
   const handleSignature = async (signature: string): Promise<void> => {
@@ -406,6 +456,8 @@ export const createIndexer = ({
     }
     // The trigger's slot and time: a new incident's, read once while it is fresh.
     await recoverProvenance(rows.incidents.map((row) => row.address))
+    // A new entry is named now rather than at the next census.
+    await nameInstructions(rows.declarations.map((row) => row.programId))
     await setCursor('live', read.slot, signature)
   }
 
@@ -525,6 +577,11 @@ export const connectionIndexerRpc = (connection: Connection, programId: PublicKe
     const value = account?.data[MINT_DECIMALS_OFFSET]
     if (value === undefined) throw new Error(`no mint at ${mint}`)
     return value
+  },
+
+  foreignAccount: async (address) => {
+    const account = await connection.getAccountInfo(new Key(address), COMMITMENT)
+    return account === null ? null : { owner: account.owner.toBase58(), data: account.data }
   },
 
   onProgramLogs: (callback) => {

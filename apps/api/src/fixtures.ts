@@ -277,3 +277,21 @@ export const resolveTx = (signature = 'SigResolve', blockTime = 1_710_000_060) =
     ],
     blockTime,
   )
+
+export const submitDeclarationTx = (
+  signature: string,
+  args: { declaredProgram: PublicKey; ixDiscriminator: number[] },
+) =>
+  transaction(signature, [
+    instruction(
+      'submit_declaration',
+      {
+        declared_program: args.declaredProgram,
+        ix_discriminator: args.ixDiscriminator,
+        not_before: new BN(1_700_000_000),
+        not_after: null,
+        moves_funds: false,
+      },
+      { protocol: addresses.protocol, authority: keys.authority, entry: addresses.declaration0 },
+    ),
+  ])

@@ -6,10 +6,12 @@
 
 import type { schema } from '@mandate/db'
 import {
+  type DeclarationEntryResponse,
   type IncidentSummary,
   type Policy,
   type PoolSummary,
   type ProtocolAccount,
+  entryStateAt,
   isInForce,
   payable,
   quorumNeeded,
@@ -20,6 +22,7 @@ type PoolRow = typeof schema.pools.$inferSelect
 type PolicyRow = typeof schema.policies.$inferSelect
 type ProtocolRow = typeof schema.protocols.$inferSelect
 type IncidentRow = typeof schema.incidents.$inferSelect
+type DeclarationRow = typeof schema.declarations.$inferSelect
 
 /** The policy columns `isInForce` reads, as bigint and numbers. */
 const coverOf = (row: PolicyRow) => ({
@@ -89,4 +92,37 @@ export const toIncidentSummary = (row: IncidentRow, quorumBps: number): Incident
   status: row.status,
   payout: row.payout,
   shortfall: row.shortfall,
+})
+
+/**
+ * One entry of a declaration, with its state at `now` by `entryStateAt` — the rule that
+ * a test holds second by second to `entryCovers`, so «effective» here means exactly what
+ * the attestors treat as declared.
+ */
+export const toDeclarationEntry = (row: DeclarationRow, now: number): DeclarationEntryResponse => ({
+  address: row.address,
+  seq: Number(row.seq),
+  program_id: row.programId,
+  ix_discriminator: row.ixDiscriminator,
+  instruction:
+    row.instructionName === null ? null : { name: row.instructionName, source: 'anchor-idl' },
+  not_before: row.notBefore,
+  not_after: row.notAfter,
+  moves_funds: row.movesFunds,
+  submitted_at: row.submittedAt,
+  effective_at: row.effectiveAt,
+  revoked_at: row.revokedAt,
+  state: entryStateAt(
+    {
+      programId: row.programId,
+      ixDiscriminator: [...Buffer.from(row.ixDiscriminator, 'hex')],
+      notBefore: row.notBefore,
+      notAfter: row.notAfter,
+      movesFunds: row.movesFunds,
+      submittedAt: row.submittedAt,
+      effectiveAt: row.effectiveAt,
+      revokedAt: row.revokedAt,
+    },
+    now,
+  ),
 })

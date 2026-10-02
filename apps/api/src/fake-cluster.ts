@@ -43,6 +43,7 @@ export const fakeCluster = async () => {
     [B, ['SigAttestB']],
   ])
   const calls: string[] = []
+  const foreign = new Map<string, { owner: string; data: Buffer }>()
   let logs: ((signature: string, failed: boolean) => void) | undefined
 
   const rpc: IndexerRpc = {
@@ -68,6 +69,10 @@ export const fakeCluster = async () => {
     blockTime: async (at) =>
       at === 90 ? 1_709_999_999 : at >= 100 ? CLUSTER_TIME + (at - 100) : null,
     mintDecimals: async () => 6,
+    foreignAccount: async (address) => {
+      calls.push(`foreignAccount:${address}`)
+      return foreign.get(address) ?? null
+    },
     onProgramLogs: (callback) => {
       calls.push('subscribe')
       logs = callback
@@ -78,6 +83,15 @@ export const fakeCluster = async () => {
   }
 
   return {
+    /** A transaction the live path can fetch by its signature. */
+    addTransaction: (transaction: ObservedTransaction) => {
+      transactions.set(transaction.signature, transaction)
+    },
+    /** Puts an account the program does not own on the cluster — a declared program's IDL. */
+    setForeign: (address: string, account: { owner: string; data: Buffer } | null) => {
+      if (account === null) foreign.delete(address)
+      else foreign.set(address, account)
+    },
     rpc,
     calls,
     setSlot: (next: number) => {

@@ -4,6 +4,7 @@
 import type { Db } from '@mandate/db'
 import { Hono } from 'hono'
 import { errorBody } from './errors'
+import { declarationRoutes } from './routes/declarations'
 import { healthRoutes } from './routes/health'
 import { poolRoutes } from './routes/pools'
 
@@ -23,6 +24,7 @@ export const createApp = ({
   new Hono()
     .route('/', healthRoutes({ db, tip }))
     .route('/', poolRoutes(db))
+    .route('/', declarationRoutes(db))
     .notFound((c) => c.json(errorBody('NOT_FOUND', 'No such endpoint', { path: c.req.path }), 404))
     .onError((error, c) => {
       logger?.error({ path: c.req.path, error: String(error) }, 'request failed')

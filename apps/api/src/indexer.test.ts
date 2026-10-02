@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { A, B, CLUSTER_TIME, INCIDENT, PROTOCOL, fakeCluster } from './fake-cluster'
 import { addresses, attestTx, encode, fields, keys, openTx, programId, resolveTx } from './fixtures'
+import { idlAddress } from './idl'
 import { createIndexer } from './indexer'
 import { type TestDb, openTestDb } from './test-db'
 
@@ -65,7 +66,7 @@ describe('census', () => {
     })
   })
 
-  it('costs nothing extra the second time: provenance is recovered once', async () => {
+  it('costs nothing extra the second time: provenance once, only the IDL is read again', async () => {
     const cluster = await fakeCluster()
     const indexer = createIndexer({ rpc: cluster.rpc, db, programId })
     await indexer.census()
@@ -74,7 +75,11 @@ describe('census', () => {
     const report = await indexer.census()
 
     expect(report.filled).toBe(0)
-    expect(cluster.calls).toEqual(['programAccounts'])
+    // The declared program's IDL is re-read on purpose: its upgrade authority can change it.
+    expect(cluster.calls).toEqual([
+      'programAccounts',
+      `foreignAccount:${await idlAddress(keys.declared.toBase58())}`,
+    ])
   })
 
   it('keeps recovered signatures when a later census rewrites the row', async () => {
