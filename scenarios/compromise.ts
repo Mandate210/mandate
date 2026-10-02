@@ -32,14 +32,16 @@
 
 import { AnchorProvider, BN, type Program, Wallet } from '@coral-xyz/anchor'
 import { createActor } from '@mandate/attestor/act'
-import { createChain, toObservedTransaction } from '@mandate/attestor/chain'
+import { createChain } from '@mandate/attestor/chain'
 import { type WatchedAddress, connectionWatchRpc, createWatcher } from '@mandate/attestor/watch'
 import {
   type DrainCover,
+  createJsonRpc,
   createProgram,
   findAttestor,
   findConfig,
   findIncident,
+  readTransaction,
 } from '@mandate/sdk'
 import { base58Decode } from '@mandate/shared'
 import {
@@ -642,11 +644,12 @@ export const runScenario = async ({
     const blamed = bs58(controlIncident.triggerSig)
     say(`      blamed:  ${blamed}`)
     say(`      fired:   ${controlSignature}`)
-    const fetched = await env.connection.getTransaction(blamed, {
-      maxSupportedTransactionVersion: 0,
-      commitment: 'confirmed',
-    })
-    const observed = fetched === null ? null : toObservedTransaction(blamed, fetched)
+    const read = await readTransaction(
+      createJsonRpc(env.connection.rpcEndpoint),
+      blamed,
+      'confirmed',
+    )
+    const observed = read.kind === 'ok' ? read.transaction : null
     if (observed !== null) {
       for (const [index, instruction] of observed.instructions.entries()) {
         say(

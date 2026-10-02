@@ -29,11 +29,7 @@
 // only ever say «unauthorized» cannot clear a false incident and the bond that backs it
 // would never be forfeited (FR-007, FR-010).
 
-import {
-  type DeclarationEntry,
-  type ObservedTransaction,
-  evaluateTransaction,
-} from '@mandate/shared'
+import { type DeclarationEntry, type TransactionRead, evaluateTransaction } from '@mandate/shared'
 import type { PrivilegedTransaction } from './watch'
 
 /** The two classifications `Attestation` stores. */
@@ -60,9 +56,9 @@ export interface IncidentRef {
  * `pnpm gate` is built on (`CLAUDE.md` → «Two test suites, on purpose»).
  */
 export interface ActChain {
-  /** The transaction as the cluster has it, in the shape the rule reads. `null` when the
-   * cluster will not serve it, or when it failed on chain and never had any effect. */
-  fetchTransaction(signature: string): Promise<ObservedTransaction | null>
+  /** The transaction as the cluster has it, in the shape the rule reads — or that it
+   * failed on chain, or that the node has not got it (yet). */
+  fetchTransaction(signature: string): Promise<TransactionRead>
   loadProtocol(protocol: string): Promise<ProtocolState | null>
   /** Every entry of the protocol's declaration, as stored. The rule needs all of them:
    * it decides which were effective at the transaction's own clock, not at ours. */
@@ -85,9 +81,21 @@ export interface ActChain {
   resolve(protocol: string, incident: string): Promise<void>
 }
 
+/**
+ * The node has not got the transaction, or not its block time: a privileged
+ * transaction the attestor has not judged yet. Thrown, not returned, so that the watcher
+ * keeps it and asks again — returning `ignored` would drop a possible compromise for good.
+ */
+export class TransactionUnavailableError extends Error {
+  constructor(readonly signature: string) {
+    super(`${signature}: not served by the node yet`)
+    this.name = 'TransactionUnavailableError'
+  }
+}
+
 export type IgnoreReason =
-  /** The RPC would not serve it, or it failed on chain and changed nothing. */
-  | 'unfetchable'
+  /** It failed on chain and changed nothing: an attempt, not an event. */
+  | 'failed-on-chain'
   /** Registered protocols only: the watcher outlives a deregistration. */
   | 'unknown-protocol'
   /** The privileged addresses are nowhere in it — the watcher's superset, trimmed. */
@@ -218,8 +226,11 @@ export const createActor = ({
     const state = await chain.loadProtocol(protocol)
     if (state === null) return { kind: 'ignored', reason: 'unknown-protocol' }
 
-    const transaction = await chain.fetchTransaction(signature)
-    if (transaction === null) return { kind: 'ignored', reason: 'unfetchable' }
+    const read = await chain.fetchTransaction(signature)
+    if (read.kind === 'failed') return { kind: 'ignored', reason: 'failed-on-chain' }
+    // Not handled, so not «ignored»: the watcher asks again until the node has it (T077).
+    if (read.kind === 'missing') throw new TransactionUnavailableError(signature)
+    const { transaction } = read
 
     const verdict = evaluateTransaction({
       transaction,

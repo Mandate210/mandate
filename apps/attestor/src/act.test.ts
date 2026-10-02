@@ -1,10 +1,11 @@
-import type { DeclarationEntry, ObservedTransaction } from '@mandate/shared'
+import type { DeclarationEntry, ObservedTransaction, TransactionRead } from '@mandate/shared'
 import { describe, expect, it } from 'vitest'
 import {
   type ActChain,
   type AttestVerdict,
   type IncidentRef,
   type ProtocolState,
+  TransactionUnavailableError,
   createActor,
 } from './act'
 import type { PrivilegedTransaction } from './watch'
@@ -48,7 +49,9 @@ const pauseEntry: DeclarationEntry = {
 const OPENED = 'IncidentOpenedHere'
 
 interface FakeOptions {
-  transaction?: ObservedTransaction | null
+  transaction?: ObservedTransaction
+  /** Overrides `transaction`: what the read found instead of a transaction. */
+  read?: TransactionRead
   protocol?: ProtocolState | null
   entries?: DeclarationEntry[]
   policySeq?: number | null
@@ -94,7 +97,7 @@ const fake = (options: FakeOptions = {}): Fake => {
       return resolved
     },
     fetchTransaction: async () =>
-      options.transaction === undefined ? observed(PAUSE) : options.transaction,
+      options.read ?? { kind: 'ok', transaction: options.transaction ?? observed(PAUSE) },
     loadProtocol: async () =>
       options.protocol === undefined ? { privileged: [ADMIN] } : options.protocol,
     loadDeclaration: async () => options.entries ?? [pauseEntry],
@@ -128,12 +131,21 @@ const fake = (options: FakeOptions = {}): Fake => {
 }
 
 describe('createActor — deciding', () => {
-  it('ignores a transaction the cluster will not serve', async () => {
-    const chain = fake({ transaction: null })
+  it('ignores a transaction that failed on chain: it changed nothing', async () => {
+    const chain = fake({ read: { kind: 'failed' } })
     expect(await createActor({ chain }).act(delivered())).toEqual({
       kind: 'ignored',
-      reason: 'unfetchable',
+      reason: 'failed-on-chain',
     })
+    expect(chain.opened).toEqual([])
+  })
+
+  it('throws for a transaction the node has not got, so the watcher asks again', async () => {
+    // Returning «ignored» here would drop a possible compromise for good (T077).
+    const chain = fake({ read: { kind: 'missing' } })
+    await expect(createActor({ chain }).act(delivered())).rejects.toBeInstanceOf(
+      TransactionUnavailableError,
+    )
     expect(chain.opened).toEqual([])
   })
 

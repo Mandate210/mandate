@@ -6,3 +6,4 @@
 export * from './api'
 export * from './declaration'
 export * from './observed'
+export * from './rpc-transaction'

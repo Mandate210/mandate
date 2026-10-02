@@ -20,11 +20,18 @@ const required = (name: string): string => {
 
 loadRepoEnv()
 
+/** Warnings and errors to stderr, so stdout stays the one JSON report. */
+const stderrLogger = {
+  info: () => {},
+  warn: (fields: object, message: string) => console.error(message, fields),
+  error: (fields: object, message: string) => console.error(message, fields),
+}
+
 const main = async (): Promise<number> => {
   const connection = new Connection(required('SOLANA_RPC_URL'), 'finalized')
   const { db, close } = createDb(required('DATABASE_URL'))
   const indexer = createIndexer({
-    rpc: connectionIndexerRpc(connection, PROGRAM_ID),
+    rpc: connectionIndexerRpc(connection, PROGRAM_ID, stderrLogger),
     db,
     programId: PROGRAM_ID,
   })

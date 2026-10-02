@@ -33,7 +33,7 @@ const main = async (): Promise<void> => {
   })
   const { db, close } = createDb(required('DATABASE_URL'))
   const indexer = createIndexer({
-    rpc: connectionIndexerRpc(connection, PROGRAM_ID),
+    rpc: connectionIndexerRpc(connection, PROGRAM_ID, logger),
     db,
     programId: PROGRAM_ID,
     logger,

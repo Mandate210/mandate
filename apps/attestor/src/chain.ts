@@ -7,6 +7,7 @@
 import { BN, type Program } from '@coral-xyz/anchor'
 import {
   type DrainCover,
+  createJsonRpc,
   findAttestation,
   findAttestor,
   findConfig,
@@ -15,7 +16,7 @@ import {
   findPolicy,
   findVault,
   openIncidentsFilter,
-  toObservedTransaction,
+  readTransaction,
 } from '@mandate/sdk'
 import type { DeclarationEntry } from '@mandate/shared'
 import { base58Decode } from '@mandate/shared'
@@ -23,9 +24,6 @@ import { getAssociatedTokenAddressSync } from '@solana/spl-token'
 import { type Connection, type Keypair, PublicKey, SystemProgram } from '@solana/web3.js'
 import type { ActChain, AttestVerdict, IncidentRef, ProtocolState } from './act'
 import type { ReservedPolicy, SweepChain, SweepIncident, SweepPolicy } from './sweep'
-
-// Kept importable from here: the scenarios reach it through this module.
-export { toObservedTransaction }
 
 /**
  * Send `resolve` for an incident that has reached its quorum (FR-012).
@@ -77,15 +75,12 @@ export const createChain = ({
   now?: () => number
 }): ActChain => {
   const programId = program.programId
+  // Raw JSON-RPC, not `connection.getTransaction`: web3.js 1.x cannot parse version 1,
+  // and a privileged transaction it cannot read is a compromise nobody sees (T077).
+  const jsonRpc = createJsonRpc(connection.rpcEndpoint)
 
   return {
-    fetchTransaction: async (signature) => {
-      const fetched = await connection.getTransaction(signature, {
-        maxSupportedTransactionVersion: 0,
-        commitment: 'confirmed',
-      })
-      return fetched === null ? null : toObservedTransaction(signature, fetched)
-    },
+    fetchTransaction: (signature) => readTransaction(jsonRpc, signature, 'confirmed'),
 
     loadProtocol: async (protocol): Promise<ProtocolState | null> => {
       const account = await program.account.protocol.fetchNullable(new PublicKey(protocol))

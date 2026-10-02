@@ -22,7 +22,7 @@
 // writes, and keeps the two paths from stepping on each other.
 
 import { type Db, schema, upsertNewer } from '@mandate/db'
-import { toObservedTransaction } from '@mandate/sdk'
+import { UnsupportedTransactionVersionError, createJsonRpc, readTransaction } from '@mandate/sdk'
 import type { ObservedTransaction } from '@mandate/shared'
 import type { Commitment, Connection, PublicKey } from '@solana/web3.js'
 import { PublicKey as Key } from '@solana/web3.js'
@@ -503,95 +503,108 @@ const COMMITMENT: Commitment = 'finalized'
 /** SPL mint layout: `mint_authority` (36) + `supply` (8), then `decimals`. */
 const MINT_DECIMALS_OFFSET = 44
 
-export const connectionIndexerRpc = (connection: Connection, programId: PublicKey): IndexerRpc => ({
-  programAccounts: async () => {
-    const { context, value } = await connection.getProgramAccounts(programId, {
-      commitment: COMMITMENT,
-      withContext: true,
-    })
-    return {
-      slot: context.slot,
-      accounts: value.map(({ pubkey, account }) => ({
-        address: pubkey.toBase58(),
-        data: account.data,
-      })),
-    }
-  },
-
-  accounts: async (addresses) => {
-    const unique = [...new Set(addresses)]
-    const accounts: { address: string; data: Buffer }[] = []
-    let slot = 0
-    // `getMultipleAccounts` takes at most a hundred keys.
-    for (let start = 0; start < unique.length; start += 100) {
-      const batch = unique.slice(start, start + 100)
-      const { context, value } = await connection.getMultipleAccountsInfoAndContext(
-        batch.map((address) => new Key(address)),
-        COMMITMENT,
-      )
-      slot = Math.max(slot, context.slot)
-      value.forEach((account, index) => {
-        const address = batch[index]
-        if (account !== null && address !== undefined && account.owner.equals(programId)) {
-          accounts.push({ address, data: account.data })
-        }
+export const connectionIndexerRpc = (
+  connection: Connection,
+  programId: PublicKey,
+  logger: IndexerLogger = silentLogger,
+): IndexerRpc => {
+  // Transactions are read over raw JSON-RPC (T077): web3.js 1.x cannot parse version 1.
+  const jsonRpc = createJsonRpc(connection.rpcEndpoint)
+  return {
+    programAccounts: async () => {
+      const { context, value } = await connection.getProgramAccounts(programId, {
+        commitment: COMMITMENT,
+        withContext: true,
       })
-    }
-    return { slot, accounts }
-  },
+      return {
+        slot: context.slot,
+        accounts: value.map(({ pubkey, account }) => ({
+          address: pubkey.toBase58(),
+          data: account.data,
+        })),
+      }
+    },
 
-  transaction: async (signature) => {
-    const fetched = await connection.getTransaction(signature, {
-      commitment: COMMITMENT,
-      maxSupportedTransactionVersion: 0,
-    })
-    return fetched === null ? null : toObservedTransaction(signature, fetched)
-  },
+    accounts: async (addresses) => {
+      const unique = [...new Set(addresses)]
+      const accounts: { address: string; data: Buffer }[] = []
+      let slot = 0
+      // `getMultipleAccounts` takes at most a hundred keys.
+      for (let start = 0; start < unique.length; start += 100) {
+        const batch = unique.slice(start, start + 100)
+        const { context, value } = await connection.getMultipleAccountsInfoAndContext(
+          batch.map((address) => new Key(address)),
+          COMMITMENT,
+        )
+        slot = Math.max(slot, context.slot)
+        value.forEach((account, index) => {
+          const address = batch[index]
+          if (account !== null && address !== undefined && account.owner.equals(programId)) {
+            accounts.push({ address, data: account.data })
+          }
+        })
+      }
+      return { slot, accounts }
+    },
 
-  signatures: async (address) => {
-    const found: string[] = []
-    let before: string | undefined
-    for (;;) {
-      const page = await connection.getSignaturesForAddress(
-        new Key(address),
-        { limit: 1000, ...(before === undefined ? {} : { before }) },
+    transaction: async (signature) => {
+      try {
+        const read = await readTransaction(jsonRpc, signature, 'finalized')
+        return read.kind === 'ok' ? read.transaction : null
+      } catch (error) {
+        if (!(error instanceof UnsupportedTransactionVersionError)) throw error
+        // The census repairs the state; only this transaction's provenance waits — loudly,
+        // because it waits for a release, not for the node.
+        logger.error({ signature, error: error.message }, 'transaction version not supported')
+        return null
+      }
+    },
+
+    signatures: async (address) => {
+      const found: string[] = []
+      let before: string | undefined
+      for (;;) {
+        const page = await connection.getSignaturesForAddress(
+          new Key(address),
+          { limit: 1000, ...(before === undefined ? {} : { before }) },
+          COMMITMENT,
+        )
+        for (const entry of page) if (entry.err === null) found.push(entry.signature)
+        if (page.length < 1000) return found
+        before = page.at(-1)?.signature
+      }
+    },
+
+    signatureSlot: async (signature) => {
+      const { value } = await connection.getSignatureStatuses([signature], {
+        searchTransactionHistory: true,
+      })
+      return value[0]?.slot ?? null
+    },
+
+    blockTime: (slot) => connection.getBlockTime(slot),
+
+    mintDecimals: async (mint) => {
+      const account = await connection.getAccountInfo(new Key(mint), COMMITMENT)
+      const value = account?.data[MINT_DECIMALS_OFFSET]
+      if (value === undefined) throw new Error(`no mint at ${mint}`)
+      return value
+    },
+
+    foreignAccount: async (address) => {
+      const account = await connection.getAccountInfo(new Key(address), COMMITMENT)
+      return account === null ? null : { owner: account.owner.toBase58(), data: account.data }
+    },
+
+    onProgramLogs: (callback) => {
+      const id = connection.onLogs(
+        programId,
+        (logs) => callback(logs.signature, logs.err !== null),
         COMMITMENT,
       )
-      for (const entry of page) if (entry.err === null) found.push(entry.signature)
-      if (page.length < 1000) return found
-      before = page.at(-1)?.signature
-    }
-  },
-
-  signatureSlot: async (signature) => {
-    const { value } = await connection.getSignatureStatuses([signature], {
-      searchTransactionHistory: true,
-    })
-    return value[0]?.slot ?? null
-  },
-
-  blockTime: (slot) => connection.getBlockTime(slot),
-
-  mintDecimals: async (mint) => {
-    const account = await connection.getAccountInfo(new Key(mint), COMMITMENT)
-    const value = account?.data[MINT_DECIMALS_OFFSET]
-    if (value === undefined) throw new Error(`no mint at ${mint}`)
-    return value
-  },
-
-  foreignAccount: async (address) => {
-    const account = await connection.getAccountInfo(new Key(address), COMMITMENT)
-    return account === null ? null : { owner: account.owner.toBase58(), data: account.data }
-  },
-
-  onProgramLogs: (callback) => {
-    const id = connection.onLogs(
-      programId,
-      (logs) => callback(logs.signature, logs.err !== null),
-      COMMITMENT,
-    )
-    return () => {
-      void connection.removeOnLogsListener(id)
-    }
-  },
-})
+      return () => {
+        void connection.removeOnLogsListener(id)
+      }
+    },
+  }
+}

@@ -129,6 +129,18 @@ export interface WatchPolicy {
   maxPages: number
   /** Signatures remembered for deduplication. Has to outlast one reconcile interval. */
   seenCapacity: number
+  /**
+   * First pause before a transaction the handler failed on is handed to it again;
+   * doubles with each failure (T077). One tick: a node that was a slot behind has it by
+   * then.
+   */
+  retryBaseSeconds: number
+  /**
+   * Longest pause between two attempts. The reconcile interval: a transaction stuck on
+   * something lasting — a version the reader does not know yet — is asked about as often
+   * as the history is, and never given up on.
+   */
+  retryMaxSeconds: number
 }
 
 export const DEFAULT_WATCH_POLICY: WatchPolicy = {
@@ -140,6 +152,8 @@ export const DEFAULT_WATCH_POLICY: WatchPolicy = {
   pageSize: 1000,
   maxPages: 5,
   seenCapacity: 4096,
+  retryBaseSeconds: 5,
+  retryMaxSeconds: 600,
 }
 
 export type SweepReason = 'startup' | 'stalled' | 'recovered' | 'reconcile'
@@ -212,6 +226,8 @@ export interface Watcher {
   /** The timer body. Public so a test can drive it without waiting on real time. */
   tick(): void
   readonly stalled: boolean
+  /** Transactions the handler has failed on and that wait for another attempt. */
+  readonly pending: number
 }
 
 export interface WatcherOptions {
@@ -219,7 +235,8 @@ export interface WatcherOptions {
   watched: readonly WatchedAddress[]
   /**
    * Called once per transaction, awaited during a sweep so incidents are opened in the
-   * order the chain produced them.
+   * order the chain produced them. **Throwing means «not handled»**: the transaction is
+   * kept and handed over again later, until a call returns (T077).
    */
   onTransaction: (transaction: PrivilegedTransaction) => void | Promise<void>
   policy?: Partial<WatchPolicy>
@@ -253,17 +270,59 @@ export const createWatcher = ({
   let sweeping = false
   let liveness: LivenessState = { lastSlotAt: now(), lastSweepAt: 0, stalled: false }
 
-  const emit = async (transaction: PrivilegedTransaction): Promise<void> => {
-    if (!seen.add(`${transaction.protocol}|${transaction.signature}`)) return
+  /**
+   * Transactions the handler failed on, by `protocol|signature`. Before T077 a failure
+   * was logged and the signature stayed in `seen`, so no later sweep handed it over
+   * again: one 429, or a transaction version the reader did not know, lost a privileged
+   * transaction for good. Kept in memory only — a restart re-reads its startup window,
+   * the same guarantee as for anything else a process forgets.
+   */
+  const retries = new Map<
+    string,
+    { transaction: PrivilegedTransaction; attempts: number; dueAt: number }
+  >()
+  let retrying = false
+
+  const handle = async (key: string, transaction: PrivilegedTransaction): Promise<void> => {
     try {
       await onTransaction(transaction)
+      retries.delete(key)
     } catch (error) {
       // One transaction the consumer choked on must not take the subscription down with
-      // it: the next privileged transaction is the one this attestor exists for.
+      // it — and must not be dropped either: it may be the one this attestor exists for.
+      const attempts = (retries.get(key)?.attempts ?? 0) + 1
+      const pause = Math.min(policy.retryBaseSeconds * 2 ** (attempts - 1), policy.retryMaxSeconds)
+      retries.set(key, { transaction, attempts, dueAt: now() + pause * 1000 })
       logger.error(
-        { signature: transaction.signature, protocol: transaction.protocol, error },
-        'handler failed for a privileged transaction',
+        {
+          signature: transaction.signature,
+          protocol: transaction.protocol,
+          attempts,
+          retryInSeconds: pause,
+          error,
+        },
+        'privileged transaction not handled — will retry',
       )
+    }
+  }
+
+  const emit = async (transaction: PrivilegedTransaction): Promise<void> => {
+    const key = `${transaction.protocol}|${transaction.signature}`
+    if (!seen.add(key)) return
+    await handle(key, transaction)
+  }
+
+  /** Hands over again whatever is due, oldest slot first — the chain's own order. */
+  const retryDue = async (): Promise<void> => {
+    if (retrying) return
+    retrying = true
+    try {
+      const due = [...retries]
+        .filter(([, entry]) => entry.dueAt <= now())
+        .sort(([, a], [, b]) => a.transaction.slot - b.transaction.slot)
+      for (const [key, entry] of due) await handle(key, entry.transaction)
+    } finally {
+      retrying = false
     }
   }
 
@@ -366,6 +425,7 @@ export const createWatcher = ({
     }
     liveness = { ...liveness, stalled }
     if (reason) void sweep(reason)
+    if (retries.size > 0) void retryDue()
   }
 
   return {
@@ -422,6 +482,10 @@ export const createWatcher = ({
 
     get stalled(): boolean {
       return liveness.stalled
+    },
+
+    get pending(): number {
+      return retries.size
     },
   }
 }

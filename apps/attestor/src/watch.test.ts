@@ -400,6 +400,160 @@ describe('createWatcher — the sweep', () => {
   })
 })
 
+describe('createWatcher — retrying what the handler failed on (T077)', () => {
+  /** A handler that fails on `signature` the first `failures` times it sees it. */
+  const flaky = (failures: Record<string, number>) => {
+    const calls: string[] = []
+    const handled: string[] = []
+    return {
+      calls,
+      handled,
+      onTransaction: (tx: PrivilegedTransaction) => {
+        calls.push(tx.signature)
+        const left = failures[tx.signature] ?? 0
+        if (left > 0) {
+          failures[tx.signature] = left - 1
+          throw new Error('node has not got it yet')
+        }
+        handled.push(tx.signature)
+      },
+    }
+  }
+
+  const capture = () => {
+    const errors: Record<string, unknown>[] = []
+    return {
+      errors,
+      logger: {
+        info: () => {},
+        warn: () => {},
+        error: (fields: Record<string, unknown>) => void errors.push(fields),
+      },
+    }
+  }
+
+  it('hands a failed transaction over again after a doubling pause, until it is handled', async () => {
+    let clock = 1_000_000
+    const chain = fakeRpc({})
+    const handler = flaky({ boom: 2 })
+    const watcher = createWatcher({
+      rpc: chain.rpc,
+      watched: watchedOne,
+      now: () => clock,
+      onTransaction: handler.onTransaction,
+    })
+    await watcher.start()
+
+    chain.pushLog(ADDRESS, 'boom', 1)
+    await flush()
+    expect(watcher.pending).toBe(1)
+
+    // Not before the first pause (5 s)...
+    clock += 4_000
+    chain.pushSlot(2)
+    watcher.tick()
+    await flush()
+    expect(handler.calls).toEqual(['boom'])
+
+    // ...then at it, failing again — and the next pause is twice as long.
+    clock += 1_000
+    chain.pushSlot(3)
+    watcher.tick()
+    await flush()
+    expect(handler.calls).toEqual(['boom', 'boom'])
+
+    clock += 9_000
+    chain.pushSlot(4)
+    watcher.tick()
+    await flush()
+    expect(handler.calls).toHaveLength(2)
+
+    clock += 1_000
+    chain.pushSlot(5)
+    watcher.tick()
+    await flush()
+    expect(handler.handled).toEqual(['boom'])
+    expect(watcher.pending).toBe(0)
+    await watcher.stop()
+  })
+
+  it('does not hand a pending transaction over a second time when a sweep finds it again', async () => {
+    let clock = 1_000_000
+    const chain = fakeRpc({ [ADDRESS]: [record('boom', 1)] })
+    const handler = flaky({ boom: 1 })
+    const watcher = createWatcher({
+      rpc: chain.rpc,
+      watched: watchedOne,
+      now: () => clock,
+      onTransaction: handler.onTransaction,
+    })
+    await watcher.start()
+    expect(handler.calls).toEqual(['boom'])
+
+    chain.pushLog(ADDRESS, 'boom', 1)
+    await watcher.sweep('reconcile')
+    expect(handler.calls).toEqual(['boom'])
+
+    clock += 5_000
+    chain.pushSlot(2)
+    watcher.tick()
+    await flush()
+    expect(handler.handled).toEqual(['boom'])
+    await watcher.stop()
+  })
+
+  it('caps the pause, and never gives up', async () => {
+    let clock = 1_000_000
+    const chain = fakeRpc({})
+    const handler = flaky({ stuck: 1_000 })
+    const log = capture()
+    const watcher = createWatcher({
+      rpc: chain.rpc,
+      watched: watchedOne,
+      now: () => clock,
+      onTransaction: handler.onTransaction,
+      logger: log.logger,
+      policy: { retryBaseSeconds: 1, retryMaxSeconds: 4 },
+    })
+    await watcher.start()
+    chain.pushLog(ADDRESS, 'stuck', 1)
+    await flush()
+
+    for (let step = 0; step < 6; step += 1) {
+      clock += 4_000
+      chain.pushSlot(step + 2)
+      watcher.tick()
+      await flush()
+    }
+    expect(log.errors.map((fields) => fields.retryInSeconds)).toEqual([1, 2, 4, 4, 4, 4, 4])
+    expect(watcher.pending).toBe(1)
+    await watcher.stop()
+  })
+
+  it('retries in the order the chain produced the transactions', async () => {
+    let clock = 1_000_000
+    const chain = fakeRpc({})
+    const handler = flaky({ later: 1, earlier: 1 })
+    const watcher = createWatcher({
+      rpc: chain.rpc,
+      watched: watchedOne,
+      now: () => clock,
+      onTransaction: handler.onTransaction,
+    })
+    await watcher.start()
+    chain.pushLog(ADDRESS, 'later', 20)
+    chain.pushLog(ADDRESS, 'earlier', 10)
+    await flush()
+
+    clock += 5_000
+    chain.pushSlot(30)
+    watcher.tick()
+    await flush()
+    expect(handler.handled).toEqual(['earlier', 'later'])
+    await watcher.stop()
+  })
+})
+
 describe('createWatcher — liveness', () => {
   it('falls back to polling when slot notifications stop, and recovers when they resume', async () => {
     let clock = 1_000_000
