@@ -10,7 +10,7 @@ import { Keypair } from '@solana/web3.js'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { createApp } from '../app'
 import { CLUSTER_TIME, PROTOCOL, fakeCluster } from '../fake-cluster'
-import { addresses, encode, fields, keys, programId } from '../fixtures'
+import { addresses, encode, fields, keys, programId, sig } from '../fixtures'
 import { createIndexer } from '../indexer'
 import { type TestDb, openTestDb } from '../test-db'
 import { MAX_LAG_SLOTS } from './health'
@@ -94,7 +94,7 @@ describe('GET /pools', () => {
   it('takes as_of from the later of the census and the last followed transaction', async () => {
     const { cluster, indexer } = await indexed()
     cluster.setSlot(105)
-    await indexer.handleSignature('SigOpen')
+    await indexer.handleSignature(sig('SigOpen'))
 
     const pools = poolsResponseSchema.parse((await getJson('/pools')).body)
     expect(pools.as_of).toEqual({ slot: 105, unix_ts: CLUSTER_TIME + 5 })

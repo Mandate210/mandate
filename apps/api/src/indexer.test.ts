@@ -3,7 +3,17 @@ import { type Db, schema } from '@mandate/db'
 import { eq } from 'drizzle-orm'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { A, B, CLUSTER_TIME, INCIDENT, PROTOCOL, fakeCluster } from './fake-cluster'
-import { addresses, attestTx, encode, fields, keys, openTx, programId, resolveTx } from './fixtures'
+import {
+  addresses,
+  attestTx,
+  encode,
+  fields,
+  keys,
+  openTx,
+  programId,
+  resolveTx,
+  sig,
+} from './fixtures'
 import { idlAddress } from './idl'
 import { createIndexer } from './indexer'
 import { type TestDb, openTestDb } from './test-db'
@@ -53,16 +63,16 @@ describe('census', () => {
     await createIndexer({ rpc: cluster.rpc, db, programId }).census()
 
     expect(await incidentRow()).toMatchObject({
-      openedSignature: 'SigOpen',
-      payoutSignature: 'SigResolve',
+      openedSignature: sig('SigOpen'),
+      payoutSignature: sig('SigResolve'),
       payoutAt: 1_710_000_060,
       triggerSlot: 90,
       triggerBlockTime: 1_709_999_999,
     })
     const attestations = await db.select().from(schema.attestations)
     expect(Object.fromEntries(attestations.map((row) => [row.address, row.signature]))).toEqual({
-      [A]: 'SigAttestA',
-      [B]: 'SigAttestB',
+      [A]: sig('SigAttestA'),
+      [B]: sig('SigAttestB'),
     })
   })
 
@@ -96,8 +106,8 @@ describe('census', () => {
     expect(await incidentRow()).toMatchObject({
       shortfall: '7',
       updatedSlot: 200,
-      openedSignature: 'SigOpen',
-      payoutSignature: 'SigResolve',
+      openedSignature: sig('SigOpen'),
+      payoutSignature: sig('SigResolve'),
     })
   })
 
@@ -144,14 +154,14 @@ describe('live', () => {
       updatedSlot: 1,
     })
 
-    await indexer.handleSignature('SigAttestA')
+    await indexer.handleSignature(sig('SigAttestA'))
 
     const [attestation] = await db.select().from(schema.attestations)
     expect(attestation).toMatchObject({
       address: A,
       incident: INCIDENT,
       attestor: keys.attestorA.toBase58(),
-      signature: 'SigAttestA',
+      signature: sig('SigAttestA'),
       updatedSlot: 100,
     })
     expect(await incidentRow()).toMatchObject({ protocol: PROTOCOL, triggerSlot: 90 })
@@ -161,7 +171,7 @@ describe('live', () => {
 
   it('learns protocol_id from register_protocol itself', async () => {
     const cluster = await fakeCluster()
-    await createIndexer({ rpc: cluster.rpc, db, programId }).handleSignature('SigRegister')
+    await createIndexer({ rpc: cluster.rpc, db, programId }).handleSignature(sig('SigRegister'))
     const [protocol] = await db.select().from(schema.protocols)
     expect(protocol?.protocolId).toBe(keys.protocolId.toBase58())
     // Straight from the instruction, not from the account's history.
@@ -177,17 +187,17 @@ describe('live', () => {
       .set({ payoutSignature: null, payoutAt: null })
       .where(eq(schema.incidents.address, INCIDENT))
 
-    await indexer.handleSignature('SigResolve')
+    await indexer.handleSignature(sig('SigResolve'))
     expect(await incidentRow()).toMatchObject({
-      payoutSignature: 'SigResolve',
+      payoutSignature: sig('SigResolve'),
       payoutAt: 1_710_000_060,
     })
   })
 
   it('skips a transaction the node does not return', async () => {
     const cluster = await fakeCluster()
-    await createIndexer({ rpc: cluster.rpc, db, programId }).handleSignature('SigUnknown')
-    expect(cluster.calls).toEqual(['transaction:SigUnknown'])
+    await createIndexer({ rpc: cluster.rpc, db, programId }).handleSignature(sig('SigUnknown'))
+    expect(cluster.calls).toEqual([`transaction:${sig('SigUnknown')}`])
   })
 })
 
@@ -206,10 +216,10 @@ describe('start', () => {
     const indexer = createIndexer({ rpc: cluster.rpc, db, programId, censusIntervalSeconds: 3600 })
     await indexer.start()
     cluster.calls.length = 0
-    cluster.emit('SigFailed', true)
-    cluster.emit('SigAttestA')
+    cluster.emit(sig('SigFailed'), true)
+    cluster.emit(sig('SigAttestA'))
     await indexer.stop()
-    expect(cluster.calls).not.toContain('transaction:SigFailed')
-    expect(cluster.calls).toContain('transaction:SigAttestA')
+    expect(cluster.calls).not.toContain(`transaction:${sig('SigFailed')}`)
+    expect(cluster.calls).toContain(`transaction:${sig('SigAttestA')}`)
   })
 })

@@ -10,6 +10,7 @@ import {
   openTx,
   registerTx,
   resolveTx,
+  sig,
   worldAccounts,
 } from './fixtures'
 import type { IndexerRpc } from './indexer'
@@ -30,17 +31,17 @@ export const fakeCluster = async () => {
   let accounts = await worldAccounts()
   let slot = 100
   const transactions = new Map<string, ObservedTransaction>([
-    ['SigRegister', registerTx()],
-    ['SigOpen', openTx()],
-    ['SigAttestA', attestTx(keys.attestorA, 'SigAttestA')],
-    ['SigAttestB', attestTx(keys.attestorB, 'SigAttestB')],
-    ['SigResolve', resolveTx()],
+    [sig('SigRegister'), registerTx()],
+    [sig('SigOpen'), openTx()],
+    [sig('SigAttestA'), attestTx(keys.attestorA, sig('SigAttestA'))],
+    [sig('SigAttestB'), attestTx(keys.attestorB, sig('SigAttestB'))],
+    [sig('SigResolve'), resolveTx()],
   ])
   const history = new Map<string, string[]>([
-    [PROTOCOL, ['SigResolve', 'SigOpen', 'SigRegister']],
-    [INCIDENT, ['SigResolve', 'SigAttestB', 'SigAttestA', 'SigOpen']],
-    [A, ['SigAttestA']],
-    [B, ['SigAttestB']],
+    [PROTOCOL, [sig('SigResolve'), sig('SigOpen'), sig('SigRegister')]],
+    [INCIDENT, [sig('SigResolve'), sig('SigAttestB'), sig('SigAttestA'), sig('SigOpen')]],
+    [A, [sig('SigAttestA')]],
+    [B, [sig('SigAttestB')]],
   ])
   const calls: string[] = []
   const foreign = new Map<string, { owner: string; data: Buffer }>()

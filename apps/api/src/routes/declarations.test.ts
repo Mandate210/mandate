@@ -6,7 +6,7 @@ import { Keypair, PublicKey } from '@solana/web3.js'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { createApp } from '../app'
 import { CLUSTER_TIME, PROTOCOL, fakeCluster } from '../fake-cluster'
-import { addresses, encode, fields, keys, programId, submitDeclarationTx } from '../fixtures'
+import { addresses, encode, fields, keys, programId, sig, submitDeclarationTx } from '../fixtures'
 import { idlAddress } from '../idl'
 import { createIndexer } from '../indexer'
 import { type TestDb, openTestDb } from '../test-db'
@@ -169,13 +169,13 @@ describe("instruction names from the declared program's IDL", () => {
     await declareJupiter(cluster)
     cluster.setForeign(await idlAddress(JUPITER.programId), JUPITER_IDL)
     cluster.addTransaction(
-      submitDeclarationTx('SigSubmit', {
+      submitDeclarationTx(sig('SigSubmit'), {
         declaredProgram: new PublicKey(JUPITER.programId),
         ixDiscriminator: ROUTE_V2,
       }),
     )
     cluster.setSlot(101)
-    await indexer.handleSignature('SigSubmit')
+    await indexer.handleSignature(sig('SigSubmit'))
 
     expect((await declarations()).entries[0]?.instruction?.name).toBe('route_v2')
   })

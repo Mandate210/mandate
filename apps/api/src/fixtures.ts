@@ -2,7 +2,8 @@
 // write them — for the indexer's tests only. Addresses are derived with the same seeds
 // the program uses, so derivation in `accounts.ts` is tested against the real rule.
 
-import { BN, BorshCoder, type Idl } from '@coral-xyz/anchor'
+import { createHash } from 'node:crypto'
+import { BN, BorshCoder, type Idl, utils } from '@coral-xyz/anchor'
 import {
   DRAIN_COVER_IDL,
   PROGRAM_ID,
@@ -39,6 +40,14 @@ export const keys = {
   attestorB: fixedKey(11),
   declared: fixedKey(12),
 }
+
+/**
+ * A transaction signature in the form the cluster hands one out — 64 bytes, base58 —
+ * named, so a test can still say which transaction it means. The contract's schemas
+ * refuse anything shorter, and the routes are tested against them.
+ */
+export const sig = (name: string): string =>
+  utils.bytes.bs58.encode(createHash('sha512').update(name).digest())
 
 export const TRIGGER_SIG = Uint8Array.from({ length: 64 }, (_, index) => index + 1)
 
@@ -217,7 +226,7 @@ export const transaction = (
   instructions,
 })
 
-export const registerTx = (signature = 'SigRegister') =>
+export const registerTx = (signature = sig('SigRegister')) =>
   transaction(signature, [
     instruction(
       'register_protocol',
@@ -231,7 +240,7 @@ export const registerTx = (signature = 'SigRegister') =>
     ),
   ])
 
-export const openTx = (signature = 'SigOpen') =>
+export const openTx = (signature = sig('SigOpen')) =>
   transaction(signature, [
     instruction(
       'open_incident',
@@ -260,7 +269,7 @@ export const attestTx = (authority: PublicKey, signature: string) =>
     ),
   ])
 
-export const resolveTx = (signature = 'SigResolve', blockTime = 1_710_000_060) =>
+export const resolveTx = (signature = sig('SigResolve'), blockTime = 1_710_000_060) =>
   transaction(
     signature,
     [

@@ -19,6 +19,7 @@ import {
   programId,
   registerTx,
   resolveTx,
+  sig,
   transaction,
   worldAccounts,
 } from './fixtures'
@@ -171,33 +172,37 @@ describe('factsFromTransaction', () => {
   })
 
   it('names the opening signature and the policy seq on open_incident', () => {
-    const facts = factsFromTransaction(programId, openTx('SigOpen'))
+    const facts = factsFromTransaction(programId, openTx(sig('SigOpen')))
     expect(facts.hints.get(addresses.policy0.toBase58())).toEqual({ protocol, seq: '0' })
     expect(facts.hints.get(addresses.incident.toBase58())).toEqual({ protocol })
     expect(facts.provenance).toEqual([
-      { table: 'incidents', address: addresses.incident.toBase58(), openedSignature: 'SigOpen' },
+      {
+        table: 'incidents',
+        address: addresses.incident.toBase58(),
+        openedSignature: sig('SigOpen'),
+      },
     ])
   })
 
   it('ties an attestation to its incident and attestor, with the signature', () => {
     const attestation = attestationOf(keys.attestorA).toBase58()
-    const facts = factsFromTransaction(programId, attestTx(keys.attestorA, 'SigAttest'))
+    const facts = factsFromTransaction(programId, attestTx(keys.attestorA, sig('SigAttest')))
     expect(facts.hints.get(attestation)).toEqual({
       incident: addresses.incident.toBase58(),
       attestor: keys.attestorA.toBase58(),
     })
     expect(facts.provenance).toEqual([
-      { table: 'attestations', address: attestation, signature: 'SigAttest' },
+      { table: 'attestations', address: attestation, signature: sig('SigAttest') },
     ])
   })
 
   it('takes resolve as the payout, timed by its block', () => {
-    const facts = factsFromTransaction(programId, resolveTx('SigResolve', 1_710_000_060))
+    const facts = factsFromTransaction(programId, resolveTx(sig('SigResolve'), 1_710_000_060))
     expect(facts.provenance).toEqual([
       {
         table: 'incidents',
         address: addresses.incident.toBase58(),
-        payoutSignature: 'SigResolve',
+        payoutSignature: sig('SigResolve'),
         payoutAt: 1_710_000_060,
       },
     ])
@@ -206,7 +211,7 @@ describe('factsFromTransaction', () => {
 
   it("ignores another program's instructions, even with our data in them", () => {
     const foreign = { ...instruction('resolve', {}, {}), programId: keys.declared.toBase58() }
-    const facts = factsFromTransaction(programId, transaction('SigForeign', [foreign]))
+    const facts = factsFromTransaction(programId, transaction(sig('SigForeign'), [foreign]))
     expect(facts).toEqual({ touched: [], hints: new Map(), provenance: [] })
   })
 })

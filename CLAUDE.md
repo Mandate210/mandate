@@ -47,15 +47,17 @@ anchor build                                                      # IDL
 cargo build-sbf --manifest-path programs/drain-cover/Cargo.toml --arch v3
 ```
 
-**The local validator is the other way round: it refuses `--arch v3`** («Detected
-sbpf_version required by the executable which are not enabled»). So a `target/deploy/`
-left over from a devnet build cannot be deployed to `solana-test-validator`, and
-rebuilding does not fix it — cargo finds the crate fresh, does nothing, and leaves the
-v3 `.so` in place. Delete **only the `.so`** and build again:
+**The local validator takes whichever arch its own release enables.** Run
+`solana-test-validator` from the same Agave **4.2.0** release, and it refuses v0 exactly
+like devnet («Detected sbpf_version required by the executable which are not enabled»),
+so one v3 `.so` serves both. A validator from an older `active_release` (3.1.10) is the
+other way round and refuses v3. Rebuilding for a different arch does not happen by
+itself — cargo finds the crate fresh, does nothing, and leaves the old `.so` in place.
+Delete **only the `.so`** and build again:
 
 ```bash
 rm target/deploy/drain_cover.so    # never the keypair beside it, and never cargo clean
-cargo build-sbf --manifest-path programs/drain-cover/Cargo.toml --arch v0
+cargo build-sbf --manifest-path programs/drain-cover/Cargo.toml --arch v3
 ```
 
 `cargo build-sbf` has to come from the Agave **4.2.0** release, not from whatever
@@ -86,7 +88,7 @@ is what the CI `typescript` job is. Integration tests build their world through
 Anchor runs its scripts inside WSL, which has no node. Three steps instead:
 
 ```bash
-wsl -e bash -lc "solana-test-validator --reset --slots-per-epoch 32"   # WSL, keep running
+wsl -e bash -lc "<4.2.0 bin>/solana-test-validator --reset --slots-per-epoch 32"   # WSL, keep running
 wsl -e bash -lc "cd <repo in WSL> && anchor deploy"         # WSL
 pnpm --filter @mandate/tests test:integration           # Windows
 ```

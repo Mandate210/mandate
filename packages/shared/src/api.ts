@@ -366,5 +366,6 @@ export type DeclarationsResponse = z.infer<typeof declarationsResponseSchema>
 export type IncidentsQuery = z.infer<typeof incidentsQuerySchema>
 export type IncidentsResponse = z.infer<typeof incidentsResponseSchema>
 export type AttestationResponse = z.infer<typeof attestationResponseSchema>
+export type Verification = z.infer<typeof verificationSchema>
 export type IncidentDetailResponse = z.infer<typeof incidentDetailResponseSchema>
 export type ErrorResponse = z.infer<typeof errorResponseSchema>

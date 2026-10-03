@@ -6,6 +6,7 @@ import { Hono } from 'hono'
 import { errorBody } from './errors'
 import { declarationRoutes } from './routes/declarations'
 import { healthRoutes } from './routes/health'
+import { incidentRoutes } from './routes/incidents'
 import { poolRoutes } from './routes/pools'
 
 export interface AppLogger {
@@ -25,6 +26,7 @@ export const createApp = ({
     .route('/', healthRoutes({ db, tip }))
     .route('/', poolRoutes(db))
     .route('/', declarationRoutes(db))
+    .route('/', incidentRoutes(db))
     .notFound((c) => c.json(errorBody('NOT_FOUND', 'No such endpoint', { path: c.req.path }), 404))
     .onError((error, c) => {
       logger?.error({ path: c.req.path, error: String(error) }, 'request failed')

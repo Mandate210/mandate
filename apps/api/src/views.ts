@@ -6,11 +6,13 @@
 
 import type { schema } from '@mandate/db'
 import {
+  type AttestationResponse,
   type DeclarationEntryResponse,
   type IncidentSummary,
   type Policy,
   type PoolSummary,
   type ProtocolAccount,
+  type Verification,
   entryStateAt,
   isInForce,
   payable,
@@ -23,6 +25,7 @@ type PolicyRow = typeof schema.policies.$inferSelect
 type ProtocolRow = typeof schema.protocols.$inferSelect
 type IncidentRow = typeof schema.incidents.$inferSelect
 type DeclarationRow = typeof schema.declarations.$inferSelect
+type AttestationRow = typeof schema.attestations.$inferSelect
 
 /** The policy columns `isInForce` reads, as bigint and numbers. */
 const coverOf = (row: PolicyRow) => ({
@@ -125,4 +128,40 @@ export const toDeclarationEntry = (row: DeclarationRow, now: number): Declaratio
     },
     now,
   ),
+})
+
+export const toAttestation = (row: AttestationRow): AttestationResponse => ({
+  attestor: row.attestor,
+  attestation: row.address,
+  verdict: row.verdict,
+  submitted_at: row.submittedAt,
+  signature: row.signature,
+})
+
+/**
+ * A protocol's declaration as it stood when the trigger ran — the input the rule judged
+ * the trigger against (`evaluateTransaction` takes every entry, not only the effective
+ * ones), so a reader sees both what covered and why the rest did not.
+ *
+ * The cache holds each entry's latest state only, and that is enough: the program
+ * revokes and narrows only forward (`revoke_declaration`) and closes no entry, so the
+ * entry as it stands now, read at `at`, is in the state it was in at `at`. What it
+ * cannot do is unsubmit — an entry submitted after the trigger did not exist then, and
+ * is left out rather than shown as `pending`.
+ *
+ * `at` is the trigger's block time; without it there is no moment to evaluate at, and
+ * the list stays empty rather than evaluated at some other one.
+ */
+export const toDeclarationAtTrigger = (
+  rows: readonly DeclarationRow[],
+  at: number | null,
+): Verification['declaration_at_trigger'] => ({
+  evaluated_at: at,
+  entries:
+    at === null
+      ? []
+      : rows
+          .filter((row) => row.submittedAt <= at)
+          .sort((a, b) => Number(BigInt(a.seq) - BigInt(b.seq)))
+          .map((row) => toDeclarationEntry(row, at)),
 })
