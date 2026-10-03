@@ -1,13 +1,5 @@
+import { PROGRAM_EXPLORER } from '@/lib/program'
 import { ArrowUpRight } from 'lucide-react'
-
-/**
- * The program this interface is *about*, on the cluster it actually runs on.
- *
- * Kept here rather than in `mockData.ts` on purpose: everything in that file is
- * invented, and this is the one address on the page that is real.
- */
-const PROGRAM_ID = 'DsRdHv4QRYQ7teVhwuLVttktF792gvDFQdiuraQ4eF4P'
-const EXPLORER = `https://explorer.solana.com/address/${PROGRAM_ID}?cluster=devnet`
 
 /**
  * Says, above everything else, that the numbers below are made up.
@@ -21,6 +13,10 @@ const EXPLORER = `https://explorer.solana.com/address/${PROGRAM_ID}?cluster=devn
  * Deliberately not in the `alert` palette: those colours mean «an incident is open»
  * everywhere else in this interface, and a banner wearing them would be one more
  * thing to misread rather than the thing that prevents a misreading.
+ *
+ * Shown on every build until T054/T055: the pages still read `mockData.ts` whatever
+ * source `lib/api.ts` was built with. Once the last of them reads the API, this
+ * becomes `isDemo` from `lib/api.ts`.
  */
 const DemoNotice = () => (
   <div className="border-b border-border-strong bg-surface-raised">
@@ -33,7 +29,7 @@ const DemoNotice = () => (
         compromised, and none of these addresses belongs to anybody.
       </span>
       <a
-        href={EXPLORER}
+        href={PROGRAM_EXPLORER}
         target="_blank"
         rel="noreferrer"
         className="mono text-[10px] uppercase tracking-[0.16em] inline-flex items-center gap-1 text-foreground underline underline-offset-4 decoration-border-strong hover:decoration-foreground transition-colors duration-150"

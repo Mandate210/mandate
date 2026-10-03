@@ -6,7 +6,9 @@
 
 import type { schema } from '@mandate/db'
 import {
+  type AsOf,
   type AttestationResponse,
+  type ConfigResponse,
   type DeclarationEntryResponse,
   type IncidentSummary,
   type Policy,
@@ -26,6 +28,23 @@ type ProtocolRow = typeof schema.protocols.$inferSelect
 type IncidentRow = typeof schema.incidents.$inferSelect
 type DeclarationRow = typeof schema.declarations.$inferSelect
 type AttestationRow = typeof schema.attestations.$inferSelect
+type ConfigRow = typeof schema.config.$inferSelect
+
+/** `Config` one to one, plus the mint's decimals the indexer read beside it (T053). */
+export const toConfig = (row: ConfigRow, asOf: AsOf): ConfigResponse => ({
+  as_of: asOf,
+  program_id: row.programId,
+  admin: row.admin,
+  asset_mint: row.assetMint,
+  asset_decimals: row.assetDecimals,
+  declaration_delay: row.declarationDelay,
+  attest_window: row.attestWindow,
+  withdraw_delay: row.withdrawDelay,
+  quorum_bps: row.quorumBps,
+  attestor_count: row.attestorCount,
+  open_bond: row.openBond,
+  paused: row.paused,
+})
 
 /** The policy columns `isInForce` reads, as bigint and numbers. */
 const coverOf = (row: PolicyRow) => ({

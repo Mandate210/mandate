@@ -13,12 +13,24 @@ import pino from 'pino'
 import { createApp } from './app'
 import { loadRepoEnv } from './env'
 import { connectionIndexerRpc, createIndexer } from './indexer'
+import { REQUESTS_PER_MINUTE } from './middleware'
 
 const logger = pino({ name: 'api' })
 
 const required = (name: string): string => {
   const value = process.env[name]
   if (value === undefined || value === '') throw new Error(`${name} is not set`)
+  return value
+}
+
+/** A positive integer, or the default when unset — never a silent zero that refuses everyone. */
+const perMinute = (): number => {
+  const raw = process.env.API_RATE_LIMIT_PER_MIN
+  if (raw === undefined || raw === '') return REQUESTS_PER_MINUTE
+  const value = Number(raw)
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error(`API_RATE_LIMIT_PER_MIN must be a positive integer, got "${raw}"`)
+  }
   return value
 }
 
@@ -40,7 +52,12 @@ const main = async (): Promise<void> => {
   })
   // Listening before the first census: until it lands the routes answer 503, and after
   // a restart they serve the previous watermark — honestly dated by `as_of`.
-  const app = createApp({ db, tip: () => connection.getSlot('confirmed'), logger })
+  const app = createApp({
+    db,
+    tip: () => connection.getSlot('confirmed'),
+    logger,
+    limit: { perMinute: perMinute() },
+  })
   const server = serve({ fetch: app.fetch, port: Number(process.env.PORT ?? 3000) }, (info) =>
     logger.info({ port: info.port }, 'api listening'),
   )

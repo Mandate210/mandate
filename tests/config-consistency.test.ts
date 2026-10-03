@@ -8,7 +8,7 @@ const read = (p: string): string => readFileSync(join(root, p), 'utf8')
 const extract = (source: string, pattern: RegExp): string | null =>
   pattern.exec(source)?.[1] ?? null
 
-// The program id is duplicated in three places that no compiler cross-checks.
+// The program id is duplicated in four places that no compiler cross-checks.
 // A mismatch deploys to, or talks to, an address nobody controls — and it fails
 // silently, because each file is individually valid.
 describe('program id stays in sync', () => {
@@ -25,6 +25,11 @@ describe('program id stays in sync', () => {
     /\[programs\.devnet\][\s\S]*?drain_cover\s*=\s*"([1-9A-HJ-NP-Za-km-z]+)"/,
   )
   const fromEnvExample = extract(read('.env.example'), /^PROGRAM_ID=(.+)$/m)
+  // The page's link to the live program: a redeploy once left it on the old one.
+  const fromWeb = extract(
+    read('apps/web/src/lib/program.ts'),
+    /PROGRAM_ID = '([1-9A-HJ-NP-Za-km-z]+)'/,
+  )
 
   it('is declared in the Rust program', () => {
     expect(fromRust).not.toBeNull()
@@ -40,5 +45,9 @@ describe('program id stays in sync', () => {
 
   it('matches between lib.rs and .env.example', () => {
     expect(fromEnvExample).toBe(fromRust)
+  })
+
+  it('matches between lib.rs and the explorer link in web', () => {
+    expect(fromWeb).toBe(fromRust)
   })
 })

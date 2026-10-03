@@ -200,6 +200,33 @@ describe('mounted in the app', () => {
     expect((await app.request('/nope', from('203.0.113.8'))).status).toBe(404)
   })
 
+  it('lets a page from any origin read an answer, a refusal included', async () => {
+    const { app } = frozenApp()
+    const origin = { Origin: 'https://reader.example' }
+    const ok = await app.request('/nope', { headers: origin })
+    expect(ok.headers.get('access-control-allow-origin')).toBe('*')
+    // No credentials: `*` with them is refused by every browser, and there are none to send.
+    expect(ok.headers.get('access-control-allow-credentials')).toBeNull()
+
+    for (let i = 1; i < REQUESTS_PER_MINUTE; i += 1) await app.request('/nope', { headers: origin })
+    const refused = await app.request('/nope', { headers: origin })
+    expect(refused.status).toBe(429)
+    expect(refused.headers.get('access-control-allow-origin')).toBe('*')
+    // Without this a script sees the 429 but not how long to wait.
+    expect(refused.headers.get('access-control-expose-headers')).toContain('Retry-After')
+  })
+
+  it('answers a preflight for reading, and offers nothing that writes', async () => {
+    const { app } = frozenApp()
+    const preflight = await app.request('/pools', {
+      method: 'OPTIONS',
+      headers: { Origin: 'https://reader.example', 'Access-Control-Request-Method': 'GET' },
+    })
+    expect(preflight.status).toBe(204)
+    const methods = preflight.headers.get('access-control-allow-methods') ?? ''
+    expect(methods.split(',').sort()).toEqual(['GET', 'HEAD', 'OPTIONS'])
+  })
+
   it('gives every app its own buckets', async () => {
     const first = frozenApp().app
     for (let i = 0; i < REQUESTS_PER_MINUTE; i += 1) await first.request('/nope')
