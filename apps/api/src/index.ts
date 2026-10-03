@@ -3,7 +3,7 @@
 // No authentication anywhere by design: every endpoint serves public data
 // (FR-030) and every state change happens through a signed transaction (FR-034).
 //
-// T048 started the indexer; T049 the first routes, and T050…T052 add the rest.
+// T048 started the indexer, T049…T051 the routes, T052 the rate limit in front of them.
 
 import { serve } from '@hono/node-server'
 import { createDb } from '@mandate/db'

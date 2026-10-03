@@ -1,5 +1,5 @@
 // The error shape every route answers with (docs/PLAN.md → «API-контракти»).
-// T052 adds the rate limit on top; the format itself is fixed here, with the first routes.
+// The rate limit (T052) answers in it too, from `middleware.ts`.
 
 import type { ErrorResponse } from '@mandate/shared'
 import type { Context } from 'hono'

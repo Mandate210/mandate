@@ -4,6 +4,7 @@
 import type { Db } from '@mandate/db'
 import { Hono } from 'hono'
 import { errorBody } from './errors'
+import { type RateLimitOptions, rateLimit } from './middleware'
 import { declarationRoutes } from './routes/declarations'
 import { healthRoutes } from './routes/health'
 import { incidentRoutes } from './routes/incidents'
@@ -17,12 +18,16 @@ export const createApp = ({
   db,
   tip,
   logger,
+  limit,
 }: {
   db: Db
   tip: () => Promise<number>
   logger?: AppLogger
+  limit?: RateLimitOptions
 }) =>
   new Hono()
+    // First, so a refused request costs no query and no RPC call.
+    .use('*', rateLimit(limit))
     .route('/', healthRoutes({ db, tip }))
     .route('/', poolRoutes(db))
     .route('/', declarationRoutes(db))
