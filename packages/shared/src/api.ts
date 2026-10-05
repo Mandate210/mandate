@@ -285,7 +285,10 @@ export const incidentDetailResponseSchema = z.object({
   }),
   opened: z.object({ signature: signatureSchema.nullable(), at: unixTsSchema }),
   attestations: z.array(attestationResponseSchema),
-  /** Present once paid: the same transaction that recorded the quorum (FR-012). */
+  /**
+   * Present once paid: the `resolve` transaction (FR-012) — permissionless, sent by the
+   * attestor whose vote completed the quorum, so its own signature, not an attestation's.
+   */
   payout: z
     .object({
       signature: signatureSchema,

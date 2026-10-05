@@ -69,6 +69,9 @@ export const incidentRefetchInterval = (data: IncidentDetailResponse | undefined
 /* Queries                                                           */
 /* ---------------------------------------------------------------- */
 
+/** What a history can be narrowed to — the API's filters, without the paging. */
+export type IncidentFilter = Pick<Partial<IncidentsQuery>, 'protocol' | 'status'>
+
 interface Schema<T> {
   safeParse(data: unknown): { success: true; data: T } | { success: false; error: unknown }
 }
@@ -136,16 +139,17 @@ export const createQueries = (source: Source) => {
         refetchInterval: REFRESH_MS.state,
       }),
     /**
-     * A protocol's whole incident history, a page at a time (FR-029) — `/pools/:protocol`
-     * carries only the latest twenty and no cursor to go on from.
+     * Incidents a page at a time, the whole history behind them (FR-029): every
+     * protocol's, or one protocol's, or those in one status. `/pools/:protocol` carries
+     * only the latest twenty and no cursor to go on from.
      */
-    protocolIncidents: (protocol: string) =>
+    incidentHistory: (filter: IncidentFilter = {}) =>
       infiniteQueryOptions({
-        queryKey: ['incidents', 'by-protocol', protocol],
+        queryKey: ['incidents', 'history', filter],
         queryFn: ({ pageParam }) =>
           get<IncidentsResponse>(
             incidentsResponseSchema,
-            incidentsPath(pageParam === null ? { protocol } : { protocol, cursor: pageParam }),
+            incidentsPath(pageParam === null ? filter : { ...filter, cursor: pageParam }),
           )(),
         initialPageParam: null as string | null,
         getNextPageParam: (page) => page.next_cursor,

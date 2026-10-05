@@ -1,113 +1,104 @@
 import DemoNotice from '@/components/DemoNotice'
-import { INCIDENT } from '@/lib/mockData'
-import { useScenario } from '@/lib/scenario'
+import { isDemo, queries } from '@/lib/api'
+import { PROGRAM_EXPLORER } from '@/lib/program'
 import { cn } from '@/lib/utils'
-import { Play, RotateCcw } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { Link, NavLink } from 'react-router-dom'
 
 const NAV = [
   { to: '/', label: 'Pools', end: true },
-  { to: `/incident/${INCIDENT.id}`, label: 'Incident', end: true },
-  { to: `/incident/${INCIDENT.id}/verify`, label: 'Verification', end: true },
+  { to: '/incidents', label: 'Incidents', end: false },
 ]
 
-const AppShell = ({ children }: { children: ReactNode }) => {
-  const { status, run, reset } = useScenario()
-  const navigate = useNavigate()
-
-  const handleRun = () => {
-    navigate(`/incident/${INCIDENT.id}`)
-    run()
-  }
-
+/**
+ * How many incidents are open right now, from `/incidents?status=open` — the header's
+ * one live signal, linking to them. A page holds twenty, so beyond that it says «20+».
+ */
+const OpenIncidents = () => {
+  const open = useQuery(queries.incidents({ status: 'open' }))
+  if (open.data === undefined) return null
+  const count = open.data.incidents.length
+  const label =
+    count === 0 ? 'no open incidents' : `${count}${open.data.next_cursor === null ? '' : '+'} open`
   return (
-    <div className="min-h-screen flex flex-col">
-      <DemoNotice />
-      <header className="sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur-sm">
-        <div className="mx-auto w-full max-w-[1400px] px-6 h-14 flex items-center gap-8">
-          <NavLink to="/" className="flex items-baseline gap-2 shrink-0">
-            <span className="mono text-[13px] font-semibold tracking-[0.14em] uppercase">
-              Mandate
-            </span>
-            <span className="hidden md:inline label">admin-abuse cover</span>
-          </NavLink>
+    <Link
+      to="/incidents?status=open"
+      className={cn(
+        'hidden sm:flex items-center gap-2 mono text-[10px] uppercase tracking-[0.16em] transition-colors duration-150',
+        count === 0 ? 'text-dim-foreground hover:text-muted-foreground' : 'text-alert',
+      )}
+    >
+      <span
+        className={cn(
+          'h-1.5 w-1.5 rounded-full',
+          count === 0 ? 'bg-border-strong' : 'bg-alert animate-pulse-alert',
+        )}
+      />
+      {label}
+    </Link>
+  )
+}
 
-          <nav className="flex items-center gap-1">
-            {NAV.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.end}
-                className={({ isActive }) =>
-                  cn(
-                    'mono text-[11px] uppercase tracking-[0.14em] px-3 py-1.5 rounded-sm transition-colors duration-150',
-                    isActive
-                      ? 'text-foreground bg-surface-raised'
-                      : 'text-muted-foreground hover:text-foreground',
-                  )
-                }
-              >
-                {item.label}
-              </NavLink>
-            ))}
-          </nav>
+const AppShell = ({ children }: { children: ReactNode }) => (
+  <div className="min-h-screen flex flex-col">
+    {isDemo && <DemoNotice />}
+    <header className="sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur-sm">
+      <div className="mx-auto w-full max-w-[1400px] px-4 sm:px-6 h-14 flex items-center gap-4 sm:gap-8">
+        <NavLink to="/" className="flex items-baseline gap-2 shrink-0">
+          <span className="mono text-[13px] font-semibold tracking-[0.14em] uppercase">
+            Mandate
+          </span>
+          <span className="hidden md:inline label">admin-abuse cover</span>
+        </NavLink>
 
-          <div className="ml-auto flex items-center gap-2">
-            <span
-              className={cn(
-                'hidden lg:flex items-center gap-2 mono text-[10px] uppercase tracking-[0.16em] mr-2',
-                status === 'idle' ? 'text-dim-foreground' : 'text-alert',
-              )}
+        <nav className="flex items-center gap-1">
+          {NAV.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.end}
+              className={({ isActive }) =>
+                cn(
+                  'mono text-[11px] uppercase tracking-[0.14em] px-2.5 sm:px-3 py-1.5 rounded-sm transition-colors duration-150',
+                  isActive
+                    ? 'text-foreground bg-surface-raised'
+                    : 'text-muted-foreground hover:text-foreground',
+                )
+              }
             >
-              <span
-                className={cn(
-                  'h-1.5 w-1.5 rounded-full',
-                  status === 'idle'
-                    ? 'bg-border-strong'
-                    : status === 'running'
-                      ? 'bg-alert animate-pulse-alert'
-                      : 'bg-alert',
-                )}
-              />
-              {status === 'idle'
-                ? 'no incidents'
-                : status === 'running'
-                  ? 'incident open'
-                  : 'settled'}
-            </span>
+              {item.label}
+            </NavLink>
+          ))}
+        </nav>
 
-            <button
-              type="button"
-              onClick={handleRun}
-              className="mono text-[11px] uppercase tracking-[0.14em] inline-flex items-center gap-2 px-3 h-8 rounded-sm bg-alert text-background font-medium transition-opacity duration-150 hover:opacity-85"
-            >
-              <Play className="h-3 w-3" strokeWidth={2.5} />
-              Run scenario
-            </button>
-            <button
-              type="button"
-              onClick={reset}
-              className="mono text-[11px] uppercase tracking-[0.14em] inline-flex items-center gap-2 px-3 h-8 rounded-sm border border-border-strong text-muted-foreground transition-colors duration-150 hover:text-foreground hover:border-foreground/40"
-            >
-              <RotateCcw className="h-3 w-3" strokeWidth={2.5} />
-              Reset
-            </button>
-          </div>
+        <div className="ml-auto">
+          <OpenIncidents />
         </div>
-      </header>
+      </div>
+    </header>
 
-      <main className="flex-1 mx-auto w-full max-w-[1400px] px-6 py-8">{children}</main>
+    <main className="flex-1 mx-auto w-full max-w-[1400px] px-4 sm:px-6 py-8">{children}</main>
 
-      <footer className="border-t border-border">
-        <div className="mx-auto w-full max-w-[1400px] px-6 h-11 flex items-center">
+    <footer className="border-t border-border">
+      <div className="mx-auto w-full max-w-[1400px] px-4 sm:px-6 h-11 flex items-center">
+        {isDemo ? (
           <span className="mono text-[10px] uppercase tracking-[0.2em] text-dim-foreground">
             Demo — mock data
           </span>
-        </div>
-      </footer>
-    </div>
-  )
-}
+        ) : (
+          <a
+            href={PROGRAM_EXPLORER}
+            target="_blank"
+            rel="noreferrer"
+            className="mono text-[10px] uppercase tracking-[0.2em] text-dim-foreground hover:text-muted-foreground transition-colors duration-150"
+          >
+            Devnet · read-only view of the program
+          </a>
+        )}
+      </div>
+    </footer>
+  </div>
+)
 
 export default AppShell

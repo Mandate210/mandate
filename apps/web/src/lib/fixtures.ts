@@ -119,6 +119,8 @@ const K = {
     '28nw2wJCqHW3KVGJFshHW8uApPESU1ha57ck9jDkvWXCUVVjpR2E1wryKwea4bs5k7jbhXEQmBss1J282ySHa3NH',
   'sig:attest7':
     '2oU4rXHNS5AxraaicSNxDuYhadVuAyqmSv9ovj3sUt5LEnLVXjr2X6ctiZe7wLbFHgGhZVKKo15i9tnVRj3bi9Ea',
+  'sig:resolve':
+    '3KHnooQ2uxt2oh6gZQg2Lg2WvFXPRhpgAZVAWFBaCc6vmWpPjVrDTKqCrYyKcR6t9akDxNobbaDiGQA1azpDTdxP',
 } as const
 
 type Label = keyof typeof K
@@ -131,13 +133,15 @@ const utc = (text: string): number => Date.parse(`${text.replace(' ', 'T')}Z`) /
 
 const DAY = 86_400
 
-/** Before the incident: the pools as they stood when the scenario starts. */
-const BEFORE: AsOf = { slot: 412_880_000, unix_ts: utc('2026-08-11 09:00:00') }
-/** After it: the incident as it reads once settled. */
-const AFTER: AsOf = { slot: 412_882_900, unix_ts: utc('2026-08-11 09:20:00') }
+/**
+ * The one moment every response describes: a few minutes after the incident below was
+ * paid. A pool read at one moment and an incident at another would contradict each
+ * other — the pool still holding the capital the incident says it paid out.
+ */
+const AS_OF: AsOf = { slot: 412_882_900, unix_ts: utc('2026-08-11 09:20:00') }
 
 export const CONFIG: ConfigResponse = {
-  as_of: BEFORE,
+  as_of: AS_OF,
   program_id: key('program'),
   admin: key('admin'),
   asset_mint: key('mint'),
@@ -342,41 +346,14 @@ const summaryFor = (slug: Slug, terms: ProtocolTerms, policies: Policy[]): PoolS
 
 const SLUGS: Slug[] = ['meridian', 'solstice', 'kestrel']
 
-const detailFor = (slug: Slug): ProtocolDetailResponse => {
-  const terms = TERMS[slug]
-  const policies = terms.policy === null ? [] : [policyFor(slug, terms.policy, BEFORE)]
-  return {
-    as_of: BEFORE,
-    protocol: {
-      address: key(`${slug}:protocol`),
-      protocol_id: key(`${slug}:protocol_id`),
-      authority: key(`${slug}:authority`),
-      treasury: key(`${slug}:treasury`),
-      privileged: [1, 2, 3, 4, 5].map((i) => key(`${slug}:privileged${i}` as Label)),
-      new_policies_paused: false,
-      incident_count: 0,
-    },
-    pool: summaryFor(slug, terms, policies),
-    policies,
-    recent_incidents: [],
-  }
-}
-
-export const PROTOCOL_DETAILS: ProtocolDetailResponse[] = SLUGS.map(detailFor)
-
-export const POOLS: PoolsResponse = {
-  as_of: BEFORE,
-  pools: PROTOCOL_DETAILS.map((detail) => detail.pool),
-}
-
 const declarationsAt = (slug: Slug, asOf: AsOf): DeclarationEntryResponse[] =>
   TERMS[slug].declarations.map((terms, seq) => declarationFor(slug, seq, terms, asOf))
 
-export const DECLARATIONS: DeclarationsResponse[] = SLUGS.map((slug) => ({
-  as_of: BEFORE,
-  protocol: key(`${slug}:protocol`),
-  entries: declarationsAt(slug, BEFORE),
-}))
+/** Fixtures are data we wrote; a missing piece is a bug in this file, said loudly. */
+const must = <T>(value: T | null | undefined, what: string): T => {
+  if (value === undefined || value === null) throw new Error(`fixtures: ${what} is missing`)
+  return value
+}
 
 // ── The incident ──────────────────────────────────────────────────────────────
 
@@ -393,19 +370,16 @@ const VOTES: [number, number, 'unauthorized' | 'authorized'][] = [
   [22, 4, 'unauthorized'],
 ]
 
-/** Fixtures are data we wrote; a missing piece is a bug in this file, said loudly. */
-const must = <T>(value: T | undefined, what: string): T => {
-  if (value === undefined) throw new Error(`fixtures: ${what} is missing`)
-  return value
-}
+/** Meridian's policy as it was issued, before the incident paid against it. */
+const ISSUED = policyFor('meridian', must(TERMS.meridian.policy, 'meridian policy'), AS_OF)
 
-const meridian = detailFor('meridian')
-const meridianPolicy = must(meridian.policies[0], 'the policy the incident is against')
+/** `settle_payout`: the whole payable amount — the pool holds far more than it. */
+const PAID = BigInt(ISSUED.payable)
 
 const INCIDENT_SUMMARY: IncidentSummary = {
   address: key('incident'),
-  protocol: meridian.protocol.address,
-  policy: meridianPolicy.address,
+  protocol: key('meridian:protocol'),
+  policy: ISSUED.address,
   trigger_signature: key('sig:trigger'),
   opener: key('opener'),
   bond: CONFIG.open_bond,
@@ -416,7 +390,7 @@ const INCIDENT_SUMMARY: IncidentSummary = {
   votes_unauthorized: VOTES.filter(([, , verdict]) => verdict === 'unauthorized').length,
   votes_authorized: VOTES.filter(([, , verdict]) => verdict === 'authorized').length,
   status: 'paid_out',
-  payout: meridianPolicy.payable,
+  payout: PAID.toString(),
   shortfall: '0',
 }
 
@@ -425,11 +399,18 @@ export const ATTESTOR_KEYS: string[] = [1, 2, 3, 4, 5, 6, 7].map((i) =>
   key(`attestor${i}` as Label),
 )
 
-/** The vote that carried the quorum — and, in the same transaction, the payout. */
+/** The vote that carried the quorum. */
 const QUORUM_VOTE = must(VOTES.at(-1), 'the deciding vote')
 
+/**
+ * `resolve` is its own transaction: permissionless, sent by the attestor whose vote
+ * completed the quorum right after it lands (`apps/attestor/src/act.ts`). On devnet the
+ * gap is two to three seconds.
+ */
+const RESOLVED_AT = TRIGGER_AT + QUORUM_VOTE[0] + 2
+
 export const INCIDENT_DETAIL: IncidentDetailResponse = {
-  as_of: AFTER,
+  as_of: AS_OF,
   incident: INCIDENT_SUMMARY,
   trigger: { signature: key('sig:trigger'), slot: 412_882_035, block_time: TRIGGER_AT },
   opened: { signature: key('sig:opened'), at: OPENED_AT },
@@ -440,20 +421,19 @@ export const INCIDENT_DETAIL: IncidentDetailResponse = {
     submitted_at: TRIGGER_AT + t,
     signature: key(`sig:attest${n}` as Label),
   })),
-  // FR-012: released by the transaction that recorded the quorum.
   payout: {
-    signature: key(`sig:attest${QUORUM_VOTE[1]}` as Label),
-    amount: meridianPolicy.payable,
-    beneficiary: meridianPolicy.beneficiary,
-    at: TRIGGER_AT + QUORUM_VOTE[0],
+    signature: key('sig:resolve'),
+    amount: PAID.toString(),
+    beneficiary: ISSUED.beneficiary,
+    at: RESOLVED_AT,
   },
   verification: {
     program_id: CONFIG.program_id,
     accounts: {
       config: key('config'),
-      protocol: meridian.protocol.address,
-      pool: meridian.pool.pool,
-      policy: meridianPolicy.address,
+      protocol: key('meridian:protocol'),
+      pool: key('meridian:pool'),
+      policy: ISSUED.address,
       incident: key('incident'),
       vault: key('meridian:vault'),
     },
@@ -463,3 +443,72 @@ export const INCIDENT_DETAIL: IncidentDetailResponse = {
     },
   },
 }
+
+// ── Pools, after the incident ─────────────────────────────────────────────────
+
+/**
+ * What `resolve` leaves of a pool and a policy it paid from (`instructions/resolve.rs`):
+ * capital and reservation fall by the payout, and a policy with nothing left payable is
+ * exhausted and releases the retention it still reserved.
+ */
+const settle = (pool: PoolSummary, policy: Policy, paid: bigint) => {
+  const remaining = BigInt(policy.remaining_limit) - paid
+  const left = payable(remaining, BigInt(policy.retention))
+  const exhausted = left === 0n
+  const total = BigInt(pool.total_assets) - paid
+  const locked = BigInt(pool.locked_limit) - paid - (exhausted ? remaining : 0n)
+  return {
+    pool: {
+      ...pool,
+      total_assets: total.toString(),
+      locked_limit: locked.toString(),
+      utilization_bps: utilizationBps(locked, total),
+      policies_in_force: pool.policies_in_force - (exhausted && policy.in_force ? 1 : 0),
+    },
+    policy: {
+      ...policy,
+      remaining_limit: remaining.toString(),
+      payable: left.toString(),
+      status: exhausted ? ('exhausted' as const) : policy.status,
+      in_force: policy.in_force && !exhausted,
+    },
+  }
+}
+
+const detailFor = (slug: Slug): ProtocolDetailResponse => {
+  const terms = TERMS[slug]
+  const issued = terms.policy === null ? [] : [policyFor(slug, terms.policy, AS_OF)]
+  const before = summaryFor(slug, terms, issued)
+  const hit = slug === 'meridian'
+  const after = hit ? settle(before, must(issued[0], 'meridian policy'), PAID) : null
+  const policies = after === null ? issued : [after.policy]
+  return {
+    as_of: AS_OF,
+    protocol: {
+      address: key(`${slug}:protocol`),
+      protocol_id: key(`${slug}:protocol_id`),
+      authority: key(`${slug}:authority`),
+      treasury: key(`${slug}:treasury`),
+      privileged: [1, 2, 3, 4, 5].map((i) => key(`${slug}:privileged${i}` as Label)),
+      new_policies_paused: false,
+      incident_count: hit ? 1 : 0,
+    },
+    pool: after?.pool ?? before,
+    // As the API lists them: only policies still holding a reservation.
+    policies: policies.filter((p) => p.status === 'pending' || p.status === 'active'),
+    recent_incidents: hit ? [INCIDENT_SUMMARY] : [],
+  }
+}
+
+export const PROTOCOL_DETAILS: ProtocolDetailResponse[] = SLUGS.map(detailFor)
+
+export const POOLS: PoolsResponse = {
+  as_of: AS_OF,
+  pools: PROTOCOL_DETAILS.map((detail) => detail.pool),
+}
+
+export const DECLARATIONS: DeclarationsResponse[] = SLUGS.map((slug) => ({
+  as_of: AS_OF,
+  protocol: key(`${slug}:protocol`),
+  entries: declarationsAt(slug, AS_OF),
+}))

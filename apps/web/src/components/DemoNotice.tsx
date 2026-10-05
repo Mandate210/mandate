@@ -14,9 +14,9 @@ import { ArrowUpRight } from 'lucide-react'
  * everywhere else in this interface, and a banner wearing them would be one more
  * thing to misread rather than the thing that prevents a misreading.
  *
- * Shown on every build until T055: the incident pages still read `mockData.ts` whatever
- * source `lib/api.ts` was built with. Once the last of them reads the API, this
- * becomes `isDemo` from `lib/api.ts`.
+ * Shown exactly when the build has no API to read (`isDemo` in `lib/api.ts`): since
+ * T055 every page reads through `queries`, so the fixtures are on screen then and only
+ * then.
  */
 const DemoNotice = () => (
   <div className="border-b border-border-strong bg-surface-raised">

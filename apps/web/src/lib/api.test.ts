@@ -197,13 +197,13 @@ describe('refresh', () => {
   })
 
   it('fits a tab in the API’s allowance several times over', () => {
-    // The busiest page: an open incident plus the pools behind the navigation.
+    // The busiest page: an open incident, plus the open-incident count in the header.
     const perMinute = 60_000 / REFRESH_MS.openIncident + 60_000 / REFRESH_MS.state
     expect(perMinute).toBeLessThanOrEqual(60 / 4)
   })
 })
 
-describe('a protocol’s incident history', () => {
+describe('an incident history', () => {
   const { incident, as_of } = INCIDENT_DETAIL
   const pages: Record<string, unknown> = {
     [`/incidents?protocol=${incident.protocol}`]: {
@@ -225,7 +225,7 @@ describe('a protocol’s incident history', () => {
       return pages[path]
     }
     const history = await createQueryClient().fetchInfiniteQuery({
-      ...createQueries(paged).protocolIncidents(incident.protocol),
+      ...createQueries(paged).incidentHistory({ protocol: incident.protocol }),
       pages: 5,
       retry: false,
     })
@@ -237,9 +237,32 @@ describe('a protocol’s incident history', () => {
     ])
   })
 
-  it('is kept apart from the plain list and from any one incident', () => {
+  it('asks for every protocol’s incidents when it is not narrowed', async () => {
+    const asked: string[] = []
+    const recording: Source = async (path) => {
+      asked.push(path)
+      return fixtureSource(path)
+    }
+    await createQueryClient().fetchInfiniteQuery({
+      ...createQueries(recording).incidentHistory({ status: 'open' }),
+      retry: false,
+    })
+    await createQueryClient().fetchInfiniteQuery({
+      ...createQueries(recording).incidentHistory(),
+      retry: false,
+    })
+    expect(asked).toEqual(['/incidents?status=open', '/incidents'])
+  })
+
+  it('keeps each filter apart, and apart from the plain list and from any one incident', () => {
     const queries = createQueries(fixtureSource)
-    const key = JSON.stringify(queries.protocolIncidents(incident.protocol).queryKey)
+    const key = JSON.stringify(queries.incidentHistory({ protocol: incident.protocol }).queryKey)
+    expect(key).not.toBe(JSON.stringify(queries.incidentHistory().queryKey))
+    expect(key).not.toBe(
+      JSON.stringify(
+        queries.incidentHistory({ protocol: incident.protocol, status: 'open' }).queryKey,
+      ),
+    )
     expect(key).not.toBe(
       JSON.stringify(queries.incidents({ protocol: incident.protocol }).queryKey),
     )

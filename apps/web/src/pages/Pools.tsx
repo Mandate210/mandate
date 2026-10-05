@@ -22,8 +22,8 @@ const Pools = () => {
       <div>
         <h1 className="mono text-[15px] uppercase tracking-[0.16em] font-medium">Cover pools</h1>
         <p className="mt-1.5 text-[13px] text-muted-foreground max-w-xl leading-relaxed">
-          Parametric cover against unauthorized use of privileged admin access. Payout is released
-          by the transaction that records the attestor quorum.
+          Parametric cover against unauthorized use of privileged admin access. Once the attestor
+          quorum is recorded, anyone can release the payout — no appeal window, no human sign-off.
         </p>
       </div>
 
