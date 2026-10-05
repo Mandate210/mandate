@@ -14,7 +14,7 @@ import { ArrowUpRight } from 'lucide-react'
  * everywhere else in this interface, and a banner wearing them would be one more
  * thing to misread rather than the thing that prevents a misreading.
  *
- * Shown on every build until T054/T055: the pages still read `mockData.ts` whatever
+ * Shown on every build until T055: the incident pages still read `mockData.ts` whatever
  * source `lib/api.ts` was built with. Once the last of them reads the API, this
  * becomes `isDemo` from `lib/api.ts`.
  */

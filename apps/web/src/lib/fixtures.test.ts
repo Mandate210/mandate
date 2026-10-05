@@ -8,7 +8,7 @@ import {
 } from '@mandate/shared'
 import { describe, expect, it } from 'vitest'
 import { CONFIG, DECLARATIONS, INCIDENT_DETAIL, POOLS, PROTOCOL_DETAILS } from './fixtures'
-import { DECLARATION_SNAPSHOT, PROTOCOLS, TIMELINE } from './mockData'
+import { DECLARATION_SNAPSHOT, TIMELINE } from './mockData'
 
 /**
  * The demonstration data is held to the contract the real API will be held to, so
@@ -53,7 +53,9 @@ describe('fixtures', () => {
     // Every entry at the trigger belongs to other operations or is out of its window;
     // the snapshot is there to show that, and the timeline says it in words.
     expect(DECLARATION_SNAPSHOT.length).toBeGreaterThan(0)
-    expect(TIMELINE[0]?.lines?.[1]).toMatch(/matches no effective declaration entry \(\d+ in force\)/)
+    expect(TIMELINE[0]?.lines?.[1]).toMatch(
+      /matches no effective declaration entry \(\d+ in force\)/,
+    )
   })
 
   it('pay out only once the unauthorized tally reaches the quorum', () => {
@@ -63,6 +65,8 @@ describe('fixtures', () => {
       INCIDENT_DETAIL.incident.quorum_needed,
     )
     // The protocol with the incident is the one whose pool the pages link to.
-    expect(PROTOCOLS.some((p) => p.id === INCIDENT_DETAIL.incident.protocol)).toBe(true)
+    expect(
+      PROTOCOL_DETAILS.some((d) => d.protocol.address === INCIDENT_DETAIL.incident.protocol),
+    ).toBe(true)
   })
 })

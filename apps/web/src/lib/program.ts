@@ -6,4 +6,10 @@
  */
 export const PROGRAM_ID = 'HMtvDKR9i4WKxfMfC7fGXXiiReh3APGoNsiCcrbCzMHk'
 
-export const PROGRAM_EXPLORER = `https://explorer.solana.com/address/${PROGRAM_ID}?cluster=devnet`
+const CLUSTER = 'devnet'
+
+/** An account or a transaction on the explorer, on the cluster the program runs on. */
+export const explorerUrl = (kind: 'address' | 'tx', id: string): string =>
+  `https://explorer.solana.com/${kind}/${id}?cluster=${CLUSTER}`
+
+export const PROGRAM_EXPLORER = explorerUrl('address', PROGRAM_ID)

@@ -28,7 +28,7 @@ import {
   poolsResponseSchema,
   protocolDetailResponseSchema,
 } from '@mandate/shared'
-import { QueryClient, queryOptions } from '@tanstack/react-query'
+import { QueryClient, infiniteQueryOptions, queryOptions } from '@tanstack/react-query'
 import { fixtureSource } from './fixtureSource'
 import { ApiError, ContractError, type Source, httpSource } from './source'
 
@@ -133,6 +133,22 @@ export const createQueries = (source: Source) => {
       queryOptions({
         queryKey: ['incidents', query],
         queryFn: get<IncidentsResponse>(incidentsResponseSchema, incidentsPath(query)),
+        refetchInterval: REFRESH_MS.state,
+      }),
+    /**
+     * A protocol's whole incident history, a page at a time (FR-029) — `/pools/:protocol`
+     * carries only the latest twenty and no cursor to go on from.
+     */
+    protocolIncidents: (protocol: string) =>
+      infiniteQueryOptions({
+        queryKey: ['incidents', 'by-protocol', protocol],
+        queryFn: ({ pageParam }) =>
+          get<IncidentsResponse>(
+            incidentsResponseSchema,
+            incidentsPath(pageParam === null ? { protocol } : { protocol, cursor: pageParam }),
+          )(),
+        initialPageParam: null as string | null,
+        getNextPageParam: (page) => page.next_cursor,
         refetchInterval: REFRESH_MS.state,
       }),
     incident: (pubkey: string) =>

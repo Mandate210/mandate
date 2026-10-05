@@ -3,122 +3,20 @@
  *
  * The data itself lives in `fixtures.ts`, in the shape of the public API contract.
  * This file turns those responses into what the pages were written against, so the
- * contract could land (T046) without rewriting every screen at once. It disappears in
- * T054/T055, when the pages read the contract directly.
+ * contract could land (T046) without rewriting every screen at once. The pool pages read
+ * the contract since T054; what is left here goes in T055 with the incident pages.
  *
  * Nothing here adds a fact the contract does not carry. Where the pages once showed
  * invented names, they now show shortened addresses; where they showed recurring
  * windows and a «Spent» status the program has no notion of, they show the single
  * window and the state an entry actually has.
  */
-import { type DeclarationEntryResponse, type EntryState, quorumNeeded } from '@mandate/shared'
-import { ATTESTOR_KEYS, CONFIG, DECLARATIONS, INCIDENT_DETAIL, PROTOCOL_DETAILS } from './fixtures'
-
-export type PolicyStatus = 'active' | 'none'
-
-export type DeclarationStatus = 'Pending' | 'Scheduled' | 'Effective' | 'Expired' | 'Revoked'
-
-export interface DeclarationEntry {
-  operation: string
-  window: string
-  submitted: string
-  effectiveFrom: string
-  status: DeclarationStatus
-}
-
-export interface Protocol {
-  id: string
-  name: string
-  poolCapital: number
-  activeCoverage: number
-  utilization: number
-  attestors: number
-  quorum: number
-  policyStatus: PolicyStatus
-  coverage: {
-    limit: number
-    retentionPct: number
-    retentionAmount: number
-    payable: number
-    term: string
-    beneficiary: string
-  }
-  declaration: DeclarationEntry[]
-  signers: { label: string; address: string }[]
-}
-
-/** `Abcd…wxyz` — enough to recognise an address, the way explorers abbreviate. */
-export const short = (address: string): string => `${address.slice(0, 4)}…${address.slice(-4)}`
+import { ATTESTOR_KEYS, CONFIG, INCIDENT_DETAIL, PROTOCOL_DETAILS } from './fixtures'
+import { ENTRY_STATE, operationOf, short, utcDay, utcSecond, windowOf } from './format'
 
 /** Base units to whole dollars, for display only. */
 const dollars = (amount: string): number =>
   Number(BigInt(amount) / 10n ** BigInt(CONFIG.asset_decimals))
-
-const day = (ts: number): string => new Date(ts * 1000).toISOString().slice(0, 10)
-const minute = (ts: number): string =>
-  new Date(ts * 1000).toISOString().slice(0, 16).replace('T', ' ')
-const second = (ts: number): string =>
-  `${new Date(ts * 1000).toISOString().slice(0, 19).replace('T', ' ')} UTC`
-
-const STATUS: Record<EntryState, DeclarationStatus> = {
-  pending: 'Pending',
-  scheduled: 'Scheduled',
-  effective: 'Effective',
-  expired: 'Expired',
-  revoked: 'Revoked',
-}
-
-/** The instruction's name when its program publishes one; otherwise what the chain holds. */
-const operationOf = (entry: DeclarationEntryResponse): string =>
-  entry.instruction?.name ?? `${short(entry.program_id)} · ${entry.ix_discriminator}`
-
-const windowOf = (entry: DeclarationEntryResponse): string =>
-  entry.not_after === null
-    ? `from ${minute(entry.not_before)} UTC, permanent`
-    : `${minute(entry.not_before)} – ${minute(entry.not_after).slice(-5)} UTC`
-
-const declarationRow = (entry: DeclarationEntryResponse): DeclarationEntry => ({
-  operation: operationOf(entry),
-  window: windowOf(entry),
-  submitted: day(entry.submitted_at),
-  effectiveFrom: day(entry.effective_at),
-  status: STATUS[entry.state],
-})
-
-const QUORUM = quorumNeeded(CONFIG.attestor_count, CONFIG.quorum_bps)
-
-export const PROTOCOLS: Protocol[] = PROTOCOL_DETAILS.map((detail) => {
-  const policy = detail.policies.find((p) => p.in_force)
-  const limit = policy === undefined ? 0 : dollars(policy.limit)
-  const retention = policy === undefined ? 0 : dollars(policy.retention)
-  return {
-    id: detail.protocol.address,
-    name: short(detail.protocol.address),
-    poolCapital: dollars(detail.pool.total_assets),
-    activeCoverage: dollars(detail.pool.locked_limit),
-    utilization: Math.floor(detail.pool.utilization_bps / 100),
-    attestors: CONFIG.attestor_count,
-    quorum: QUORUM,
-    policyStatus: policy === undefined ? 'none' : 'active',
-    coverage: {
-      limit,
-      retentionPct: limit === 0 ? 0 : Math.round((retention / limit) * 100),
-      retentionAmount: retention,
-      payable: policy === undefined ? 0 : dollars(policy.payable),
-      term: policy === undefined ? '—' : `until ${day(policy.end_ts)}`,
-      beneficiary: short(policy?.beneficiary ?? detail.protocol.treasury),
-    },
-    declaration: (
-      DECLARATIONS.find((d) => d.protocol === detail.protocol.address)?.entries ?? []
-    ).map(declarationRow),
-    signers: detail.protocol.privileged.map((address, i) => ({
-      label: `privileged ${i + 1}`,
-      address: short(address),
-    })),
-  }
-})
-
-export const getProtocol = (id?: string) => PROTOCOLS.find((p) => p.id === id)
 
 /* ---------------------------------------------------------------- */
 /* Incident                                                          */
@@ -159,8 +57,8 @@ export const INCIDENT = {
   label: short(incident.address),
   protocolId: incident.protocol,
   protocolName: short(incident.protocol),
-  triggerAt: second(triggerAt),
-  openedAt: second(incident.opened_at),
+  triggerAt: utcSecond(triggerAt),
+  openedAt: utcSecond(incident.opened_at),
   bond: dollars(incident.bond),
   quorumRequired: incident.quorum_needed,
   attestorSetSize: incident.set_size,
@@ -199,7 +97,7 @@ const attestationEvents: TimelineEvent[] = (() => {
       ...(a.verdict === 'unauthorized' ? { tally } : {}),
       ...(reached ? { quorumReached: true } : {}),
       signature: short(a.signature ?? ''),
-      timestamp: second(a.submitted_at),
+      timestamp: utcSecond(a.submitted_at),
     }
   })
 })()
@@ -211,7 +109,7 @@ export const TIMELINE: TimelineEvent[] = [
     kind: 'trigger',
     title: 'Privileged transaction',
     signature: short(detail.trigger.signature),
-    timestamp: second(triggerAt),
+    timestamp: utcSecond(triggerAt),
     lines: [
       `signed by a privileged address of ${short(incident.protocol)}`,
       `✗ matches no effective declaration entry (${effectiveAtTrigger} in force)`,
@@ -223,7 +121,7 @@ export const TIMELINE: TimelineEvent[] = [
     kind: 'opened',
     title: 'Incident opened',
     signature: short(detail.opened.signature ?? ''),
-    timestamp: second(detail.opened.at),
+    timestamp: utcSecond(detail.opened.at),
     lines: [
       `bond ${usdc(dollars(incident.bond))}`,
       `quorum ${incident.quorum_needed} of ${incident.set_size} · attestations accepted until T+${incident.deadline - triggerAt}s`,
@@ -239,7 +137,7 @@ export const TIMELINE: TimelineEvent[] = [
           kind: 'payout' as const,
           title: `PAYOUT ${usdc(dollars(payout.amount))} → ${beneficiaryLabel}`,
           signature: short(payout.signature),
-          timestamp: second(payout.at),
+          timestamp: utcSecond(payout.at),
           lines: ['released by the same transaction that recorded the quorum'],
         },
       ]),
@@ -252,8 +150,8 @@ export const DECLARATION_SNAPSHOT = detail.verification.declaration_at_trigger.e
   (entry) => ({
     operation: operationOf(entry),
     window: windowOf(entry),
-    effectiveFrom: day(entry.effective_at),
-    status: STATUS[entry.state],
+    effectiveFrom: utcDay(entry.effective_at),
+    status: ENTRY_STATE[entry.state],
   }),
 )
 

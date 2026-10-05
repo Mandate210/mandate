@@ -203,6 +203,50 @@ describe('refresh', () => {
   })
 })
 
+describe('a protocol’s incident history', () => {
+  const { incident, as_of } = INCIDENT_DETAIL
+  const pages: Record<string, unknown> = {
+    [`/incidents?protocol=${incident.protocol}`]: {
+      as_of,
+      incidents: [incident],
+      next_cursor: 'b3BlbmVk',
+    },
+    [`/incidents?protocol=${incident.protocol}&cursor=b3BlbmVk`]: {
+      as_of,
+      incidents: [{ ...incident, address: CONFIG.admin }],
+      next_cursor: null,
+    },
+  }
+
+  it('follows the cursor past the first page and stops where the API says it ends', async () => {
+    const asked: string[] = []
+    const paged: Source = async (path) => {
+      asked.push(path)
+      return pages[path]
+    }
+    const history = await createQueryClient().fetchInfiniteQuery({
+      ...createQueries(paged).protocolIncidents(incident.protocol),
+      pages: 5,
+      retry: false,
+    })
+
+    expect(asked).toEqual(Object.keys(pages))
+    expect(history.pages.flatMap((p) => p.incidents.map((i) => i.address))).toEqual([
+      incident.address,
+      CONFIG.admin,
+    ])
+  })
+
+  it('is kept apart from the plain list and from any one incident', () => {
+    const queries = createQueries(fixtureSource)
+    const key = JSON.stringify(queries.protocolIncidents(incident.protocol).queryKey)
+    expect(key).not.toBe(
+      JSON.stringify(queries.incidents({ protocol: incident.protocol }).queryKey),
+    )
+    expect(key).not.toBe(JSON.stringify(queries.incident(incident.protocol).queryKey))
+  })
+})
+
 describe('a source', () => {
   it('is all a page depends on: any function of a path will do', async () => {
     const calls: string[] = []
