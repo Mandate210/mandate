@@ -20,6 +20,7 @@ apps/api/               Hono read-only REST + indexer subscription
 apps/attestor/          worker: watch privileged addrs → compare → attest,
                         and sweep incidents the window left behind
 apps/web/               public status page, read-only
+apps/cli/               mandate-declare: a covered protocol's declaration entries
 packages/shared/        Zod schemas + declaration-matching rule (pure)
 packages/sdk/           typed program client + generated IDL
 packages/db/            Drizzle schema — a cache of chain state, never truth
@@ -33,6 +34,7 @@ pnpm dev         # all apps
 pnpm lint:fix    # biome check --write
 pnpm --filter @mandate/attestor sweep   # one pass over expired incidents, then exit
 pnpm --filter @mandate/api census        # one census of the program into the cache, then exit
+pnpm --filter @mandate/cli declare list --protocol <addr>   # submit/narrow/revoke too — docs/protocol-guide.md
 anchor build     # regenerates the IDL that packages/sdk depends on
 anchor deploy    # deploys to whatever cluster Anchor.toml points at
 ```

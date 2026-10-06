@@ -113,6 +113,37 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@26.2.0)
 
+  apps/cli:
+    dependencies:
+      '@coral-xyz/anchor':
+        specifier: ^0.32.1
+        version: 0.32.1(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)
+      '@mandate/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
+      '@mandate/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      '@solana/web3.js':
+        specifier: ^1.95.4
+        version: 1.98.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: 26.2.0
+        version: 26.2.0
+      tsx:
+        specifier: ^4.19.2
+        version: 4.23.12
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@26.2.0)
+
   apps/web:
     dependencies:
       '@mandate/shared':
@@ -298,6 +329,9 @@ importers:
       '@mandate/api':
         specifier: workspace:*
         version: link:../apps/api
+      '@mandate/cli':
+        specifier: workspace:*
+        version: link:../apps/cli
       tsx:
         specifier: ^4.19.2
         version: 4.23.12
