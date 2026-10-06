@@ -11,6 +11,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "census": "tsx src/census-cli.ts"
   },
+  "exports": {
+    "./app": "./src/app.ts"
+  },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",
     "@hono/node-server": "^1.13.7",

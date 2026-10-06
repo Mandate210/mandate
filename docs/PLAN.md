@@ -562,6 +562,13 @@ mandate/
 
 **CORS (T053, рішення власника 2026-10-03):** `Access-Control-Allow-Origin: *`, лише `GET`/`HEAD`/`OPTIONS`, без credentials, `Retry-After` у `exposeHeaders`. Дані публічні (FR-030), кукі немає, а SC-007 розраховує, що треті сторони читатимуть API власними інструментами. Список дозволених origin нічого б не захистив: curl і сервери його не помічають. CORS стоїть перед лімітом, тож браузер може прочитати й 429. Preflight відповідає сам CORS-middleware і до лімітера не доходить. Запити сторінки — прості GET, preflight для них не потрібен.
 
+**`web` лише читає — під guard-тестом (T066, рішення власника 2026-10-06,** `tests/fr034-read-only-web.test.ts`**).** FR-034 тримається механічно, як id програми в `config-consistency.test.ts`: інакше гаманець прийшов би разом із CTA лендінга (T073), і ніхто б не помітив, що вимоги вже немає.
+
+- **Заборонено здатність підписати, а не назву пакета.** Замикання залежностей `apps/web` читається з `pnpm-lock.yaml` транзитивно, з переходом по workspace-лінках, і не має досягати: усього скоупу `@solana/` (будує й підписує транзакції), `@wallet-standard/`, `@coral-xyz/anchor`, `@mandate/sdk`, WalletConnect/Reown/Web3Modal, Privy і Dynamic (вбудовані гаманці й сесії, C-2), SDK гаманців, `tweetnacl`/`@noble/ed25519`. DevDependencies рахуються: Vite бандлить усе, що імпортує `src`, хоч із якого списку. Лише `apps/web/package.json` пропустив би гаманець, що прийшов через UI-кіт чи `@mandate/shared`.
+- **Інжектований провайдер — без жодного пакета.** Phantom і Backpack підписують через `window.phantom`/`window.solana`, тож `src` сканується й на них, на `signTransaction`/`signMessage`, на `wallet-standard:` і на зовнішні `<script src>` в `index.html`.
+- **«Без запису» — з обох боків.** У `web` єдиний вихід у мережу — `httpSource` (`lib/source.ts`): жоден інший файл не чіпає `fetch`/XHR/`sendBeacon`/WebSocket/EventSource/`<form>`, у замиканні немає іншого HTTP-клієнта, а сам `httpSource` поведінково шле лише GET без тіла. В API кожен обробник у `createApp().routes` — GET (ALL — лише middleware на `/*`), і POST/PUT/PATCH/DELETE на кожен шлях дають рівно 404, а не «не 2xx»: 500 від обробника, що спробував писати, тест не пропустить. Для цього `@mandate/api` експортує `./app`, а `tests` бере його devDependency.
+- Мутації 9/10; десята — `allowMethods` у CORS з POST — еквівалентна: без обробника дозволений preflight нічого не записує.
+
 **Upgrade authority програми — окремий ризик, див. R-1.**
 
 ---
