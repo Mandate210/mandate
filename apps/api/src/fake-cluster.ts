@@ -7,9 +7,10 @@ import {
   attestTx,
   attestationOf,
   keys,
+  legacyResolveTx,
   openTx,
   registerTx,
-  resolveTx,
+  settlingAttestTx,
   sig,
   worldAccounts,
 } from './fixtures'
@@ -35,7 +36,11 @@ export const fakeCluster = async () => {
     [sig('SigOpen'), openTx()],
     [sig('SigAttestA'), attestTx(keys.attestorA, sig('SigAttestA'))],
     [sig('SigAttestB'), attestTx(keys.attestorB, sig('SigAttestB'))],
-    [sig('SigResolve'), resolveTx()],
+    // The world was paid before T078, by a separate `resolve`; a census from nothing
+    // has to find that payout again (`recoverProvenance`).
+    [sig('SigResolve'), legacyResolveTx()],
+    // How the same decision lands since T078, for the live path.
+    [sig('SigDecide'), settlingAttestTx(keys.attestorB, sig('SigDecide'))],
   ])
   const history = new Map<string, string[]>([
     [PROTOCOL, [sig('SigResolve'), sig('SigOpen'), sig('SigRegister')]],

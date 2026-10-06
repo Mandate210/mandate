@@ -9,9 +9,10 @@ import {
   encode,
   fields,
   keys,
+  legacyResolveTx,
   openTx,
   programId,
-  resolveTx,
+  settlingAttestTx,
   sig,
 } from './fixtures'
 import { idlAddress } from './idl'
@@ -178,7 +179,23 @@ describe('live', () => {
     expect(cluster.calls).not.toContain(`signatures:${PROTOCOL}`)
   })
 
-  it('records the payout signature and time from resolve', async () => {
+  it('records the payout signature and time from the deciding vote', async () => {
+    const cluster = await fakeCluster()
+    const indexer = createIndexer({ rpc: cluster.rpc, db, programId })
+    await indexer.census()
+    await db
+      .update(schema.incidents)
+      .set({ payoutSignature: null, payoutAt: null })
+      .where(eq(schema.incidents.address, INCIDENT))
+
+    await indexer.handleSignature(sig('SigDecide'))
+    expect(await incidentRow()).toMatchObject({
+      payoutSignature: sig('SigDecide'),
+      payoutAt: 1_710_000_060,
+    })
+  })
+
+  it('records the payout signature and time from a legacy resolve', async () => {
     const cluster = await fakeCluster()
     const indexer = createIndexer({ rpc: cluster.rpc, db, programId })
     await indexer.census()

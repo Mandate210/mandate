@@ -22,7 +22,12 @@
 // writes, and keeps the two paths from stepping on each other.
 
 import { type Db, schema, upsertNewer } from '@mandate/db'
-import { UnsupportedTransactionVersionError, createJsonRpc, readTransaction } from '@mandate/sdk'
+import {
+  UnsupportedTransactionVersionError,
+  createJsonRpc,
+  readTransaction,
+  settlementsIn,
+} from '@mandate/sdk'
 import type { ObservedTransaction } from '@mandate/shared'
 import type { Commitment, Connection, PublicKey } from '@solana/web3.js'
 import { PublicKey as Key } from '@solana/web3.js'
@@ -34,7 +39,6 @@ import {
   addHint,
   decodeAccount,
   factsFromTransaction,
-  instructionNames,
   relate,
   toRows,
 } from './accounts'
@@ -292,12 +296,17 @@ export const createIndexer = ({
         filled += 1
       }
       if (incident.status === 'paid_out' && incident.payoutSignature === null) {
-        // Nothing follows a payout, so `resolve` is the newest — walked rather than
-        // assumed, in case something did.
+        // Nothing succeeds on a settled incident, so the settling transaction is the
+        // newest — walked rather than assumed, in case something did. Recognised by what
+        // it carries: the `IncidentSettled` event, or a `resolve` from before T078.
         for (const signature of history) {
           const transaction = await rpc.transaction(signature)
           if (transaction === null) continue
-          if (!instructionNames(programId, transaction).includes('resolve')) continue
+          const paid = settlementsIn(programId, transaction).some(
+            (settlement) =>
+              settlement.incident === incident.address && settlement.status === 'paid_out',
+          )
+          if (!paid) continue
           await fillIncident(incident.address, {
             payoutSignature: signature,
             payoutAt: transaction.blockTime,

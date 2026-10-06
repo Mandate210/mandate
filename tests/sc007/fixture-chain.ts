@@ -17,7 +17,7 @@
 
 import { createHash } from 'node:crypto'
 import { BN, BorshCoder, type Idl, utils } from '@coral-xyz/anchor'
-import { DRAIN_COVER_IDL, type JsonRpc, findVault } from '@mandate/sdk'
+import { DRAIN_COVER_IDL, EVENT_IX_TAG, type JsonRpc, findVault } from '@mandate/sdk'
 import type { DeclarationEntryResponse, IncidentDetailResponse } from '@mandate/shared'
 import { PublicKey } from '@solana/web3.js'
 import {
@@ -169,16 +169,37 @@ export const fixtureChain = async (): Promise<FixtureChain> => {
     }),
   )
 
-  // `resolve`, sent by the attestor whose vote completed the quorum.
-  const decider = must(trail.attestations.at(-1), 'the deciding attestation').attestor
+  // The vote that completed the quorum, which paid in the same instruction and says
+  // so with an `IncidentSettled` event carried by self-CPI (T078).
+  const deciding = must(
+    trail.attestations.find((attestation) => attestation.signature === payout.signature),
+    'the attestation that paid',
+  )
+  const decider = deciding.attestor
   const beneficiaryToken = findVault(
     pubkey(CONFIG.asset_mint),
     pubkey(payout.beneficiary),
   ).toBase58()
-  const resolve = must(
-    (DRAIN_COVER_IDL as unknown as Idl).instructions.find((ix) => ix.name === 'resolve'),
-    'resolve in the IDL',
+  const idl = DRAIN_COVER_IDL as unknown as Idl
+  const attest = must(
+    idl.instructions.find((ix) => ix.name === 'attest'),
+    'attest in the IDL',
   ).discriminator
+  const settledEvent = must(
+    idl.events?.find((event) => event.name === 'IncidentSettled'),
+    'IncidentSettled in the IDL',
+  ).discriminator
+  const eventAuthority = PublicKey.findProgramAddressSync(
+    [Buffer.from('__event_authority')],
+    pubkey(program),
+  )[0].toBase58()
+  const settledFields = coder.types.encode('IncidentSettled', {
+    incident: pubkey(at.incident),
+    status: { PaidOut: {} },
+    payout: bn(incident.payout),
+    shortfall: bn(incident.shortfall),
+    bond_returned: bn(incident.bond),
+  })
   transactions.set(
     payout.signature,
     rpcTransaction({
@@ -196,10 +217,26 @@ export const fixtureChain = async (): Promise<FixtureChain> => {
         mock('opener:token'),
         TOKEN_PROGRAM,
         program,
+        deciding.attestation,
+        eventAuthority,
       ],
       signers: 1,
       instructions: [
-        { programIdIndex: 10, accounts: [1, 2, 3, 4, 5, 6, 7, 8, 9], data: [...resolve] },
+        // Only the accounts the replay reads are in their places; the rest stand in.
+        { programIdIndex: 10, accounts: [1, 2, 5, 0, 11, 3, 4, 6, 7, 8, 9], data: [...attest, 0] },
+      ],
+      inner: [
+        {
+          index: 0,
+          instructions: [
+            {
+              programIdIndex: 10,
+              accounts: [12],
+              data: [...EVENT_IX_TAG, ...settledEvent, ...settledFields],
+              stackHeight: 2,
+            },
+          ],
+        },
       ],
       tokenBalances: {
         pre: [{ accountIndex: 7, mint: CONFIG.asset_mint, owner: payout.beneficiary, amount: '0' }],
@@ -299,6 +336,7 @@ const rpcTransaction = ({
   keys,
   signers,
   instructions,
+  inner = [],
   tokenBalances = { pre: [], post: [] },
 }: {
   slot: number
@@ -306,6 +344,16 @@ const rpcTransaction = ({
   keys: string[]
   signers: number
   instructions: { programIdIndex: number; accounts: number[]; data: number[] }[]
+  /** Instructions reached by CPI, under the index of the top-level one that made them. */
+  inner?: {
+    index: number
+    instructions: {
+      programIdIndex: number
+      accounts: number[]
+      data: number[]
+      stackHeight: number
+    }[]
+  }[]
   tokenBalances?: { pre: TokenBalance[]; post: TokenBalance[] }
 }) => {
   const balances = (list: TokenBalance[]) =>
@@ -320,7 +368,10 @@ const rpcTransaction = ({
     meta: {
       err: null,
       fee: 5000,
-      innerInstructions: [],
+      innerInstructions: inner.map((group) => ({
+        index: group.index,
+        instructions: group.instructions.map((ix) => ({ ...ix, data: base58(ix.data) })),
+      })),
       loadedAddresses: { writable: [], readonly: [] },
       preTokenBalances: balances(tokenBalances.pre),
       postTokenBalances: balances(tokenBalances.post),

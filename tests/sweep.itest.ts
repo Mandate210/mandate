@@ -21,6 +21,7 @@ import {
   fundPool,
   issuePolicy,
   openIncident,
+  quorumNeeded,
   registerProtocol,
   releaseAttestors,
 } from './world'
@@ -55,11 +56,10 @@ describe.skipIf(!reachable)('the expired-incident sweep', () => {
     lapsed: Awaited<ReturnType<Program<DrainCover>['account']['pool']['fetch']>>
   }
   let lapsedOpenerBefore: bigint
-  let beneficiaryBefore: bigint
 
   /** No attestations at all: the plain expiry, and the bond is forfeited. */
   let expiring: { target: RegisteredProtocol; incident: PublicKey; bond: bigint }
-  /** Quorum reached, but its policy runs out before anyone settles it. */
+  /** One vote short of its quorum, and its policy runs out inside the window. */
   let lapsed: {
     target: RegisteredProtocol
     incident: PublicKey
@@ -67,8 +67,8 @@ describe.skipIf(!reachable)('the expired-incident sweep', () => {
     opener: PublicKey
     policy: PublicKey
   }
-  /** Quorum reached on a policy still in force, and nobody called `resolve`. */
-  let payable: { target: RegisteredProtocol; incident: PublicKey; beneficiary: PublicKey }
+  // What used to be here as well — a quorum nobody settled — is a state nothing reaches
+  // since T078: the vote that completes a quorum settles the incident itself.
 
   const coveredProtocol = async (endTs?: number): Promise<[RegisteredProtocol, number]> => {
     const target = await registerProtocol(program, env)
@@ -142,29 +142,20 @@ describe.skipIf(!reachable)('the expired-incident sweep', () => {
       policy: findPolicy(program.programId, lapsedTarget.protocol, lapsedPolicy),
     }
 
-    const [payableTarget, payablePolicy] = await coveredProtocol()
-    const payableOpened = await openIncident(program, env, payableTarget, payablePolicy)
-    payable = {
-      target: payableTarget,
-      incident: payableOpened.incident,
-      // `resolve` derives this account and cannot create it, so the beneficiary has to
-      // have one before the sweep runs — the same thing `resolve.itest.ts` does.
-      beneficiary: await env.assetAccount(payableTarget.treasury),
-    }
-
-    for (const attestor of attestors) {
+    const { quorumBps } = await program.account.config.fetch(findConfig(program.programId))
+    const { setSize } = await program.account.incident.fetch(lapsed.incident)
+    for (const attestor of attestors.slice(0, quorumNeeded(setSize, quorumBps) - 1)) {
       await attest(program, lapsed.target, lapsed.incident, attestor)
-      await attest(program, payable.target, payable.incident, attestor)
     }
 
     const deadlines = await Promise.all(
-      [expiring, lapsed, payable].map(async ({ incident }) =>
+      [expiring, lapsed].map(async ({ incident }) =>
         (await program.account.incident.fetch(incident)).deadline.toNumber(),
       ),
     )
     await waitPastClusterTime(env.connection, Math.max(...deadlines))
 
-    chain = scopedTo([expiring.target, lapsed.target, payable.target])
+    chain = scopedTo([expiring.target, lapsed.target])
 
     poolsBefore = {
       expiring: await program.account.pool.fetch(expiring.target.pool),
@@ -172,7 +163,6 @@ describe.skipIf(!reachable)('the expired-incident sweep', () => {
     }
     lapsedOpenerBefore = (await getAccount(env.connection, await env.assetAccount(lapsed.opener)))
       .amount
-    beneficiaryBefore = (await getAccount(env.connection, payable.beneficiary)).amount
 
     // The cluster's clock, not this machine's: the deadlines came from the cluster, and
     // a sweeper judging by a drifting local clock would be testing the drift.
@@ -184,17 +174,16 @@ describe.skipIf(!reachable)('the expired-incident sweep', () => {
     if (attestors !== undefined) await releaseAttestors(program, env, attestors)
   })
 
-  it('finds the three incidents and acts on each of them', () => {
-    expect(report.scanned).toBe(3)
-    expect(report.resolved).toEqual([payable.incident.toBase58()])
+  it('finds both incidents and closes each of them', () => {
+    expect(report.scanned).toBe(2)
     expect(report.closed).toHaveLength(2)
     expect(report.failed).toEqual([])
     expect(report.blocked).toEqual([])
   })
 
   // The same pass, T067: the lapsed policy's reservation is given back even though its
-  // incident sat at quorum — `resolve` could not have paid it past `end_ts` anyway. The
-  // other two hold nothing to release: one still runs, the payout exhausted the other.
+  // incident was still open — nothing could have paid it past `end_ts` anyway. The other
+  // policy still runs and holds its reservation.
   it('releases the reservation of the policy that lapsed, and only that one', async () => {
     const pool = await program.account.pool.fetch(lapsed.target.pool)
 
@@ -203,19 +192,6 @@ describe.skipIf(!reachable)('the expired-incident sweep', () => {
     expect(await program.account.policy.fetch(lapsed.policy)).toHaveProperty('status.expired')
     expect(pool.lockedLimit.toString()).toBe(
       (BigInt(poolsBefore.lapsed.lockedLimit.toString()) - LIMIT).toString(),
-    )
-  })
-
-  // Nobody called `resolve` after the quorum was reached — the case `act.ts` logs and
-  // walks away from. Without the sweep this incident closes with no payout at its
-  // deadline: decision taken, money not sent.
-  it('pays out a quorum that nobody settled', async () => {
-    const incident = await program.account.incident.fetch(payable.incident)
-
-    expect(incident.status).toHaveProperty('paidOut')
-    expect(incident.payout.toString()).toBe((LIMIT - RETENTION).toString())
-    expect((await getAccount(env.connection, payable.beneficiary)).amount).toBe(
-      beneficiaryBefore + (LIMIT - RETENTION),
     )
   })
 
@@ -232,18 +208,24 @@ describe.skipIf(!reachable)('the expired-incident sweep', () => {
     )
   })
 
-  // Confirmed by the set, so the bond was not a groundless claim — but the policy ran
-  // out before anyone settled it, so `resolve` refuses it (FR-016) and this is the only
-  // thing that can release the pool's reservation.
-  it('closes a confirmed incident whose policy lapsed, and returns its bond', async () => {
+  // Votes against the action, one short of the quorum, on a policy that ran out: not a
+  // decision, so the claim stays unconfirmed and its bond goes to the pool like any
+  // other expiry. Only this releases the incident's hold on the pool (FR-019).
+  it('closes an incident short of its quorum whose policy lapsed, and forfeits its bond', async () => {
     const incident = await program.account.incident.fetch(lapsed.incident)
     const pool = await program.account.pool.fetch(lapsed.target.pool)
 
     expect(incident.status).toHaveProperty('closedNoPayout')
+    // Short of the bar this incident's own set size demands — zero votes when the set
+    // is one attestor, which is how a fresh ledger starts.
+    const { quorumBps } = await program.account.config.fetch(findConfig(program.programId))
+    expect(incident.votesUnauthorized).toBeLessThan(quorumNeeded(incident.setSize, quorumBps))
     expect(pool.openIncidents).toBe(poolsBefore.lapsed.openIncidents - 1)
-    expect(pool.totalAssets.toString()).toBe(poolsBefore.lapsed.totalAssets.toString())
+    expect(pool.totalAssets.toString()).toBe(
+      (BigInt(poolsBefore.lapsed.totalAssets.toString()) + lapsed.bond).toString(),
+    )
     expect((await getAccount(env.connection, await env.assetAccount(lapsed.opener))).amount).toBe(
-      lapsedOpenerBefore + lapsed.bond,
+      lapsedOpenerBefore,
     )
   })
 
@@ -267,7 +249,6 @@ describe.skipIf(!reachable)('the expired-incident sweep', () => {
     const second = await createSweeper({ chain, now: () => at }).sweepOnce()
 
     expect(second.scanned).toBe(0)
-    expect(second.resolved).toEqual([])
     expect(second.closed).toEqual([])
     expect(second.released).toEqual([])
   })

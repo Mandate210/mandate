@@ -85,7 +85,7 @@ impl Pool {
 
     /// Gives back the reservation of a policy that can no longer pay (FR-020). The
     /// amount is the policy's `remaining_limit`: `underwrite` locked the whole limit
-    /// and `resolve` took each payout off both, so what a policy still holds of
+    /// and each payout came off both, so what a policy still holds of
     /// `locked_limit` is exactly what it has left. `total_assets` does not move —
     /// the premium was earned when the cover was sold.
     ///

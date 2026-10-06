@@ -15,7 +15,6 @@ import {
   quorumNeeded,
   registerProtocol,
   releaseAttestors,
-  resolve,
   triggerSignature,
 } from './world'
 
@@ -130,7 +129,7 @@ describe.skipIf(!reachable)('US1 — the full cycle to a payout', () => {
     const beneficiaryBefore = (await getAccount(env.connection, beneficiaryToken)).amount
 
     for (const attestor of attestors.slice(0, needed - 1)) {
-      attestations.push(await attest(program, target, incidentAccount, attestor))
+      attestations.push((await attest(program, target, incidentAccount, attestor)).attestation)
     }
 
     const tallied = await program.account.incident.fetch(incidentAccount)
@@ -150,15 +149,14 @@ describe.skipIf(!reachable)('US1 — the full cycle to a payout', () => {
       throw new Error(`${attestors.length} attestors admitted for a quorum of ${needed}`)
     }
 
-    attestations.push(await attest(program, target, incidentAccount, decisive))
-    expect((await program.account.incident.fetch(incidentAccount)).votesUnauthorized).toBe(needed)
-
     const beneficiaryBefore = (await getAccount(env.connection, beneficiaryToken)).amount
     const openerToken = await env.assetAccount(opener.publicKey)
     const openerBefore = (await getAccount(env.connection, openerToken)).amount
 
-    // Nobody signs for this, and nothing about it is discretionary (FR-012).
-    await resolve(program, env, target, incidentAccount)
+    // The vote that completes the quorum pays, in the same instruction: there is no
+    // further step for anyone to sign, and nothing about it is discretionary (FR-012).
+    attestations.push((await attest(program, target, incidentAccount, decisive)).attestation)
+    expect((await program.account.incident.fetch(incidentAccount)).votesUnauthorized).toBe(needed)
 
     // SC-006 with zero discrepancy: one dollar-denominated asset, an absolute
     // retention and no conversion anywhere, so there is nothing to round.

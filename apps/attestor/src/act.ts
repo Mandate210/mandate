@@ -72,13 +72,14 @@ export interface ActChain {
   openIncident(input: { protocol: string; policySeq: number; signature: string }): Promise<string>
   /** Whether *this* attestor already has an attestation on the incident. */
   hasAttested(incident: string): Promise<boolean>
+  /**
+   * Records this attestor's verdict. The vote that completes the quorum also settles
+   * the incident in the same instruction — the payout, or a close on a policy out of
+   * force (FR-012, FR-016, T078) — so there is nothing to send after it.
+   */
   attest(input: { protocol: string; incident: string; verdict: AttestVerdict }): Promise<void>
   /** Whether the incident is still taking attestations. */
   incidentOpen(incident: string): Promise<boolean>
-  /** Whether the incident has the `unauthorized` attestations its quorum asks for. */
-  quorumReached(incident: string): Promise<boolean>
-  /** Records the quorum and pays out in one operation (FR-012). Permissionless. */
-  resolve(protocol: string, incident: string): Promise<void>
 }
 
 /**
@@ -116,7 +117,12 @@ export type ActOutcome =
       verdict: AttestVerdict
       incident: string
       opened: boolean
-      /** This attestation completed the quorum and this attestor paid it out. */
+      /**
+       * The incident was settled when read back after this attestation landed — by
+       * this vote, which the program settles on if it completed the quorum, or by one
+       * that landed in between. Read, not inferred: the program is the authority on
+       * whether a vote decided.
+       */
       settled: boolean
     }
   /** FR-009 holds: one attestor, one attestation. Reached by a restart re-delivering a
@@ -180,44 +186,14 @@ export const createActor = ({
       throw error
     }
 
-    logger.info({ protocol, incident: incident.address, verdict, opened }, 'attested')
-    const settled = verdict === 'unauthorized' && (await settle(protocol, incident.address))
+    // Only an `unauthorized` vote can complete a quorum (FR-010), so only after one is
+    // there anything to read back.
+    const settled = verdict === 'unauthorized' && !(await chain.incidentOpen(incident.address))
+    logger.info(
+      { protocol, incident: incident.address, verdict, opened, settled },
+      settled ? 'attested, incident settled' : 'attested',
+    )
     return { kind: 'attested', verdict, incident: incident.address, opened, settled }
-  }
-
-  /**
-   * Pay out, if this attestation was the one that completed the quorum.
-   *
-   * **Without this nothing closes the loop.** FR-012 says the payout is initiated by
-   * the same operation that records the quorum, and `resolve` is that operation — but
-   * it is permissionless and takes no signer, so the program cannot call it and nobody
-   * is obliged to. An attestor that stops at its own attestation leaves the incident
-   * sitting at quorum until its deadline passes and `close_expired_incident` closes it
-   * with no payout: the decision made, and the money not sent. So whoever casts the
-   * deciding attestation carries it through.
-   *
-   * Only after an `unauthorized` attestation, because that is the only verdict the
-   * quorum counts (FR-010) — an `authorized` vote can never be the one that completes
-   * it.
-   *
-   * **A failure here is logged, not raised.** Every way this loses is a race it was
-   * expected to lose: another attestor resolved first and the incident is no longer
-   * open, or the policy lapsed in the seconds since the attestation. Neither loses the
-   * incident — it is either settled already or will close on its deadline — and taking
-   * the worker down over it would cost the next compromise.
-   */
-  const settle = async (protocol: string, incident: string): Promise<boolean> => {
-    if (!(await chain.quorumReached(incident))) return false
-
-    try {
-      await chain.resolve(protocol, incident)
-    } catch (error) {
-      logger.warn({ protocol, incident, error }, 'quorum reached but resolve did not land')
-      return false
-    }
-
-    logger.info({ protocol, incident }, 'quorum reached, paid out')
-    return true
   }
 
   const act = async (delivered: PrivilegedTransaction): Promise<ActOutcome> => {

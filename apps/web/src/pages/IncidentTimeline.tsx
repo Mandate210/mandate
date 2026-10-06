@@ -3,7 +3,14 @@ import { IncidentStatus } from '@/components/IncidentHistory'
 import { AsOfLine, Failure, Loading } from '@/components/QueryState'
 import { ApiError, queries } from '@/lib/api'
 import { amount, short, utcSecond } from '@/lib/format'
-import { type IncidentEvent, clockOf, endOf, settlementDelay, timelineOf } from '@/lib/incident'
+import {
+  type IncidentEvent,
+  type Settlement,
+  clockOf,
+  endOf,
+  settlementOf,
+  timelineOf,
+} from '@/lib/incident'
 import { useNow, useReplay } from '@/lib/replay'
 import { cn } from '@/lib/utils'
 import type { IncidentDetailResponse } from '@mandate/shared'
@@ -85,7 +92,7 @@ const Timeline = ({
   const attestations = visible.flatMap((e) => (e.kind === 'attestation' ? [e] : []))
   const tally = attestations.at(-1)?.tally ?? 0
   const paid = visible.some((e) => e.kind === 'payout')
-  const delay = settlementDelay(events)
+  const settlement = settlementOf(events)
 
   return (
     <div className="space-y-8">
@@ -231,7 +238,7 @@ const Timeline = ({
                   ev={ev}
                   detail={detail}
                   decimals={decimals}
-                  delay={delay}
+                  settlement={settlement}
                 />
               ))}
             </AnimatePresence>
@@ -316,12 +323,12 @@ const Row = ({
   ev,
   detail,
   decimals,
-  delay,
+  settlement,
 }: {
   ev: IncidentEvent
   detail: IncidentDetailResponse
   decimals: number
-  delay: number | null
+  settlement: Settlement | null
 }) => {
   const { incident } = detail
   const alert = ev.kind === 'payout' || (ev.kind === 'attestation' && ev.verdict === 'unauthorized')
@@ -354,9 +361,17 @@ const Row = ({
             PAYOUT {amount(ev.amount, decimals)} → {short(ev.beneficiary)}
           </div>
           <div className="mono text-[11.5px] text-alert/70 mt-1.5">
-            sent by <span className="text-alert">resolve</span>
-            {delay === null ? '' : `, ${delay} s after the quorum`} — permissionless, no appeal
-            window
+            {settlement?.kind === 'deciding-vote' ? (
+              <>paid by the vote that completed the quorum, in the same transaction</>
+            ) : settlement?.kind === 'separate' ? (
+              <>
+                sent by <span className="text-alert">resolve</span>, {settlement.delay} s after the
+                quorum
+              </>
+            ) : (
+              <>paid once the quorum was reached</>
+            )}{' '}
+            — no appeal window
           </div>
           <div className="mono text-[11.5px] text-muted-foreground mt-1 break-words">
             <Address value={ev.signature} kind="tx" /> · {utcSecond(ev.at)}

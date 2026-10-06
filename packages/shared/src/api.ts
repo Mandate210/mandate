@@ -174,7 +174,7 @@ export const incidentSummarySchema = z.object({
   deadline: unixTsSchema,
   /** The attestor set as it stood when the incident opened — the quorum's denominator. */
   set_size: countSchema,
-  /** `ceil(set_size × quorum_bps / 10 000)`, as `resolve` computes it. */
+  /** `ceil(set_size × quorum_bps / 10 000)`, as the program computes it (`quorum_threshold`). */
   quorum_needed: countSchema,
   votes_unauthorized: countSchema,
   votes_authorized: countSchema,
@@ -286,8 +286,9 @@ export const incidentDetailResponseSchema = z.object({
   opened: z.object({ signature: signatureSchema.nullable(), at: unixTsSchema }),
   attestations: z.array(attestationResponseSchema),
   /**
-   * Present once paid: the `resolve` transaction (FR-012) — permissionless, sent by the
-   * attestor whose vote completed the quorum, so its own signature, not an attestation's.
+   * Present once paid: the transaction that paid (FR-012). Since T078 that is the
+   * attestation that completed the quorum, which settles in the same instruction; for
+   * incidents paid before it, a separate `resolve` with a signature of its own.
    */
   payout: z
     .object({
@@ -323,7 +324,7 @@ export const utilizationBps = (lockedLimit: bigint, totalAssets: bigint): number
   totalAssets === 0n ? 0 : Number((lockedLimit * 10_000n) / totalAssets)
 
 /**
- * Attestations an incident needs — `quorum_threshold` in `instructions/resolve.rs`.
+ * Attestations an incident needs — `quorum_threshold` in `settlement.rs`.
  * Rounded **up**: rounding down would let a smaller share than `quorum_bps` decide.
  */
 export const quorumNeeded = (setSize: number, quorumBps: number): number =>

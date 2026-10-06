@@ -31,6 +31,24 @@ export type DrainCover = {
       ],
       "accounts": [
         {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "protocol"
         },
         {
@@ -38,7 +56,9 @@ export type DrainCover = {
           "docs": [
             "Verified against the signature it stores: the account is only at this address",
             "if `open_incident` put it there for exactly this trigger and this protocol, so",
-            "no argument is needed to name it — the address is the argument."
+            "no argument is needed to name it — the address is the argument. `has_one`",
+            "binds the policy the incident recorded when it opened, which is not up for",
+            "revision at settlement."
           ],
           "writable": true
         },
@@ -112,8 +132,113 @@ export type DrainCover = {
           }
         },
         {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "protocol"
+              }
+            ]
+          },
+          "relations": [
+            "protocol"
+          ]
+        },
+        {
+          "name": "policy",
+          "writable": true,
+          "relations": [
+            "incident"
+          ]
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "assetMint"
+        },
+        {
+          "name": "beneficiary",
+          "docs": [
+            "to — and the address is the one the policy fixed at issuance (FR-004)."
+          ]
+        },
+        {
+          "name": "beneficiaryToken",
+          "docs": [
+            "other — nobody chooses where a payout goes. Unchecked because it may not exist",
+            "yet: the deciding vote opens it (`settlement::ensure_token_account`)."
+          ],
+          "writable": true
+        },
+        {
+          "name": "opener",
+          "docs": [
+            "back to; it is the opener the incident recorded."
+          ]
+        },
+        {
+          "name": "openerToken",
+          "docs": [
+            "deciding vote if it has to be, as above."
+          ],
+          "writable": true
+        },
+        {
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "associatedTokenProgram",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
           "name": "systemProgram",
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "eventAuthority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  95,
+                  95,
+                  101,
+                  118,
+                  101,
+                  110,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "program"
         }
       ],
       "args": [
@@ -130,6 +255,9 @@ export type DrainCover = {
     {
       "name": "closeExpiredIncident",
       "docs": [
+        "Settles an incident whose quorum has been reached: pays the beneficiary and",
+        "returns the bond, in the same operation that establishes the quorum (FR-010,",
+        "FR-012, FR-013).",
         "Closes an incident whose window ran out without a quorum: no payout, the",
         "capital it froze is released and the bond becomes pool capital (FR-011)."
       ],
@@ -193,7 +321,7 @@ export type DrainCover = {
           "name": "policy",
           "docs": [
             "Read, never written: closing without a payout leaves the cover exactly as it",
-            "was. It is here because whether `resolve` could still pay this incident",
+            "was. It is here because whether the incident could still have been paid",
             "depends on it (FR-016)."
           ],
           "relations": [
@@ -204,7 +332,7 @@ export type DrainCover = {
           "name": "incident",
           "docs": [
             "Bound to `protocol` by seeds derived from its own stored signature, as in",
-            "`resolve`: nothing but the address names the incident, which is what lets a",
+            "`attest`: nothing but the address names the incident, which is what lets a",
             "sweeper close whatever it finds by listing accounts (T071)."
           ],
           "writable": true
@@ -1153,116 +1281,6 @@ export type DrainCover = {
       ]
     },
     {
-      "name": "resolve",
-      "docs": [
-        "Settles an incident whose quorum has been reached: pays the beneficiary and",
-        "returns the bond, in the same operation that establishes the quorum (FR-010,",
-        "FR-012, FR-013)."
-      ],
-      "discriminator": [
-        246,
-        150,
-        236,
-        206,
-        108,
-        63,
-        58,
-        10
-      ],
-      "accounts": [
-        {
-          "name": "config",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "protocol"
-        },
-        {
-          "name": "pool",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  112,
-                  111,
-                  111,
-                  108
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "protocol"
-              }
-            ]
-          },
-          "relations": [
-            "protocol"
-          ]
-        },
-        {
-          "name": "policy",
-          "docs": [
-            "Bound to the incident by `has_one`: the incident recorded which policy it was",
-            "about when it opened, and that is not up for revision at settlement."
-          ],
-          "writable": true,
-          "relations": [
-            "incident"
-          ]
-        },
-        {
-          "name": "incident",
-          "docs": [
-            "The seeds bind the incident to `protocol`, and through it to the pool that",
-            "pays — without them an incident of one protocol could be settled out of",
-            "another's vault. They come from the signature the account stores (T070)."
-          ],
-          "writable": true
-        },
-        {
-          "name": "vault",
-          "writable": true
-        },
-        {
-          "name": "beneficiaryToken",
-          "docs": [
-            "Owned by the beneficiary the policy fixed at issuance (FR-004), so nobody can",
-            "redirect a payout by presenting a different account here."
-          ],
-          "writable": true
-        },
-        {
-          "name": "openerToken",
-          "docs": [
-            "The bond goes back to whoever opened the incident, because the quorum",
-            "confirmed it."
-          ],
-          "writable": true
-        },
-        {
-          "name": "tokenProgram",
-          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-        }
-      ],
-      "args": []
-    },
-    {
       "name": "revokeDeclaration",
       "docs": [
         "Withdraws what a declaration entry permits, with no delay (FR-032).",
@@ -1757,6 +1775,21 @@ export type DrainCover = {
         123,
         202,
         22
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "incidentSettled",
+      "discriminator": [
+        211,
+        150,
+        83,
+        161,
+        148,
+        56,
+        149,
+        254
       ]
     }
   ],
@@ -2316,6 +2349,57 @@ export type DrainCover = {
             "docs": [
               "Amount owed but unpayable because the pool ran short. Recorded rather than",
               "carried forward: the trail has to state what was not paid (FR-013)."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "incidentSettled",
+      "docs": [
+        "The decision on an incident, stated by the transaction that took it (T078).",
+        "",
+        "Emitted by the vote that completes the quorum, through a CPI into this program",
+        "(`emit_cpi!`) rather than into the logs: an RPC may truncate logs, while an inner",
+        "instruction is part of the transaction's record like any other — the indexer, a",
+        "third party replaying the decision (SC-007) and an explorer all find it in the same",
+        "place they find the vote itself. Without it the settling vote is indistinguishable",
+        "from the ones before it: `attest` is the instruction either way."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "incident",
+            "type": "pubkey"
+          },
+          {
+            "name": "status",
+            "docs": [
+              "`PaidOut`, or `ClosedNoPayout` when the policy was out of force (FR-016)."
+            ],
+            "type": {
+              "defined": {
+                "name": "incidentStatus"
+              }
+            }
+          },
+          {
+            "name": "payout",
+            "type": "u64"
+          },
+          {
+            "name": "shortfall",
+            "docs": [
+              "What the pool could not pay (FR-013)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bondReturned",
+            "docs": [
+              "Back to the opener: the quorum confirmed the claim."
             ],
             "type": "u64"
           }

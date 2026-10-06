@@ -6,6 +6,8 @@ import { createHash } from 'node:crypto'
 import { BN, BorshCoder, type Idl, utils } from '@coral-xyz/anchor'
 import {
   DRAIN_COVER_IDL,
+  EVENT_IX_TAG,
+  LEGACY_RESOLVE,
   PROGRAM_ID,
   findAttestation,
   findAttestor,
@@ -269,23 +271,65 @@ export const attestTx = (authority: PublicKey, signature: string) =>
     ),
   ])
 
-export const resolveTx = (signature = sig('SigResolve'), blockTime = 1_710_000_060) =>
+/**
+ * A payout as made before T078: a separate `resolve`, an instruction the current IDL no
+ * longer has — so built from its discriminator and account order as they stood.
+ */
+export const legacyResolveTx = (signature = sig('SigResolve'), blockTime = 1_710_000_060) =>
   transaction(
     signature,
     [
-      instruction(
-        'resolve',
-        {},
-        {
-          protocol: addresses.protocol,
-          pool: addresses.pool,
-          policy: addresses.policy0,
-          incident: addresses.incident,
-        },
-      ),
+      {
+        programId: programId.toBase58(),
+        data: [...LEGACY_RESOLVE.discriminator],
+        accounts: [
+          addresses.config,
+          addresses.protocol,
+          addresses.pool,
+          addresses.policy0,
+          addresses.incident,
+        ].map((address) => address.toBase58()),
+        stackHeight: 1,
+      },
     ],
     blockTime,
   )
+
+/**
+ * The vote that completed the quorum: an `attest`, and the `IncidentSettled` event it
+ * carries as an inner instruction into the program (`emit_cpi!`).
+ */
+export const settlingAttestTx = (
+  authority: PublicKey,
+  signature: string,
+  { status = 'PaidOut', blockTime = 1_710_000_060 }: { status?: string; blockTime?: number } = {},
+) => {
+  const [vote] = attestTx(authority, signature).instructions
+  const event = (DRAIN_COVER_IDL as unknown as Idl).events?.find(
+    (candidate) => candidate.name === 'IncidentSettled',
+  )
+  if (vote === undefined || event === undefined) throw new Error('fixtures: no IncidentSettled')
+  const fields = coder.types.encode('IncidentSettled', {
+    incident: addresses.incident,
+    status: { [status]: {} },
+    payout: new BN(status === 'PaidOut' ? 9_500 : 0),
+    shortfall: new BN(0),
+    bond_returned: new BN(1_000),
+  })
+  return transaction(
+    signature,
+    [
+      vote,
+      {
+        programId: programId.toBase58(),
+        data: [...EVENT_IX_TAG, ...event.discriminator, ...fields],
+        accounts: [keys.admin.toBase58()],
+        stackHeight: 2,
+      },
+    ],
+    blockTime,
+  )
+}
 
 export const submitDeclarationTx = (
   signature: string,

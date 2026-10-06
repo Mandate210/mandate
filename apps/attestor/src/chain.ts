@@ -25,43 +25,6 @@ import { type Connection, type Keypair, PublicKey, SystemProgram } from '@solana
 import type { ActChain, AttestVerdict, IncidentRef, ProtocolState } from './act'
 import type { ReservedPolicy, SweepChain, SweepIncident, SweepPolicy } from './sweep'
 
-/**
- * Send `resolve` for an incident that has reached its quorum (FR-012).
- *
- * Shared by the attestor's own settle path and by the sweeper, which both send exactly
- * this transaction for exactly the same reason. One copy, because an account list that
- * drifted between them would fail in only one of the two places — and the sweeper's is
- * the one nobody watches.
- */
-const resolveIncident = async (
-  program: Program<DrainCover>,
-  protocol: PublicKey,
-  incident: PublicKey,
-): Promise<void> => {
-  const stored = await program.account.incident.fetch(incident)
-  const [{ pool }, policy] = await Promise.all([
-    program.account.protocol.fetch(protocol),
-    program.account.policy.fetch(stored.policy),
-  ])
-  const { assetMint } = await program.account.config.fetch(findConfig(program.programId))
-
-  await program.methods
-    .resolve()
-    .accountsPartial({
-      protocol,
-      pool,
-      policy: stored.policy,
-      incident,
-      vault: findVault(assetMint, pool),
-      // The beneficiary and the opener are paid in the settlement asset, so both need
-      // an account for it. Derived, not created: `resolve` cannot open one, and a
-      // beneficiary without an account is a policy that was issued wrong.
-      beneficiaryToken: getAssociatedTokenAddressSync(assetMint, policy.beneficiary, true),
-      openerToken: getAssociatedTokenAddressSync(assetMint, stored.opener, true),
-    })
-    .rpc()
-}
-
 export const createChain = ({
   program,
   connection,
@@ -200,34 +163,37 @@ export const createChain = ({
     },
 
     /**
-     * The bar is the set size the incident recorded when it opened, never the current
-     * one, and the share is rounded **up** — both exactly as `quorum_threshold` does it
-     * in the program. Rounding down would let a set of three clear a 60% quorum on one
-     * attestation.
+     * Every attestation carries what the deciding one settles with: no attestor can know
+     * for certain that its vote will complete the quorum, and the program takes the same
+     * accounts either way (`attest.rs`). The two token accounts are the associated ones
+     * and nothing else; the deciding vote opens them if they are missing.
      */
-    quorumReached: async (incident) => {
-      const account = await program.account.incident.fetchNullable(new PublicKey(incident))
-      if (account === null || !('open' in account.status)) return false
-
-      const { quorumBps } = await program.account.config.fetch(findConfig(programId))
-      const needed = Math.ceil((account.setSize * quorumBps) / 10_000)
-      return account.votesUnauthorized >= needed
-    },
-
-    resolve: async (protocol, incident) =>
-      resolveIncident(program, new PublicKey(protocol), new PublicKey(incident)),
-
     attest: async ({ protocol, incident, verdict }) => {
+      const key = new PublicKey(protocol)
       const address = new PublicKey(incident)
+      const stored = await program.account.incident.fetch(address)
+      const [{ pool }, policy, { assetMint }] = await Promise.all([
+        program.account.protocol.fetch(key),
+        program.account.policy.fetch(stored.policy),
+        program.account.config.fetch(findConfig(programId)),
+      ])
 
       await program.methods
         .attest(verdictArgument(verdict))
         .accountsPartial({
-          protocol: new PublicKey(protocol),
+          protocol: key,
           incident: address,
           attestorAuthority: attestor.publicKey,
           attestor: findAttestor(programId, attestor.publicKey),
           attestation: findAttestation(programId, address, attestor.publicKey),
+          pool,
+          policy: stored.policy,
+          vault: findVault(assetMint, pool),
+          assetMint,
+          beneficiary: policy.beneficiary,
+          beneficiaryToken: getAssociatedTokenAddressSync(assetMint, policy.beneficiary, true),
+          opener: stored.opener,
+          openerToken: getAssociatedTokenAddressSync(assetMint, stored.opener, true),
           systemProgram: SystemProgram.programId,
         })
         .signers([attestor])
@@ -326,7 +292,6 @@ export const createSweepChain = ({
             endTs: account.endTs.toNumber(),
             premiumPaid: BigInt(account.premiumPaid.toString()),
             exhausted: 'exhausted' in account.status,
-            beneficiary: account.beneficiary.toBase58(),
           }
     },
 
@@ -342,9 +307,6 @@ export const createSweepChain = ({
       const account = await program.account.incident.fetchNullable(new PublicKey(incident))
       return account !== null && 'open' in account.status
     },
-
-    resolve: async (protocol, incident) =>
-      resolveIncident(program, new PublicKey(protocol), new PublicKey(incident)),
 
     closeExpired: async (protocol, incident) => {
       const key = new PublicKey(protocol)
@@ -421,7 +383,8 @@ export const createSweepChain = ({
 
 /**
  * `Pending` and `Active` still hold their remaining limit in `locked_limit`; `Expired`
- * gave it back through `release_expired_policy`, `Exhausted` through `resolve`.
+ * gave it back through `release_expired_policy`, `Exhausted` through the payout that
+ * exhausted it.
  */
 const holdsReservation = (status: object): boolean =>
   !('expired' in status) && !('exhausted' in status)

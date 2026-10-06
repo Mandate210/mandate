@@ -231,7 +231,13 @@ const EXPECTED: Record<string, string[]> = {
   '5AZjxg35P6EcrcGtzsEh13KdLSFd4XVYcRBPzpwR5RHF': ['effective'],
   // Submitted, still inside its delay when the trigger ran (FR-031).
   '84xuZSh5jgq8DnEHwYDzcv9WNTS6x2Bf2xAdk6gXznb2': ['pending'],
+  // In force for a different instruction — and paid after T078, by the vote that
+  // completed the quorum rather than by a separate `resolve`.
+  '5LEvoeyJattPTqvdPYgSvrurdro7m2sAhowgezZgrdcL': ['effective'],
 }
+
+/** The three above were paid by `resolve`; this one by the deciding vote itself. */
+const PAID_BY_THE_DECIDING_VOTE = ['5LEvoeyJattPTqvdPYgSvrurdro7m2sAhowgezZgrdcL']
 
 describe('SC-007: devnet incidents', () => {
   it('has every recording it expects, and nothing it does not', () => {
@@ -248,6 +254,16 @@ describe('SC-007: devnet incidents', () => {
     expect(replay.entries.map((entry) => entry.state)).toEqual(EXPECTED[trail.incident.address])
     expect(trail.incident.status).toBe('paid_out')
     expect(replay.owed).toBe(BigInt(trail.incident.payout) + BigInt(trail.incident.shortfall))
+  })
+
+  // FR-012 as the chain recorded it: one transaction for the decision and the money.
+  it('has a payout that is the deciding attestation’s own transaction, after T078', () => {
+    for (const address of PAID_BY_THE_DECIDING_VOTE) {
+      const recorded = recordings.find((r) => r.trail.incident.address === address)
+      const payout = recorded?.trail.payout?.signature
+      expect(payout).toBeDefined()
+      expect(recorded?.trail.attestations.map((a) => a.signature)).toContain(payout)
+    }
   })
 
   it.each(recordings)(

@@ -14,6 +14,7 @@ import {
   findProtocol,
   findVault,
 } from '@mandate/sdk'
+import { getAssociatedTokenAddressSync } from '@solana/spl-token'
 import { Connection, Keypair, type PublicKey, SystemProgram } from '@solana/web3.js'
 import { type TestEnv, testRpcUrl, waitForNextEpoch } from './harness'
 
@@ -282,7 +283,7 @@ export const admitAttestor = async (
 
 /**
  * Attestations an incident of this set size needs, mirroring `quorum_threshold` in
- * `instructions/resolve.rs`. Rounded up in both places — a test that rounded the
+ * `settlement.rs`. Rounded up in both places — a test that rounded the
  * other way would agree with itself and disagree with the program.
  */
 export const quorumNeeded = (setSize: number, quorumBps: number): number =>
@@ -381,10 +382,21 @@ export const openIncident = async (
   return { incident, opener, bond, triggerSig }
 }
 
+export interface Attested {
+  attestation: PublicKey
+  /** The transaction — the payout too, when this vote completed the quorum (T078). */
+  signature: string
+}
+
 /**
  * One attestor's verdict on an open incident (FR-007). The incident is named by its
  * address and nothing else: the program verifies it against the signature the account
  * stores, so there is no sequence number to pass.
+ *
+ * Every vote carries what the deciding one settles with — the program takes the same
+ * accounts whatever the tally (`attest.rs`). The token accounts are the associated ones,
+ * derived, never created here: the deciding vote opens them if they are missing.
+ * `beneficiaryToken` is overridable only to show that nothing else is accepted.
  */
 export const attest = async (
   program: Program<DrainCover>,
@@ -392,10 +404,16 @@ export const attest = async (
   incident: PublicKey,
   attestor: Keypair,
   verdict: 'unauthorized' | 'authorized' = 'unauthorized',
-): Promise<PublicKey> => {
+  overrides: { beneficiaryToken?: PublicKey } = {},
+): Promise<Attested> => {
   const attestation = findAttestation(program.programId, incident, attestor.publicKey)
+  const stored = await program.account.incident.fetch(incident)
+  const [policy, { assetMint }] = await Promise.all([
+    program.account.policy.fetch(stored.policy),
+    program.account.config.fetch(findConfig(program.programId)),
+  ])
 
-  await program.methods
+  const signature = await program.methods
     .attest(verdict === 'unauthorized' ? { unauthorized: {} } : { authorized: {} })
     .accountsPartial({
       protocol: target.protocol,
@@ -403,44 +421,47 @@ export const attest = async (
       attestorAuthority: attestor.publicKey,
       attestor: findAttestor(program.programId, attestor.publicKey),
       attestation,
+      pool: target.pool,
+      policy: stored.policy,
+      vault: target.vault,
+      assetMint,
+      beneficiary: policy.beneficiary,
+      beneficiaryToken:
+        overrides.beneficiaryToken ??
+        getAssociatedTokenAddressSync(assetMint, policy.beneficiary, true),
+      opener: stored.opener,
+      openerToken: getAssociatedTokenAddressSync(assetMint, stored.opener, true),
       systemProgram: SystemProgram.programId,
     })
     .signers([attestor])
     .rpc()
 
-  return attestation
+  return { attestation, signature }
 }
 
 /**
- * Settles an incident whose quorum has been reached. Permissionless by design, so
- * the caller here is just the provider's wallet paying the fee.
+ * Votes `unauthorized` with each attestor in turn until the incident is settled, and
+ * returns the vote that settled it — the payout's transaction (FR-012). Throws if the
+ * attestors run out first: a caller that expected a quorum and did not get one has a
+ * broken premise, not a result.
  */
-export const resolve = async (
+export const attestToQuorum = async (
   program: Program<DrainCover>,
-  env: TestEnv,
   target: RegisteredProtocol,
   incident: PublicKey,
-): Promise<void> => {
-  const stored = await program.account.incident.fetch(incident)
-  const policy = await program.account.policy.fetch(stored.policy)
-
-  await program.methods
-    .resolve()
-    .accountsPartial({
-      protocol: target.protocol,
-      pool: target.pool,
-      policy: stored.policy,
-      incident,
-      vault: target.vault,
-      beneficiaryToken: await env.assetAccount(policy.beneficiary),
-      openerToken: await env.assetAccount(stored.opener),
-    })
-    .rpc()
+  attestors: Keypair[],
+): Promise<Attested & { attestor: Keypair }> => {
+  for (const attestor of attestors) {
+    const attested = await attest(program, target, incident, attestor)
+    const { status } = await program.account.incident.fetch(incident)
+    if (!('open' in status)) return { ...attested, attestor }
+  }
+  throw new Error(`incident ${incident.toBase58()} still open after ${attestors.length} votes`)
 }
 
 /**
- * Closes an incident whose window ran out without a quorum (FR-011). Permissionless
- * like `resolve`, so the caller is only paying the fee.
+ * Closes an incident whose window ran out without a quorum (FR-011). Permissionless,
+ * so the caller is only paying the fee.
  */
 export const closeExpiredIncident = async (
   program: Program<DrainCover>,
@@ -465,7 +486,7 @@ export const closeExpiredIncident = async (
 
 /**
  * Gives back the reservation of a policy whose period has ended (FR-020, T067).
- * Permissionless, like `resolve`: the caller only pays the fee.
+ * Permissionless: the caller only pays the fee.
  */
 export const releaseExpiredPolicy = async (
   program: Program<DrainCover>,

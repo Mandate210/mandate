@@ -15,15 +15,16 @@ import {
   type RegisteredProtocol,
   admitQuorumSet,
   attest,
+  attestToQuorum,
   closeExpiredIncident,
   ensureConfig,
   fundPool,
   issuePolicy,
   openIncident,
+  quorumNeeded,
   registerProtocol,
   releaseAttestors,
   releaseExpiredPolicy,
-  resolve,
 } from './world'
 
 const reachable = await validatorReachable()
@@ -58,8 +59,8 @@ const pooled = async (program: Program<DrainCover>, target: RegisteredProtocol) 
  * The boundaries of `validate_release` — the end second, a second release, an exhausted
  * policy — are unit tests in Rust. What only a validator shows is the account binding
  * (a policy of one protocol cannot be released against another's pool) and how the
- * release sits next to `resolve` and `close_expired_incident` on a policy whose
- * incident is still open: in any order, with the pool's books square at the end.
+ * release sits next to `close_expired_incident` on a policy whose incident is still
+ * open: in any order, with the pool's books square at the end.
  */
 describe.skipIf(!reachable)('release_expired_policy', () => {
   let env: TestEnv
@@ -67,7 +68,7 @@ describe.skipIf(!reachable)('release_expired_policy', () => {
   let attestors: Keypair[]
   /** Ran out with nothing against it. */
   let quiet: { target: RegisteredProtocol; seq: number }
-  /** Ran out while an incident on it sat at quorum, unsettled. */
+  /** Ran out while an incident on it was still open, one vote short of its quorum. */
   let contested: { target: RegisteredProtocol; seq: number; incident: PublicKey }
 
   const coveredProtocol = async (endTs?: number): Promise<[RegisteredProtocol, number]> => {
@@ -106,7 +107,9 @@ describe.skipIf(!reachable)('release_expired_policy', () => {
 
     const [contestedTarget, contestedSeq] = await coveredProtocol(end)
     const { incident } = await openIncident(program, env, contestedTarget, contestedSeq)
-    for (const attestor of attestors) {
+    const { quorumBps } = await program.account.config.fetch(findConfig(program.programId))
+    const { setSize } = await program.account.incident.fetch(incident)
+    for (const attestor of attestors.slice(0, quorumNeeded(setSize, quorumBps) - 1)) {
       await attest(program, contestedTarget, incident, attestor)
     }
     contested = { target: contestedTarget, seq: contestedSeq, incident }
@@ -178,13 +181,12 @@ describe.skipIf(!reachable)('release_expired_policy', () => {
     expect((await pooled(program, other)).lockedLimit).toBe(before.lockedLimit)
   })
 
-  // Exhausted is already released: `resolve` gave the retention back when the payout
-  // used up what was payable. Refused as such even before `end_ts`.
+  // Exhausted is already released: the payout gave the retention back when it used up
+  // what was payable. Refused as such even before `end_ts`.
   it('refuses a policy a payout exhausted', async () => {
     const [target, seq] = await coveredProtocol()
     const { incident } = await openIncident(program, env, target, seq)
-    for (const attestor of attestors) await attest(program, target, incident, attestor)
-    await resolve(program, env, target, incident)
+    await attestToQuorum(program, target, incident, attestors)
     expect((await pooled(program, target)).lockedLimit).toBe(0n)
 
     const error = await releaseExpiredPolicy(program, target, seq).catch(
@@ -194,11 +196,11 @@ describe.skipIf(!reachable)('release_expired_policy', () => {
     expect(codeOf(error)).toBe('PolicyAlreadyReleased')
   })
 
-  // The case the plan turned on. The quorum was reached while the policy was in force,
-  // nobody settled it, and the policy ran out. `resolve` can no longer pay (FR-016), so
-  // the reservation backs nothing and is released with the incident still open; the
-  // incident is closed separately at its deadline. The three instructions touch
-  // disjoint fields, and at the end the pool holds no lock and no open incident.
+  // The case the plan turned on. An incident is still open when its policy runs out.
+  // Nothing can pay past `end_ts` (FR-016) — the deciding vote, if it comes, closes the
+  // incident unpaid — so the reservation backs nothing and is released with the incident
+  // still open; the incident is closed separately at its deadline. The instructions
+  // touch disjoint fields, and at the end the pool holds no lock and no open incident.
   it('releases a policy whose incident is still open, and the incident closes after', async () => {
     const { target, seq, incident } = contested
     const before = await pooled(program, target)
@@ -211,9 +213,6 @@ describe.skipIf(!reachable)('release_expired_policy', () => {
     expect(released.openIncidents).toBe(1)
     expect((await program.account.incident.fetch(incident)).status).toEqual({ open: {} })
 
-    const refused = await resolve(program, env, target, incident).catch((thrown: unknown) => thrown)
-    expect(codeOf(refused)).toBe('PolicyNotActive')
-
     const { deadline, opener, bond } = await program.account.incident.fetch(incident)
     const openerToken = await env.assetAccount(opener)
     const openerBefore = (await getAccount(env.connection, openerToken)).amount
@@ -221,11 +220,14 @@ describe.skipIf(!reachable)('release_expired_policy', () => {
     await closeExpiredIncident(program, env, target, incident)
 
     const after = await pooled(program, target)
-    expect(after).toEqual({ totalAssets: before.totalAssets, lockedLimit: 0n, openIncidents: 0 })
-    // Confirmed by the set, so the bond goes back — the release did not change that.
-    expect((await getAccount(env.connection, openerToken)).amount).toBe(
-      openerBefore + BigInt(bond.toString()),
-    )
+    // Short of the quorum, the claim stays unconfirmed and its bond becomes pool capital
+    // — the release did not change that.
+    expect(after).toEqual({
+      totalAssets: before.totalAssets + BigInt(bond.toString()),
+      lockedLimit: 0n,
+      openIncidents: 0,
+    })
+    expect((await getAccount(env.connection, openerToken)).amount).toBe(openerBefore)
     // The vault invariant: with no incident open, the balance is `total_assets`.
     expect((await getAccount(env.connection, target.vault)).amount).toBe(after.totalAssets)
   }, 240_000)

@@ -21,7 +21,6 @@ import {
   quorumNeeded,
   registerProtocol,
   releaseAttestors,
-  resolve,
   setAttestor,
 } from './world'
 
@@ -114,21 +113,16 @@ describe.skipIf(!reachable)('SC-004 — quorum with 40% of the set unavailable',
       await attest(program, target, incidentAccount, voter)
     }
 
-    const attested = await program.account.incident.fetch(incidentAccount)
-    expect(attested.votesUnauthorized).toBe(needed)
-    // Nobody spoke for the missing share, in either direction.
-    expect(attested.votesAuthorized).toBe(0)
-    expect(attested.votesUnauthorized + attested.votesAuthorized).toBe(setSize - silent)
-
-    // The deadline never comes into it: the decision is taken inside the window, so
-    // what ends this incident is the payout and not the expiry (FR-011 is the other
-    // path, and it is not this one).
+    // The deadline never comes into it: the vote that completed the quorum paid, inside
+    // the window, so what ends this incident is the payout and not the expiry (FR-011
+    // is the other path, and it is not this one).
     const decidedAt = await clusterTimestamp(env.connection)
-    expect(decidedAt).toBeLessThan(attested.deadline.toNumber())
-
-    await resolve(program, env, target, incidentAccount)
-
     const settled = await program.account.incident.fetch(incidentAccount)
+    expect(decidedAt).toBeLessThan(settled.deadline.toNumber())
+    expect(settled.votesUnauthorized).toBe(needed)
+    // Nobody spoke for the missing share, in either direction.
+    expect(settled.votesAuthorized).toBe(0)
+    expect(settled.votesUnauthorized + settled.votesAuthorized).toBe(setSize - silent)
     expect(settled.status).toEqual({ paidOut: {} })
     expect(BigInt(settled.payout.toString())).toBe(PAYABLE)
     expect((await getAccount(env.connection, beneficiaryToken)).amount).toBe(
@@ -158,6 +152,8 @@ describe.skipIf(!reachable)('SC-004 — quorum with 40% of the set unavailable',
     const incident = await program.account.incident.fetch(opened)
     expect(incident.setSize).toBe(setSize)
     expect(incident.votesUnauthorized).toBe(needed - 1)
-    await expect(resolve(program, env, other, opened)).rejects.toThrow()
+    // Nothing was decided, so nothing was paid: the incident waits on its window.
+    expect(incident.status).toEqual({ open: {} })
+    expect(incident.payout.toNumber()).toBe(0)
   })
 })

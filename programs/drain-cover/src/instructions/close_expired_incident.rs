@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{transfer, Token, TokenAccount, Transfer};
 
 use crate::errors::DrainCoverError;
-use crate::instructions::resolve::quorum_threshold;
+use crate::settlement::quorum_threshold;
 use crate::state::{
     trigger_seeds, Config, Incident, IncidentStatus, Policy, Pool, Protocol, CONFIG_SEED,
     INCIDENT_SEED, POOL_SEED,
@@ -17,11 +17,11 @@ pub struct CloseExpiredIncident<'info> {
     #[account(mut, seeds = [POOL_SEED, protocol.key().as_ref()], bump = pool.bump)]
     pub pool: Account<'info, Pool>,
     /// Read, never written: closing without a payout leaves the cover exactly as it
-    /// was. It is here because whether `resolve` could still pay this incident
+    /// was. It is here because whether the incident could still have been paid
     /// depends on it (FR-016).
     pub policy: Account<'info, Policy>,
     /// Bound to `protocol` by seeds derived from its own stored signature, as in
-    /// `resolve`: nothing but the address names the incident, which is what lets a
+    /// `attest`: nothing but the address names the incident, which is what lets a
     /// sweeper close whatever it finds by listing accounts (T071).
     #[account(
         mut,
@@ -48,7 +48,7 @@ pub struct CloseExpiredIncident<'info> {
     )]
     pub opener_token: Account<'info, TokenAccount>,
     pub token_program: Program<'info, Token>,
-    // No signer, for the same reason as `resolve`: this is the only thing that
+    // No signer: this is the only thing that
     // releases capital an incident froze (FR-019), so nobody may be in a position to
     // withhold it.
 }
@@ -59,12 +59,16 @@ pub struct CloseExpiredIncident<'info> {
 /// `attest` counts an attestation landing in the deadline second as inside the window
 /// (T019), so closing may only start the second after; reading the boundary two ways
 /// would let an incident be closed while an attestation for it is still admissible.
-/// **And an incident `resolve` would settle goes there instead**, so that closing can
-/// never be raced ahead of a payout the quorum has already decided.
+/// **And an incident at quorum on a policy in force is refused**, so that closing can
+/// never be raced ahead of a payout the quorum has decided.
 ///
-/// The pairing is deliberate: quorum alone does not keep an incident open, because a
-/// policy that fell out of force pays nothing (FR-016) and its incident would
-/// otherwise freeze the pool's capital forever.
+/// Since T078 that second refusal guards a state nothing reaches: the vote that
+/// completes a quorum settles the incident in the same instruction, paid or — on a
+/// policy out of force — closed (`attest` → `after_vote`). What this instruction ends
+/// in practice is an incident whose window ran out short of the quorum. The guard
+/// stays because it is the rule, not because it is exercised: should anything ever
+/// leave an incident open at quorum again, closing it unpaid would be the one wrong
+/// answer.
 pub fn validate_close(
     status: IncidentStatus,
     deadline: i64,
@@ -177,14 +181,14 @@ mod tests {
     }
 
     #[test]
-    fn refuses_an_incident_that_resolve_would_still_pay() {
+    fn refuses_an_incident_the_quorum_decided_to_pay() {
         assert!(validate_close(IncidentStatus::Open, DEADLINE, DEADLINE + 1, true, true).is_err());
     }
 
     #[test]
     fn closes_a_confirmed_incident_whose_policy_is_no_longer_in_force() {
-        // Nothing else can end it: `resolve` refuses a policy out of force (FR-016),
-        // and the capital would stay frozen for good.
+        // A policy out of force pays nothing (FR-016); held open, the incident would
+        // freeze the capital for good.
         assert!(validate_close(IncidentStatus::Open, DEADLINE, DEADLINE + 1, true, false).is_ok());
     }
 

@@ -61,8 +61,8 @@ interface FakeOptions {
   attested?: boolean
   openFails?: boolean
   attestFails?: boolean
-  quorumReached?: boolean
-  resolveFails?: boolean
+  /** The program settles the incident on this attestation: it completed the quorum. */
+  settlesOnAttest?: boolean
   incidentStillOpen?: boolean
   /** Flips `hasAttested` to true after the failed write, as the winner's would. */
   attestedAfterFailure?: boolean
@@ -72,14 +72,13 @@ interface Fake extends ActChain {
   readonly opened: { policySeq: number; signature: string }[]
   readonly attestations: { incident: string; verdict: AttestVerdict }[]
   readonly triggerLookups: number
-  readonly resolved: string[]
 }
 
 const fake = (options: FakeOptions = {}): Fake => {
   const opened: { policySeq: number; signature: string }[] = []
   const attestations: { incident: string; verdict: AttestVerdict }[] = []
-  const resolved: string[] = []
   let triggerLookups = 0
+  let settled = false
   let attemptedOpen = false
   let attested = options.attested ?? false
 
@@ -92,9 +91,6 @@ const fake = (options: FakeOptions = {}): Fake => {
     },
     get triggerLookups() {
       return triggerLookups
-    },
-    get resolved() {
-      return resolved
     },
     fetchTransaction: async () =>
       options.read ?? { kind: 'ok', transaction: options.transaction ?? observed(PAUSE) },
@@ -120,13 +116,9 @@ const fake = (options: FakeOptions = {}): Fake => {
         throw new Error('attestation already exists')
       }
       attestations.push({ incident, verdict })
+      if (options.settlesOnAttest) settled = true
     },
-    incidentOpen: async () => options.incidentStillOpen ?? true,
-    quorumReached: async () => options.quorumReached ?? false,
-    resolve: async (_protocol, incident) => {
-      if (options.resolveFails) throw new Error('IncidentNotOpen')
-      resolved.push(incident)
-    },
+    incidentOpen: async () => !settled && (options.incidentStillOpen ?? true),
   }
 }
 
@@ -356,16 +348,15 @@ describe('createActor — voting an incident down (FR-007)', () => {
   })
 })
 
-describe('createActor — closing the loop (FR-012)', () => {
-  it('pays out when its own attestation completed the quorum', async () => {
-    // `resolve` is permissionless and takes no signer, so the program cannot call it
-    // and nobody is obliged to. An attestor that stopped at its own attestation would
-    // leave the incident at quorum until the deadline closed it with no payout — the
-    // decision made and the money not sent.
+describe('createActor — the deciding vote (FR-012)', () => {
+  it('reports the incident settled when its own vote completed the quorum', async () => {
+    // The program pays out inside the attestation that completes the quorum (T078), so
+    // the attestor sends nothing after it — and reads back, rather than guesses, whether
+    // its vote was the one.
     const chain = fake({
       transaction: observed(DRAIN),
       incident: { address: 'incident-2', open: true },
-      quorumReached: true,
+      settlesOnAttest: true,
     })
 
     expect(await createActor({ chain }).act(delivered())).toEqual({
@@ -375,43 +366,25 @@ describe('createActor — closing the loop (FR-012)', () => {
       opened: false,
       settled: true,
     })
-    expect(chain.resolved).toEqual(['incident-2'])
+    expect(chain.attestations).toEqual([{ incident: 'incident-2', verdict: 'unauthorized' }])
   })
 
-  it('does not try to pay out before the quorum is there', async () => {
+  it('reports it still open below the quorum', async () => {
     const chain = fake({
       transaction: observed(DRAIN),
       incident: { address: 'incident-2', open: true },
     })
 
-    await createActor({ chain }).act(delivered())
-    expect(chain.resolved).toEqual([])
+    expect(await createActor({ chain }).act(delivered())).toMatchObject({ settled: false })
   })
 
-  it('never settles on an «authorized» vote', async () => {
+  it('never reports an «authorized» vote as deciding', async () => {
     // Quorum counts one verdict only (FR-010), so an authorized attestation cannot be
-    // the one that completes it — asking would be a wasted read at best.
-    const chain = fake({ incident: { address: 'incident-4', open: true }, quorumReached: true })
+    // the one that completes it, whatever happens to the incident around it.
+    const chain = fake({ incident: { address: 'incident-4', open: true }, settlesOnAttest: true })
 
     expect(await createActor({ chain }).act(delivered())).toMatchObject({
       verdict: 'authorized',
-      settled: false,
-    })
-    expect(chain.resolved).toEqual([])
-  })
-
-  it('keeps going when another attestor resolved first', async () => {
-    // Every way this loses is a race it was expected to lose, and the incident is not
-    // lost either way — taking the worker down over it would cost the next compromise.
-    const chain = fake({
-      transaction: observed(DRAIN),
-      incident: { address: 'incident-2', open: true },
-      quorumReached: true,
-      resolveFails: true,
-    })
-
-    expect(await createActor({ chain }).act(delivered())).toMatchObject({
-      kind: 'attested',
       settled: false,
     })
   })

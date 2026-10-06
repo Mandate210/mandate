@@ -30,6 +30,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"
 [dependencies]
 # `init-if-needed` is on for one account: the attestor set is an upsert, since a
 # removed attestor keeps the account that records their agreements and can be
-# admitted again (instructions/set_attestor.rs).
-anchor-lang = { version = "0.32.1", features = ["init-if-needed"] }
+# admitted again (instructions/set_attestor.rs). `event-cpi` carries the decision on
+# an incident as an inner instruction of the vote that took it (events.rs, T078).
+anchor-lang = { version = "0.32.1", features = ["init-if-needed", "event-cpi"] }
 anchor-spl = "0.32.1"

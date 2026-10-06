@@ -4,7 +4,7 @@ import { IncidentStatus } from '@/components/IncidentHistory'
 import { AsOfLine, Failure, Loading } from '@/components/QueryState'
 import { ApiError, isDemo, queries } from '@/lib/api'
 import { ENTRY_STATE, amount, operationOf, short, utcSecond, windowOf } from '@/lib/format'
-import { clockOf, settlementDelay, timelineOf } from '@/lib/incident'
+import { clockOf, settlementOf, timelineOf } from '@/lib/incident'
 import { cn } from '@/lib/utils'
 import type { IncidentDetailResponse } from '@mandate/shared'
 import { useQuery } from '@tanstack/react-query'
@@ -70,7 +70,7 @@ const Trail = ({
 }) => {
   const { incident, trigger, payout, verification } = detail
   const { origin, from } = clockOf(detail)
-  const delay = settlementDelay(timelineOf(detail))
+  const settlement = settlementOf(timelineOf(detail))
   const absent = incident.set_size - detail.attestations.length
   const sinceOrigin = (at: number) =>
     `T+${at - origin} s${from === 'opening' ? ' after the opening' : ''}`
@@ -268,8 +268,11 @@ const Trail = ({
               {utcSecond(payout.at)} · {sinceOrigin(payout.at)}
             </Row>
             <Row label="Instruction">
-              resolve — permissionless, sent{delay === null ? '' : ` ${delay} s`} after the
-              attestation that completed the quorum; no appeal window
+              {settlement?.kind === 'deciding-vote'
+                ? 'attest — the attestation that completed the quorum paid out in the same transaction; no appeal window'
+                : settlement?.kind === 'separate'
+                  ? `resolve — a separate, permissionless instruction, sent ${settlement.delay} s after the attestation that completed the quorum (how the program paid until October 2026); no appeal window`
+                  : 'paid once the quorum was reached; no appeal window'}
             </Row>
           </>
         )}

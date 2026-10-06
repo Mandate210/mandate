@@ -54,8 +54,8 @@ const ATTESTOR_COUNT = 3
 /**
  * Enough for every attestation account this attestor will pay rent for, plus fees.
  *
- * An attestation costs about 0.00101 SOL of rent that never comes back, and one of the
- * three also pushes every `resolve`. A tenth of a SOL covers a run several times over
+ * An attestation costs about 0.00101 SOL of rent that never comes back, and the deciding
+ * vote opens the beneficiary's token account (≈0.00204 SOL) when it has none (T078). A tenth of a SOL covers a run several times over
  * and still leaves the payer the bulk of what it holds.
  */
 const ATTESTOR_SOL = 0.1

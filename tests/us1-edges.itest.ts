@@ -15,7 +15,6 @@ import {
   quorumNeeded,
   registerProtocol,
   releaseAttestors,
-  resolve,
 } from './world'
 
 const reachable = await validatorReachable()
@@ -77,7 +76,6 @@ describe.skipIf(!reachable)('US1 — edges', () => {
     for (const attestor of attestors.slice(0, needed)) {
       await attest(program, target, opened, attestor)
     }
-    await resolve(program, env, target, opened)
     expect((await program.account.policy.fetch(policy)).status).toEqual({ exhausted: {} })
 
     // What is left of the limit is the retention, which is never payable (FR-033), so
@@ -107,10 +105,8 @@ describe.skipIf(!reachable)('US1 — edges', () => {
 
     const incident = await program.account.incident.fetch(opened)
     expect(incident.votesUnauthorized).toBe(needed - 1)
-    const error = await resolve(program, env, target, opened).catch((thrown: unknown) => thrown)
-    expect(error).toBeInstanceOf(AnchorError)
-    expect((error as AnchorError).error.errorCode.code).toBe('QuorumNotReached')
     // Still open and still frozen: an attempt from outside is not an event.
+    expect(incident.status).toEqual({ open: {} })
     expect((await program.account.pool.fetch(target.pool)).openIncidents).toBe(1)
   })
 
@@ -146,10 +142,8 @@ describe.skipIf(!reachable)('US1 — edges', () => {
     expect(incident.votesUnauthorized).toBe(0)
 
     // Quorum is counted on one classification (FR-010), and unanimity on the other
-    // one is not a decision to pay.
-    const error = await resolve(program, env, target, opened).catch((thrown: unknown) => thrown)
-    expect(error).toBeInstanceOf(AnchorError)
-    expect((error as AnchorError).error.errorCode.code).toBe('QuorumNotReached')
+    // one is not a decision to pay: no vote here settled anything.
+    expect(incident.status).toEqual({ open: {} })
 
     expect((await getAccount(env.connection, beneficiaryToken)).amount).toBe(beneficiaryBefore)
     const pool = await program.account.pool.fetch(target.pool)

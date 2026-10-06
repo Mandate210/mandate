@@ -49,7 +49,6 @@ const main = async (): Promise<void> => {
     chain: createSweepChain({ program, connection }),
   }).sweepOnce()
 
-  for (const incident of report.resolved) console.log(`  paid out  ${incident}`)
   for (const incident of report.closed) console.log(`  closed    ${incident}`)
   for (const policy of report.released) console.log(`  released  ${policy}`)
   for (const address of report.lost) console.log(`  taken     ${address} (settled by someone else)`)

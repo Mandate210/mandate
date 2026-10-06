@@ -6,13 +6,13 @@ import {
   clockOf,
   endOf,
   replaySpeed,
-  settlementDelay,
+  settlementOf,
   timelineOf,
 } from './incident'
 
 const TRIGGER = INCIDENT_DETAIL.trigger.block_time ?? 0
 
-/** An incident as devnet records them: three attestors, two needed, `resolve` after. */
+/** An incident as devnet recorded them before T078: three attestors, two needed, a separate `resolve` after. */
 const devnet = (): IncidentDetailResponse => {
   const at = (t: number) => TRIGGER + t
   const [a, b, c] = INCIDENT_DETAIL.attestations
@@ -85,10 +85,29 @@ describe('an incident’s timeline', () => {
     expect(timelineOf(same).at(-1)?.kind).toBe('payout')
   })
 
-  it('says how long resolve took after the quorum', () => {
-    expect(settlementDelay(timelineOf(devnet()))).toBe(3)
+  it('says how long a separate resolve took after the quorum', () => {
+    expect(settlementOf(timelineOf(devnet()))).toEqual({ kind: 'separate', delay: 3 })
     const open = { ...devnet(), payout: null }
-    expect(settlementDelay(timelineOf(open))).toBeNull()
+    expect(settlementOf(timelineOf(open))).toBeNull()
+  })
+
+  // Since T078 the vote that completes the quorum pays: one signature for both.
+  it('recognises a payout made by the deciding vote itself', () => {
+    const detail = devnet()
+    const deciding = detail.attestations[1]
+    if (deciding === undefined || detail.payout === null) throw new Error('fixture')
+    const paid = {
+      ...detail,
+      payout: { ...detail.payout, signature: deciding.signature ?? '', at: deciding.submitted_at },
+    }
+    expect(settlementOf(timelineOf(paid))).toEqual({ kind: 'deciding-vote' })
+  })
+
+  // An attestation the index has not matched to its transaction yet cannot be compared.
+  it('claims neither while the deciding signature is unknown', () => {
+    const detail = devnet()
+    const attestations = detail.attestations.map((a) => ({ ...a, signature: null }))
+    expect(settlementOf(timelineOf({ ...detail, attestations }))).toBeNull()
   })
 
   it('counts from the opening when the RPC no longer returns the trigger', () => {

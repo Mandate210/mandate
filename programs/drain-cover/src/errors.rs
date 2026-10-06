@@ -30,6 +30,8 @@ pub enum DrainCoverError {
     TooManyPrivilegedAddresses,
     #[msg("Incident is not open")]
     IncidentNotOpen,
+    /// Raised by `resolve`, which T078 folded into `attest`. Kept so that every code
+    /// after it keeps its number: clients and old trails read errors by code.
     #[msg("Quorum has not been reached")]
     QuorumNotReached,
     #[msg("Requested limit exceeds the pool's free capital")]
@@ -114,7 +116,7 @@ pub enum DrainCoverError {
     /// the second before `end_ts`, so its reservation is released from `end_ts` on.
     #[msg("Policy period has not ended yet, so its limit is still reserved")]
     PolicyNotExpired,
-    /// Released once — either on expiry, or by `resolve` when a payout exhausted the
+    /// Released once — either on expiry, or by the settlement when a payout exhausted the
     /// policy. A second release would take the reservation of some other policy.
     #[msg("Policy reservation has already been released")]
     PolicyAlreadyReleased,

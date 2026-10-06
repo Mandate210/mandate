@@ -107,11 +107,27 @@ export const endOf = (detail: IncidentDetailResponse): number | null => {
   return detail.incident.deadline - origin
 }
 
-/** The seconds between the quorum and the payout, when there was both. */
-export const settlementDelay = (events: IncidentEvent[]): number | null => {
+/** How a paid incident's money moved relative to the vote that decided it. */
+export type Settlement =
+  /** The vote that completed the quorum paid out in the same transaction (FR-012). */
+  | { kind: 'deciding-vote' }
+  /** A separate `resolve`, `delay` seconds after the quorum — how the program paid
+   * until it was upgraded in October 2026 (T078). */
+  | { kind: 'separate'; delay: number }
+
+/**
+ * Read from the signatures, not assumed: devnet holds incidents paid both ways, and the
+ * page has to say which one it is looking at. `null` without a payout, or while the
+ * deciding attestation's signature is not indexed yet — the two cannot be compared.
+ */
+export const settlementOf = (events: IncidentEvent[]): Settlement | null => {
   const quorum = events.find((e) => e.kind === 'attestation' && e.quorumReached)
   const payout = events.find((e) => e.kind === 'payout')
-  return quorum === undefined || payout === undefined ? null : payout.at - quorum.at
+  if (quorum?.kind !== 'attestation' || payout?.kind !== 'payout') return null
+  if (quorum.signature === null) return null
+  return quorum.signature === payout.signature
+    ? { kind: 'deciding-vote' }
+    : { kind: 'separate', delay: payout.at - quorum.at }
 }
 
 /** The longest a replay runs. A real incident fits it many times over (~10 s on devnet). */

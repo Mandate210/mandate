@@ -125,7 +125,7 @@ const main = async (): Promise<void> => {
     },
   })
 
-  // Housekeeping, not attestation: `close_expired_incident` and `resolve` take no
+  // Housekeeping, not attestation: `close_expired_incident` and `release_expired_policy` take no
   // signer, and this worker runs them only because it is the process that already has
   // a key, an RPC and a program client (T071, FR-011, FR-019).
   const intervalSeconds = sweepInterval()

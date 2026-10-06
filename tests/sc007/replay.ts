@@ -26,6 +26,7 @@ import {
   findPool,
   findVault,
   readTransaction,
+  settlementsIn,
 } from '@mandate/sdk'
 import {
   type DeclarationEntry,
@@ -425,17 +426,16 @@ export const replayDecision = async (
       if (decidedAt !== null && settled.at < decidedAt) {
         report('payout', 'the payout landed before the quorum did')
       }
-      // The instruction that paid has to be the program's, about this incident:
-      // `resolve` now, the quorum-completing `attest` once FR-012 is taken literally.
-      const paying = settled.transaction.instructions.some(
-        (ix) =>
-          ix.programId === verification.program_id &&
-          ix.accounts.includes(incidentAddress) &&
-          ['resolve', 'attest'].some((name) =>
-            sameBytes(ix.data.slice(0, 8), discriminatorOf('instructions', name)),
-          ),
+      // The transaction has to say it paid this incident: the vote that completed the
+      // quorum, through its `IncidentSettled` event (T078), or a `resolve` from before.
+      const settlement = settlementsIn(programId, settled.transaction).find(
+        (candidate) => candidate.incident === incidentAddress,
       )
-      if (!paying) report('payout', `${trail.payout.signature} settles nothing of this incident`)
+      if (settlement?.status !== 'paid_out') {
+        report('payout', `${trail.payout.signature} pays nothing of this incident`)
+      } else if (settlement.payout !== null) {
+        expect('payout', 'amount the settlement states', settlement.payout, big(incident.payout))
+      }
 
       const beneficiary = key(policy.beneficiary)
       expect('payout', 'beneficiary', trail.payout.beneficiary, beneficiary)

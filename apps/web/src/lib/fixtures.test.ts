@@ -9,7 +9,7 @@ import {
 import { describe, expect, it } from 'vitest'
 import { fixtureSource } from './fixtureSource'
 import { CONFIG, DECLARATIONS, INCIDENT_DETAIL, POOLS, PROTOCOL_DETAILS } from './fixtures'
-import { timelineOf } from './incident'
+import { settlementOf, timelineOf } from './incident'
 
 /**
  * The demonstration data is held to the contract the real API will be held to, so
@@ -57,16 +57,14 @@ describe('fixtures', () => {
     expect(entries.some((e) => e.state !== 'effective')).toBe(true)
   })
 
-  it('pay out only once the unauthorized tally reaches the quorum, and in a later transaction', () => {
+  it('pay out in the transaction of the vote that completes the quorum (FR-012)', () => {
     const events = timelineOf(INCIDENT_DETAIL)
     const quorum = events.find((e) => e.kind === 'attestation' && e.quorumReached)
     const payout = events.find((e) => e.kind === 'payout')
-    expect(quorum).toBeDefined()
-    expect(payout?.at).toBeGreaterThan(quorum?.at ?? Number.POSITIVE_INFINITY)
-    // `resolve` is its own transaction, as on devnet — not the deciding attestation's.
-    expect(INCIDENT_DETAIL.attestations.map((a) => a.signature)).not.toContain(
-      INCIDENT_DETAIL.payout?.signature,
-    )
+    if (quorum?.kind !== 'attestation' || payout?.kind !== 'payout') throw new Error('fixture')
+    expect(payout.signature).toBe(quorum.signature)
+    expect(payout.at).toBe(quorum.at)
+    expect(settlementOf(events)).toEqual({ kind: 'deciding-vote' })
   })
 })
 

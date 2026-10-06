@@ -20,15 +20,15 @@ pub struct ReleaseExpiredPolicy<'info> {
         bump,
     )]
     pub policy: Account<'info, Policy>,
-    // No signer, as in `resolve` and `close_expired_incident`: the release is
+    // No signer, as in `close_expired_incident`: the release is
     // mechanical, and it is what lets underwriters withdraw capital that no longer
     // backs anything (FR-020) — nobody may be in a position to withhold it.
 }
 
 /// Whether a policy's reservation may be released.
 ///
-/// **An open incident on the policy does not hold the release back.** `resolve`
-/// asks whether the policy is in force at the moment of the decision (FR-016), so
+/// **An open incident on the policy does not hold the release back.** Settlement
+/// (`attest`, on the deciding vote) asks whether the policy is in force at the moment of the decision (FR-016), so
 /// from `end_ts` on no path can pay against this policy, whatever its incidents'
 /// tallies say — the reservation backs nothing. The incident itself is closed by
 /// `close_expired_incident`, which after `end_ts` closes it regardless of quorum, and
@@ -37,7 +37,7 @@ pub struct ReleaseExpiredPolicy<'info> {
 /// force at the time of the event», this stops being safe: the release would then
 /// have to wait for the policy's incidents, which nothing counts per policy today.
 ///
-/// `Exhausted` is refused as already released: `resolve` gave back the retention
+/// `Exhausted` is refused as already released: settlement gave back the retention
 /// when the payout used up what was payable, and the policy holds nothing of
 /// `locked_limit` any more.
 pub fn validate_release(status: PolicyStatus, end_ts: i64, now: i64) -> Result<()> {
@@ -98,7 +98,7 @@ mod tests {
     }
 
     #[test]
-    fn refuses_an_exhausted_policy_resolve_already_released() {
+    fn refuses_an_exhausted_policy_settlement_already_released() {
         assert!(validate_release(PolicyStatus::Exhausted, END, END + 1).is_err());
     }
 }

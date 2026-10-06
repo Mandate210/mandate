@@ -15,10 +15,11 @@ import {
   fields,
   instruction,
   keys,
+  legacyResolveTx,
   openTx,
   programId,
   registerTx,
-  resolveTx,
+  settlingAttestTx,
   sig,
   transaction,
   worldAccounts,
@@ -196,8 +197,39 @@ describe('factsFromTransaction', () => {
     ])
   })
 
-  it('takes resolve as the payout, timed by its block', () => {
-    const facts = factsFromTransaction(programId, resolveTx(sig('SigResolve'), 1_710_000_060))
+  it('takes the vote that settled the incident as the payout, timed by its block', () => {
+    const facts = factsFromTransaction(
+      programId,
+      settlingAttestTx(keys.attestorA, sig('SigDecide'), { blockTime: 1_710_000_070 }),
+    )
+    expect(facts.provenance).toContainEqual({
+      table: 'incidents',
+      address: addresses.incident.toBase58(),
+      payoutSignature: sig('SigDecide'),
+      payoutAt: 1_710_000_070,
+    })
+    expect(facts.touched).toContain(addresses.incident.toBase58())
+  })
+
+  // Every attestation is an `attest`: only the event tells the deciding one apart, and a
+  // vote below the quorum must not be taken for a payout.
+  it('does not take an ordinary vote for a payout', () => {
+    const facts = factsFromTransaction(programId, attestTx(keys.attestorA, sig('SigAttest')))
+    expect(facts.provenance.filter((fact) => fact.table === 'incidents')).toEqual([])
+  })
+
+  it('does not take a vote that closed the incident unpaid for a payout (FR-016)', () => {
+    const facts = factsFromTransaction(
+      programId,
+      settlingAttestTx(keys.attestorA, sig('SigDecide'), { status: 'ClosedNoPayout' }),
+    )
+    expect(facts.provenance.filter((fact) => fact.table === 'incidents')).toEqual([])
+  })
+
+  // Paid before T078: the cache is disposable, so a census from nothing has to find
+  // those payouts again by the instruction that made them.
+  it('still takes a legacy resolve as the payout', () => {
+    const facts = factsFromTransaction(programId, legacyResolveTx(sig('SigResolve'), 1_710_000_060))
     expect(facts.provenance).toEqual([
       {
         table: 'incidents',
@@ -206,11 +238,13 @@ describe('factsFromTransaction', () => {
         payoutAt: 1_710_000_060,
       },
     ])
-    expect(facts.touched).toContain(addresses.pool.toBase58())
   })
 
   it("ignores another program's instructions, even with our data in them", () => {
-    const foreign = { ...instruction('resolve', {}, {}), programId: keys.declared.toBase58() }
+    const foreign = {
+      ...instruction('attest', { verdict: { Unauthorized: {} } }, {}),
+      programId: keys.declared.toBase58(),
+    }
     const facts = factsFromTransaction(programId, transaction(sig('SigForeign'), [foreign]))
     expect(facts).toEqual({ touched: [], hints: new Map(), provenance: [] })
   })

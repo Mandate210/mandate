@@ -32,7 +32,6 @@ const inForcePolicy = (overrides: Partial<SweepPolicy> = {}): SweepPolicy => ({
   endTs: NOW + 1_000,
   premiumPaid: 4_000n,
   exhausted: false,
-  beneficiary: 'Beneficiary1',
   ...overrides,
 })
 
@@ -66,15 +65,13 @@ describe('a policy in force', () => {
 })
 
 describe('deciding what to do with an open incident', () => {
-  it('pays out a quorum on a policy still in force', () => {
-    expect(decide({ votesUnauthorized: 2 }, inForcePolicy())).toBe('resolve')
-  })
-
-  // `handle_resolve` has no deadline condition, and the attestations are already in.
-  // Waiting for the window to close would turn a decided payout into a closure with
-  // no payout — the hole this module exists to plug.
-  it('pays out before the deadline too', () => {
-    expect(decide({ votesUnauthorized: 2, deadline: NOW + 1_000 }, inForcePolicy())).toBe('resolve')
+  // The deciding vote settles an incident in the same instruction (T078), so an open
+  // one at quorum on a policy in force is a state nothing reaches. Should one turn up,
+  // the program refuses to close it (`IncidentPayable`) — closing it unpaid would be the
+  // one wrong answer — and the sweeper does not spend a fee to be told so.
+  it('leaves alone an incident at quorum on a policy in force', () => {
+    expect(decide({ votesUnauthorized: 2 }, inForcePolicy())).toBe('wait')
+    expect(decide({ votesUnauthorized: 2, deadline: NOW + 1_000 }, inForcePolicy())).toBe('wait')
   })
 
   it('closes an incident the window left behind', () => {
@@ -82,8 +79,8 @@ describe('deciding what to do with an open incident', () => {
     expect(decide({ votesUnauthorized: 1 }, inForcePolicy())).toBe('close')
   })
 
-  // Nothing else can end it: `resolve` refuses a policy out of force (FR-016), so
-  // without this the capital would stay reserved for good.
+  // A policy out of force pays nothing (FR-016); without this the capital would stay
+  // reserved for good.
   it('closes a confirmed incident whose policy is no longer in force', () => {
     expect(decide({ votesUnauthorized: 3 }, inForcePolicy({ endTs: NOW - 1 }))).toBe('close')
     expect(decide({ votesUnauthorized: 3 }, null)).toBe('close')
@@ -126,7 +123,7 @@ describe('releasing an expired policy', () => {
   })
 })
 
-type FakeAction = 'resolve' | 'close' | 'release'
+type FakeAction = 'close' | 'release'
 
 interface FakeOptions {
   incidents?: SweepIncident[]
@@ -173,7 +170,6 @@ const fake = (options: FakeOptions = {}): Fake => {
     settlementAccountExists: async (owner) =>
       !(options.withoutSettlementAccount ?? []).includes(owner),
     incidentOpen: async (address) => !closedByOthers.has(address),
-    resolve: async (_protocol, address) => write('resolve', address),
     closeExpired: async (_protocol, address) => write('close', address),
     listReservedPolicies: async () => options.reserved ?? [],
     policyReserved: async (address) => !closedByOthers.has(address),
@@ -209,25 +205,6 @@ describe('a sweep pass', () => {
     expect(report.closed).toEqual(['expired'])
     expect(report.waiting).toBe(1)
     expect(chain.calls).toEqual([{ action: 'close', incident: 'expired' }])
-  })
-
-  // An incident that is both at quorum and past its deadline has to reach `resolve`
-  // first: a policy can lapse between two instructions, and a closure is final.
-  it('pays out before it closes anything', async () => {
-    const chain = fake({
-      incidents: [
-        incident({ address: 'expired' }),
-        incident({ address: 'payable', policy: 'Policy2', votesUnauthorized: 3 }),
-      ],
-    })
-    const report = await sweeper(chain).sweepOnce()
-
-    expect(chain.calls).toEqual([
-      { action: 'resolve', incident: 'payable' },
-      { action: 'close', incident: 'expired' },
-    ])
-    expect(report.resolved).toEqual(['payable'])
-    expect(report.closed).toEqual(['expired'])
   })
 
   it('takes the oldest deadline first', async () => {
@@ -285,35 +262,6 @@ describe('a sweep pass', () => {
     expect(report.failed).toEqual([])
   })
 
-  // `resolve` pays into the beneficiary's account and cannot open it. Found by running
-  // the one-shot command against a live ledger, where it came back as a failure the
-  // next pass would have repeated forever.
-  it('reports a beneficiary with no settlement account instead of failing on it', async () => {
-    const chain = fake({
-      incidents: [incident({ address: 'unpayable', votesUnauthorized: 3 })],
-      policies: { Policy1: inForcePolicy({ beneficiary: 'NoAccount' }) },
-      withoutSettlementAccount: ['NoAccount'],
-    })
-    const report = await sweeper(chain).sweepOnce()
-
-    expect(report.blocked).toEqual([{ incident: 'unpayable', reason: 'beneficiary-token-missing' }])
-    expect(chain.calls).toEqual([])
-  })
-
-  // A closure pays nobody but the opener, so a missing beneficiary account must not
-  // hold up the incident that the window already left behind.
-  it('closes an expired incident whose beneficiary has no account', async () => {
-    const chain = fake({
-      incidents: [incident({ address: 'expired' })],
-      policies: { Policy1: inForcePolicy({ beneficiary: 'NoAccount' }) },
-      withoutSettlementAccount: ['NoAccount'],
-    })
-    const report = await sweeper(chain).sweepOnce()
-
-    expect(report.closed).toEqual(['expired'])
-    expect(report.blocked).toEqual([])
-  })
-
   it('judges each incident against its own policy', async () => {
     const chain = fake({
       incidents: [
@@ -324,8 +272,8 @@ describe('a sweep pass', () => {
     })
     const report = await sweeper(chain).sweepOnce()
 
-    expect(report.resolved).toEqual(['live'])
     expect(report.closed).toEqual(['lapsed'])
+    expect(report.waiting).toBe(1)
   })
 
   it('lets a broken listing surface to the caller', async () => {
@@ -367,7 +315,7 @@ describe('a sweep pass over reserved policies', () => {
     expect(chain.calls).toEqual([{ action: 'release', incident: 'ended' }])
   })
 
-  // `resolve` cannot pay past `end_ts` (FR-016), so an incident still open on the
+  // Nothing pays past `end_ts` (FR-016), so an incident still open on the
   // policy is no reason to hold its reservation — the program agrees
   // (`validate_release`). Both happen in the same pass.
   it('releases a policy whose incident is still open', async () => {
@@ -406,7 +354,7 @@ describe('the summary line', () => {
     ).sweepOnce()
 
     expect(summariseSweep(report)).toBe(
-      'scanned 1 · resolved 0 · closed 1 · released 1 · waiting 0 · lost 0 · blocked 0 · failed 0',
+      'scanned 1 · closed 1 · released 1 · waiting 0 · lost 0 · blocked 0 · failed 0',
     )
   })
 })

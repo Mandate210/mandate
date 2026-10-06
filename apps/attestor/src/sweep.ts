@@ -8,27 +8,26 @@
 //
 // **This is housekeeping, not attestation.** Nothing here forms a judgement: every
 // action is one the program would take from public state alone, and the instructions
-// it sends take no signer at all — `resolve` and `close_expired_incident` are both
-// permissionless precisely because they release capital, and nobody may be in a
+// it sends take no signer at all — `close_expired_incident` and `release_expired_policy`
+// are permissionless precisely because they release capital, and nobody may be in a
 // position to withhold that. The sweeper lives in the attestor because the attestor is
 // the one process in the system that already holds a key, an RPC and a program client
 // — not because sweeping is an attestor's privilege. Anyone may run it, and an
 // underwriter whose capital is frozen has the strongest reason to.
 //
-// **`resolve` belongs here too, and not only after the deadline.** `act.ts` pays out
-// on the attestation that completes the quorum, and when that `resolve` fails it logs
-// and moves on — by design, because every way it loses is a race. But if it lost to
-// something other than a race, nobody comes back: the incident sits at quorum until
-// its deadline and then closes *with no payout*. The decision taken, the money not
-// sent. `resolve` has no deadline of its own (`handle_resolve`), so a sweep catches
-// that the moment it sees it.
+// **There is no payout to catch up on any more (T078).** Until then `resolve` was a
+// separate transaction the deciding attestor sent after its vote, and a sweep had to
+// catch the ones that never landed. The vote that completes a quorum now settles the
+// incident in the same instruction — paid, or closed unpaid on a policy out of force —
+// so an open incident is one short of its quorum, and the only thing left to do with it
+// is close it once its window has run out.
 //
 // **So do expired policies (T067).** `locked_limit` holds every policy's remaining limit
 // until something gives it back, and nothing wakes up on `end_ts`. Without a caller,
 // `release_expired_policy` would be the same finding as T071 one level down: the pool's
 // capital stays reserved by cover that ended months ago, and `complete_withdraw` refuses
 // on a floor that backs nothing (FR-020). Releasing does not wait for the policy's
-// incidents — `resolve` cannot pay past `end_ts` (FR-016), so the two are independent,
+// incidents — nothing pays past `end_ts` (FR-016), so the two are independent,
 // and the program makes the same call (`validate_release`).
 //
 // The decision itself is a pure function, tested against the same boundaries as the
@@ -56,15 +55,13 @@ export interface SweepIncident {
   votesUnauthorized: number
 }
 
-/** `Policy`, narrowed to what a sweep decision and a payout need. */
+/** `Policy`, narrowed to what a sweep decision needs. */
 export interface SweepPolicy {
   startTs: number
   endTs: number
   premiumPaid: bigint
   /** `PolicyStatus::Exhausted` — the one status that is not a function of the clock. */
   exhausted: boolean
-  /** Fixed at issuance (FR-004); `resolve` pays here and cannot create the account. */
-  beneficiary: string
 }
 
 /**
@@ -82,9 +79,7 @@ export interface ReservedPolicy {
 }
 
 export type SweepAction =
-  /** Quorum reached on a policy still in force: pay it out (FR-012). */
-  | 'resolve'
-  /** The window closed on something `resolve` can no longer settle (FR-011). */
+  /** The window closed short of the quorum (FR-011). */
   | 'close'
   /** Neither is admissible yet; the next pass looks again. */
   | 'wait'
@@ -112,12 +107,13 @@ export const policyInForce = (policy: SweepPolicy, now: number): boolean =>
 /**
  * What to do with one open incident.
  *
- * A mirror of two guards, and it has to stay one: `handle_resolve` (open, policy in
- * force, quorum reached — and no deadline condition at all) and `validate_close`
- * (open, `now > deadline`, and not something `resolve` would still pay). Disagreeing
- * with either costs a refused transaction, not a wrong outcome — the program remains
- * the authority — but a sweeper that disagrees systematically is a sweeper that never
- * sweeps, which is the bug this task exists to fix.
+ * A mirror of `validate_close`, and it has to stay one: open, `now > deadline`, and not
+ * at quorum on a policy in force. Since T078 the last condition guards a state nothing
+ * reaches — the deciding vote settles the incident — but the program still refuses it
+ * (`IncidentPayable`), so the sweeper does not send it. Disagreeing costs a refused
+ * transaction, not a wrong outcome — the program remains the authority — but a sweeper
+ * that disagrees systematically is a sweeper that never sweeps, which is the bug this
+ * task exists to fix.
  *
  * **The deadline is strict.** `attest` counts an attestation landing in the deadline
  * second as inside the window, so closing may only start the second after. Reading the
@@ -139,9 +135,7 @@ export const decideSweepAction = ({
   const quorumReached = incident.votesUnauthorized >= quorumThreshold(incident.setSize, quorumBps)
   const inForce = policy !== null && policyInForce(policy, now)
 
-  // Before the deadline as well: an incident at quorum is owed a payout now, and the
-  // only thing that had to happen first — the attestations — has happened.
-  if (quorumReached && inForce) return 'resolve'
+  if (quorumReached && inForce) return 'wait'
   if (now > incident.deadline) return 'close'
   return 'wait'
 }
@@ -160,16 +154,12 @@ export const policyReleasable = (policy: ReservedPolicy, now: number): boolean =
 /**
  * Why an incident that is due cannot be acted on.
  *
- * Both instructions take the accounts they pay into as live `TokenAccount`s, and
- * neither can create one. Anchor deserialises them before the handler runs, so the
- * account has to exist even where nothing is transferred into it. Reported as a state
- * rather than retried as an error: nothing about the next pass will be different, and
- * an operator reading `blocked` learns what to do — open the account — where a stack
- * trace every ten minutes tells them only that something is wrong.
- *
- * Neither is necessarily permanent. A blocked payout unblocks itself once the policy
- * falls out of force: `resolve` no longer applies and the incident closes on its
- * deadline like any other.
+ * `close_expired_incident` takes the account it pays into as a live `TokenAccount` and
+ * cannot create one. Anchor deserialises it before the handler runs, so the account has
+ * to exist even where nothing is transferred into it. Reported as a state rather than
+ * retried as an error: nothing about the next pass will be different, and an operator
+ * reading `blocked` learns what to do — open the account — where a stack trace every
+ * ten minutes tells them only that something is wrong.
  */
 export type BlockedReason =
   /**
@@ -179,22 +169,15 @@ export type BlockedReason =
    * one that forfeits the bond and transfers nothing. An opener who closed the account
    * it paid its bond from leaves an incident nobody can close and a pool whose capital
    * stays reserved — the one case here with no way out but intervention.
-   */
-  | 'opener-token-missing'
-  /**
-   * The policy's beneficiary has no account for the settlement asset.
    *
-   * `resolve` pays into it and cannot open it, so a beneficiary without one is a policy
-   * that was issued wrong (FR-004 fixes the beneficiary at issuance). Measured, not
-   * imagined: the first run of the one-shot command against a live ledger hit exactly
-   * this and would otherwise have reported it as a failure once per pass forever.
+   * A missing *beneficiary* account used to be the other reason, when `resolve` paid
+   * into one it could not open. The deciding vote opens it now (T078).
    */
-  | 'beneficiary-token-missing'
+  'opener-token-missing'
 
 export interface SweepReport {
   /** Open incidents the filter returned. */
   scanned: number
-  resolved: string[]
   closed: string[]
   /** Still inside their window, or waiting for a deadline to make them closable. */
   waiting: number
@@ -226,8 +209,6 @@ export interface SweepChain {
   settlementAccountExists(owner: string): Promise<boolean>
   /** Whether the incident is still taking attestations. */
   incidentOpen(incident: string): Promise<boolean>
-  /** Records the quorum and pays out in one operation (FR-012). Permissionless. */
-  resolve(protocol: string, incident: string): Promise<void>
   /** Closes with no payout and releases the pool's reservation (FR-011). Permissionless. */
   closeExpired(protocol: string, incident: string): Promise<void>
   /** Every policy, of every registered protocol, still holding its reservation. */
@@ -262,9 +243,7 @@ export interface SweeperOptions {
    *
    * Ten minutes by default, the same interval as the watcher's reconcile: nothing here
    * is urgent. A closed incident releases a reservation that only matters to a
-   * withdrawal, and withdrawals have a waiting period of their own (FR-019). The one
-   * time-sensitive case — an incident at quorum whose payout did not land — is the
-   * fallback under `act.ts`, not the path SC-001 is measured on.
+   * withdrawal, and withdrawals have a waiting period of their own (FR-019).
    */
   intervalSeconds?: number
   /**
@@ -302,43 +281,26 @@ export const createSweeper = ({
    * removed from opening in T070 for the same reason.
    */
   /** `null` when the instruction can be sent, otherwise what stands in its way. */
-  const blockedReason = async (
-    incident: SweepIncident,
-    action: 'resolve' | 'close',
-    policy: SweepPolicy | null,
-  ): Promise<BlockedReason | null> => {
-    if (!(await chain.settlementAccountExists(incident.opener))) return 'opener-token-missing'
-    if (action === 'resolve' && policy !== null) {
-      if (!(await chain.settlementAccountExists(policy.beneficiary))) {
-        return 'beneficiary-token-missing'
-      }
-    }
-    return null
-  }
+  const blockedReason = async (incident: SweepIncident): Promise<BlockedReason | null> =>
+    (await chain.settlementAccountExists(incident.opener)) ? null : 'opener-token-missing'
 
-  const act = async (
-    incident: SweepIncident,
-    action: 'resolve' | 'close',
-    report: SweepReport,
-  ): Promise<void> => {
+  const close = async (incident: SweepIncident, report: SweepReport): Promise<void> => {
     try {
-      if (action === 'resolve') await chain.resolve(incident.protocol, incident.address)
-      else await chain.closeExpired(incident.protocol, incident.address)
+      await chain.closeExpired(incident.protocol, incident.address)
     } catch (error) {
       if (!(await chain.incidentOpen(incident.address))) {
         report.lost.push(incident.address)
         return
       }
       report.failed.push({ incident: incident.address, error })
-      logger.error({ incident: incident.address, action, error }, 'sweep action failed')
+      logger.error({ incident: incident.address, error }, 'sweep action failed')
       return
     }
 
-    if (action === 'resolve') report.resolved.push(incident.address)
-    else report.closed.push(incident.address)
+    report.closed.push(incident.address)
     logger.info(
       { incident: incident.address, protocol: incident.protocol },
-      action === 'resolve' ? 'quorum found unsettled, paid out' : 'expired incident closed',
+      'expired incident closed',
     )
   }
 
@@ -365,7 +327,6 @@ export const createSweeper = ({
   const sweepOnce = async (): Promise<SweepReport> => {
     const report: SweepReport = {
       scanned: 0,
-      resolved: [],
       closed: [],
       waiting: 0,
       lost: [],
@@ -386,37 +347,22 @@ export const createSweeper = ({
       report.scanned = incidents.length
       const at = now()
 
-      const due: {
-        incident: SweepIncident
-        action: 'resolve' | 'close'
-        policy: SweepPolicy | null
-      }[] = []
+      const due: SweepIncident[] = []
       for (const incident of incidents) {
         const policy = await chain.loadPolicy(incident.policy)
         const action = decideSweepAction({ incident, policy, quorumBps, now: at })
         if (action === 'wait') report.waiting += 1
-        else due.push({ incident, action, policy })
+        else due.push(incident)
       }
 
-      // Payouts first, and oldest first within each kind. An incident that is both at
-      // quorum and past its deadline has to reach `resolve` before anything closes it
-      // — `close_expired_incident` refuses that one (`IncidentPayable`), but only
-      // while the policy holds, and a policy can lapse between two instructions.
-      due.sort((left, right) =>
-        left.action === right.action
-          ? left.incident.deadline - right.incident.deadline
-          : left.action === 'resolve'
-            ? -1
-            : 1,
-      )
+      // Oldest first: the longest-frozen reservation goes back first.
+      due.sort((left, right) => left.deadline - right.deadline)
 
-      for (const { incident, action, policy } of due) {
-        // Checked before the write, not diagnosed after it: the accounts these
-        // instructions pay into have to exist, nothing about the next pass would
-        // change that, and a state in the report beats the same error every ten
-        // minutes. Both instructions need the opener's; only `resolve` pays a
-        // beneficiary, so that one is read only when there is a payout to make.
-        const blocked = await blockedReason(incident, action, policy)
+      for (const incident of due) {
+        // Checked before the write, not diagnosed after it: the account the bond is
+        // paid into has to exist, nothing about the next pass would change that, and a
+        // state in the report beats the same error every ten minutes.
+        const blocked = await blockedReason(incident)
         if (blocked !== null) {
           report.blocked.push({ incident: incident.address, reason: blocked })
           logger.warn(
@@ -425,7 +371,7 @@ export const createSweeper = ({
           )
           continue
         }
-        await act(incident, action, report)
+        await close(incident, report)
       }
 
       // After the incidents, though the order does not matter: releasing touches only
@@ -475,7 +421,6 @@ export const createSweeper = ({
 export const summariseSweep = (report: SweepReport): string =>
   [
     `scanned ${report.scanned}`,
-    `resolved ${report.resolved.length}`,
     `closed ${report.closed.length}`,
     `released ${report.released.length}`,
     `waiting ${report.waiting}`,

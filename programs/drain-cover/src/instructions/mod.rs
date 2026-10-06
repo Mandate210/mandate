@@ -4,7 +4,8 @@
 // Foundation: initialize
 // US1 (P1): register_protocol, issue_policy, service_fund_pool (temporary, removed
 //           with T036), submit_declaration, revoke_declaration, set_attestor,
-//           open_incident, attest, resolve, close_expired_incident
+//           open_incident, attest (settles on the deciding vote —
+//           `resolve` was folded into it by T078), close_expired_incident
 // US2 (P2): deposit, release_expired_policy, request_withdraw, complete_withdraw
 // US3 (P3): register_attestor, sweep_attestors
 // US4 (P4): open_policy, pause_new_policies
@@ -18,7 +19,6 @@ pub mod open_incident;
 pub mod register_protocol;
 pub mod release_expired_policy;
 pub mod request_withdraw;
-pub mod resolve;
 pub mod revoke_declaration;
 pub mod service_fund_pool;
 pub mod set_attestor;
@@ -38,7 +38,6 @@ pub use open_incident::*;
 pub use register_protocol::*;
 pub use release_expired_policy::*;
 pub use request_withdraw::*;
-pub use resolve::*;
 pub use revoke_declaration::*;
 pub use service_fund_pool::*;
 pub use set_attestor::*;

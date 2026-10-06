@@ -187,7 +187,7 @@ interface Stage {
  * One protocol per scenario, and one policy on it.
  *
  * Not tidiness: a policy whose limit is fully paid becomes `Exhausted`, so a second
- * incident could not be opened against it (`resolve` → FR-015). Ten scenarios sharing
+ * incident could not be opened against it (FR-015, FR-016). Ten scenarios sharing
  * one policy would measure the first one and then nine refusals. Separate protocols also
  * keep the declarations apart, which three of the scenarios depend on.
  */
@@ -219,8 +219,8 @@ const buildStage = async (
     retention: POLICY_RETENTION,
     premium: POLICY_PREMIUM,
   })
-  // `resolve` pays the beneficiary and cannot create its account, so it has to exist
-  // before an incident is ever opened.
+  // The program does not need this since T078 — the deciding vote opens the account if
+  // it is missing — but the run reads the beneficiary's balance before the payout.
   await env.assetAccount(target.treasury)
 
   // A token the privileged address is the authority over — the protocol's own asset.

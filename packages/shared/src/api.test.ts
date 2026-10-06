@@ -106,7 +106,7 @@ describe('derived fields', () => {
     expect(utilizationBps(max, max)).toBe(10_000)
   })
 
-  it('rounds the quorum up, as resolve does', () => {
+  it('rounds the quorum up, as the program does', () => {
     // Set of 3 at 60%: 1.8 attestations, so two — one would let a third decide.
     expect(quorumNeeded(3, 6_000)).toBe(2)
     expect(quorumNeeded(7, 6_000)).toBe(5)

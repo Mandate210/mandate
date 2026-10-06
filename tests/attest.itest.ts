@@ -60,7 +60,7 @@ describe.skipIf(!reachable)('attest', () => {
   })
 
   it('records a verdict and tallies it on the incident', async () => {
-    const attestation = await attest(program, target, incident, first)
+    const { attestation } = await attest(program, target, incident, first)
 
     const record = await program.account.attestation.fetch(attestation)
     expect(record.verdict).toEqual({ unauthorized: {} })

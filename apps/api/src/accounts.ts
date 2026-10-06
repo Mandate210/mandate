@@ -30,6 +30,7 @@ import {
   findDeclarationEntry,
   findIncident,
   findPolicy,
+  settlementsIn,
 } from '@mandate/sdk'
 import type { ObservedTransaction } from '@mandate/shared'
 import { PublicKey } from '@solana/web3.js'
@@ -510,33 +511,25 @@ export const factsFromTransaction = (
         }
         break
       }
-      case 'resolve': {
-        // `resolve` has one outcome: `paid_out` (resolve.rs). So the transaction that
-        // ran it is the payout, and its block time is when the money moved.
-        const incident = named.get('incident')
-        if (incident !== undefined) {
-          facts.provenance.push({
-            table: 'incidents',
-            address: incident,
-            payoutSignature: transaction.signature,
-            payoutAt: transaction.blockTime,
-          })
-        }
-        break
-      }
     }
+  }
+
+  // The payout is the transaction that settled the incident: since T078 the vote that
+  // completed the quorum, which says so with an `IncidentSettled` event; before it, a
+  // separate `resolve`. Read from the transaction, never from the incident's state
+  // afterwards — votes land seconds apart, and by the time this runs a later one may
+  // already have been read back as «paid».
+  for (const settlement of settlementsIn(programId, transaction)) {
+    touched.add(settlement.incident)
+    if (settlement.status !== 'paid_out') continue
+    facts.provenance.push({
+      table: 'incidents',
+      address: settlement.incident,
+      payoutSignature: transaction.signature,
+      payoutAt: transaction.blockTime,
+    })
   }
 
   facts.touched = [...touched]
   return facts
 }
-
-/** The instruction a transaction ran on this program, by name — for recovering provenance. */
-export const instructionNames = (
-  programId: PublicKey,
-  transaction: ObservedTransaction,
-): string[] =>
-  transaction.instructions
-    .filter((instruction) => instruction.programId === programId.toBase58())
-    .map((instruction) => coder.instruction.decode(Buffer.from(instruction.data))?.name)
-    .filter((name): name is string => name !== undefined)

@@ -13,7 +13,6 @@ import {
   openIncident,
   registerProtocol,
   releaseAttestors,
-  resolve,
 } from './world'
 
 const reachable = await validatorReachable()
@@ -28,7 +27,7 @@ const LAMPORTS_PER_SIGNATURE = 5_000
 const SOL_PRICE_USD = 200
 /** SC-008: one dollar per incident, from opening to payout. */
 const SC008_BUDGET_LAMPORTS = LAMPORTS_PER_SOL / SOL_PRICE_USD
-/** The incident `docs/PLAN.md` budgets for: five attestors, one settlement. */
+/** The incident `docs/PLAN.md` budgets for: five votes, the last of which settles. */
 const REFERENCE_ATTESTORS = 5
 
 // Ceilings, not equalities, and deliberately close to what is measured today:
@@ -54,15 +53,18 @@ const REFERENCE_RENT_CEILING = 7_500_000
 describe.skipIf(!reachable)('SC-008 — what one incident costs', () => {
   let env: TestEnv
   let program: Program<DrainCover>
-  /** However many the deployment's set demanded — the cost per attestation is what
-   * matters here, not how many this ledger happened to need. */
+  /** Votes cast until the decision — however many the deployment's set demanded. The
+   * cost per attestation is what matters here, not how many this ledger needed. */
   let attestorCount: number
   let incident: PublicKey
   let attestations: PublicKey[]
   let transactions: number
   /** Fees actually charged for this incident's transactions. */
   let fees: number
-  let settlementFee: number
+  /** The newest transaction on the incident — the one that settled it. */
+  let settledBy: string
+  /** The vote that completed the quorum. */
+  let decidingVote: string
   let incidentRent: number
   let attestationRent: number
 
@@ -72,7 +74,6 @@ describe.skipIf(!reachable)('SC-008 — what one incident costs', () => {
     await ensureConfig(program, env)
 
     const attestors = await admitQuorumSet(program, env)
-    attestorCount = attestors.length
 
     const target: RegisteredProtocol = await registerProtocol(program, env)
     await fundPool(program, env, target, CAPITAL)
@@ -86,26 +87,31 @@ describe.skipIf(!reachable)('SC-008 — what one incident costs', () => {
 
     incident = (await openIncident(program, env, target, policySeq)).incident
     attestations = []
+    decidingVote = ''
     for (const attestor of attestors) {
-      attestations.push(await attest(program, target, incident, attestor))
+      const { attestation, signature } = await attest(program, target, incident, attestor)
+      attestations.push(attestation)
+      if (!('open' in (await program.account.incident.fetch(incident)).status)) {
+        decidingVote = signature
+        break
+      }
     }
-    await resolve(program, env, target, incident)
+    attestorCount = attestations.length
     await releaseAttestors(program, env, attestors)
 
     // Every transaction that touched this incident, which is exactly its lifetime:
-    // opening, the attestations, the settlement. Newest first.
+    // the opening and the votes, the last of which settled it (T078). Newest first.
     const signatures = await env.connection.getSignaturesForAddress(incident, { limit: 100 })
     transactions = signatures.length
     fees = 0
-    settlementFee = 0
-    for (const [index, { signature }] of signatures.entries()) {
+    settledBy = signatures[0]?.signature ?? ''
+    for (const { signature } of signatures) {
       const transaction = await env.connection.getTransaction(signature, {
         commitment: 'confirmed',
         maxSupportedTransactionVersion: 0,
       })
       const fee = transaction?.meta?.fee ?? 0
       fees += fee
-      if (index === 0) settlementFee = fee
     }
 
     incidentRent = await env.connection.getBalance(incident)
@@ -114,27 +120,24 @@ describe.skipIf(!reachable)('SC-008 — what one incident costs', () => {
     attestationRent = await env.connection.getBalance(first)
   }, 180_000)
 
-  it('takes one transaction to open, one per attestation and one to settle', async () => {
-    expect(transactions).toBe(attestorCount + 2)
-    expect(attestations).toHaveLength(attestorCount)
-
-    // The settlement carries a single signature — the fee payer's, and nobody else's.
-    // FR-012 wants no confirmation step, and this is that promise in lamports: there is
-    // no second party whose signature the payout waits on.
-    expect(settlementFee).toBe(LAMPORTS_PER_SIGNATURE)
+  it('takes one transaction to open and one per vote — the deciding vote settles', async () => {
+    expect(transactions).toBe(attestorCount + 1)
+    // FR-012 in transactions: the payout is the vote that decided it, so there is no
+    // further step, and nobody else's signature, that the money waits on.
+    expect(settledBy).toBe(decidingVote)
   })
 
   it('keeps the fees for the reference incident inside one dollar', async () => {
-    // Opening, five attestations, settling: one signature each in production, where
-    // each party sends its own transaction.
-    const referenceFees = (REFERENCE_ATTESTORS + 2) * LAMPORTS_PER_SIGNATURE
+    // Opening and five votes, the last of them settling: one signature each in
+    // production, where each party sends its own transaction.
+    const referenceFees = (REFERENCE_ATTESTORS + 1) * LAMPORTS_PER_SIGNATURE
     expect(referenceFees).toBeLessThanOrEqual(SC008_BUDGET_LAMPORTS)
 
     // And the fees this test really paid are under the cap too, even though every
     // transaction here carries a second signature: the provider wallet pays, so the
     // opener and the attestors sign alongside it rather than instead of it.
     expect(fees).toBeLessThanOrEqual(SC008_BUDGET_LAMPORTS)
-    expect(fees).toBeLessThanOrEqual((attestorCount + 2) * 2 * LAMPORTS_PER_SIGNATURE)
+    expect(fees).toBeLessThanOrEqual((attestorCount + 1) * 2 * LAMPORTS_PER_SIGNATURE)
   })
 
   it('locks a known amount of rent per incident and per attestation', async () => {

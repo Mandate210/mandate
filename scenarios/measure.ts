@@ -8,7 +8,8 @@
 //
 // **SC-001** — from the confirmation of an unauthorized privileged transaction to the
 // initiation of the payout, p95 ≤ 30s. Measured between two block times: the trigger
-// transaction's and the `resolve` transaction's. Block times are cluster facts anybody
+// transaction's and the payout's — since T078 the vote that completed the quorum, before
+// it a separate `resolve`. Block times are cluster facts anybody
 // can read back from an explorer, where a stopwatch in this process would also be
 // measuring how fast this laptop polls.
 //
@@ -88,7 +89,7 @@ interface Sample {
   triggerSignature: string
   /** Cluster time the offending transaction landed. */
   triggeredAt: number
-  /** Cluster time `resolve` landed. */
+  /** Cluster time the payout landed — the deciding vote's transaction. */
   paidAt: number
   /** What this process saw on its own clock, as a cross-check on the block times. */
   wallSeconds: number
@@ -179,7 +180,8 @@ const main = async (): Promise<void> => {
       premium: POLICY_PREMIUM,
     })
   }
-  // `resolve` pays the beneficiary and cannot create its account.
+  // Not needed by the program since T078 — the deciding vote opens it — but kept so every
+  // sample pays into an account that already exists, as before, and the samples compare.
   await env.assetAccount(target.treasury)
 
   // The protocol's own token, with the privileged address as its authority — the thing
@@ -274,7 +276,7 @@ const main = async (): Promise<void> => {
       `${(settled.paidAt - settled.triggeredAt).toFixed(0)}s on chain, ${settled.wallSeconds.toFixed(1)}s observed`,
     )
     // A breath between samples. Not pacing for its own sake: the workers are still
-    // finishing the last incident's `resolve` when this loop is ready to fire again,
+    // finishing the last incident's votes when this loop is ready to fire again,
     // and firing into that would measure two overlapping cycles as one.
     await sleep(1_500)
   }
@@ -412,8 +414,8 @@ const awaitPayout = async (
       ) {
         return null
       }
-      // The newest transaction touching the incident is the `resolve` that paid it:
-      // nothing can follow a payout.
+      // The newest transaction touching the incident is the one that paid it — the vote
+      // that completed the quorum: nothing can follow a payout.
       const [latest] = await withRetry(() =>
         env.connection.getSignaturesForAddress(incident, { limit: 1 }),
       )

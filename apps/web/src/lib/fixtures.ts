@@ -125,8 +125,6 @@ const K = {
     '28nw2wJCqHW3KVGJFshHW8uApPESU1ha57ck9jDkvWXCUVVjpR2E1wryKwea4bs5k7jbhXEQmBss1J282ySHa3NH',
   'sig:attest7':
     '2oU4rXHNS5AxraaicSNxDuYhadVuAyqmSv9ovj3sUt5LEnLVXjr2X6ctiZe7wLbFHgGhZVKKo15i9tnVRj3bi9Ea',
-  'sig:resolve':
-    '3KHnooQ2uxt2oh6gZQg2Lg2WvFXPRhpgAZVAWFBaCc6vmWpPjVrDTKqCrYyKcR6t9akDxNobbaDiGQA1azpDTdxP',
 } as const
 
 type Label = keyof typeof K
@@ -409,11 +407,10 @@ export const ATTESTOR_KEYS: string[] = [1, 2, 3, 4, 5, 6, 7].map((i) =>
 const QUORUM_VOTE = must(VOTES.at(-1), 'the deciding vote')
 
 /**
- * `resolve` is its own transaction: permissionless, sent by the attestor whose vote
- * completed the quorum right after it lands (`apps/attestor/src/act.ts`). On devnet the
- * gap is two to three seconds.
+ * The vote that completed the quorum paid out in the same transaction (FR-012, T078):
+ * the payout's signature is that attestation's, and so is its second.
  */
-const RESOLVED_AT = TRIGGER_AT + QUORUM_VOTE[0] + 2
+const PAID_AT = TRIGGER_AT + QUORUM_VOTE[0]
 
 export const INCIDENT_DETAIL: IncidentDetailResponse = {
   as_of: AS_OF,
@@ -428,10 +425,10 @@ export const INCIDENT_DETAIL: IncidentDetailResponse = {
     signature: key(`sig:attest${n}` as Label),
   })),
   payout: {
-    signature: key('sig:resolve'),
+    signature: key(`sig:attest${QUORUM_VOTE[1]}` as Label),
     amount: PAID.toString(),
     beneficiary: ISSUED.beneficiary,
-    at: RESOLVED_AT,
+    at: PAID_AT,
   },
   verification: {
     program_id: CONFIG.program_id,
@@ -453,7 +450,7 @@ export const INCIDENT_DETAIL: IncidentDetailResponse = {
 // ── Pools, after the incident ─────────────────────────────────────────────────
 
 /**
- * What `resolve` leaves of a pool and a policy it paid from (`instructions/resolve.rs`):
+ * What the deciding vote leaves of a pool and a policy it paid from (`attest.rs` → `settle`):
  * capital and reservation fall by the payout, and a policy with nothing left payable is
  * exhausted and releases the retention it still reserved.
  */

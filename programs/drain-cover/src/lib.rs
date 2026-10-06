@@ -1,7 +1,9 @@
 use anchor_lang::prelude::*;
 
 pub mod errors;
+pub mod events;
 pub mod instructions;
+pub mod settlement;
 pub mod state;
 
 pub use instructions::*;
@@ -135,10 +137,6 @@ pub mod drain_cover {
     /// Settles an incident whose quorum has been reached: pays the beneficiary and
     /// returns the bond, in the same operation that establishes the quorum (FR-010,
     /// FR-012, FR-013).
-    pub fn resolve(ctx: Context<Resolve>) -> Result<()> {
-        instructions::resolve::handle_resolve(ctx)
-    }
-
     /// Closes an incident whose window ran out without a quorum: no payout, the
     /// capital it froze is released and the bond becomes pool capital (FR-011).
     pub fn close_expired_incident(ctx: Context<CloseExpiredIncident>) -> Result<()> {

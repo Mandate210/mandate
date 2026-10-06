@@ -64,7 +64,7 @@ pub struct OpenIncident<'info> {
 /// **An empty attestor set is the dangerous one.** Quorum is a share of the set
 /// (FR-010), and a share of nothing is nothing — an incident opened against an empty
 /// set would clear its bar with no attestations at all. Refused here rather than at
-/// resolve, where the bond would already have been paid and the capital already
+/// settlement, where the bond would already have been paid and the capital already
 /// frozen.
 ///
 /// **A policy that is not in force cannot pay** (FR-016), so opening against one only
@@ -127,7 +127,7 @@ pub fn handle_open_incident(
         opened_at: now,
         opened_epoch: clock.epoch,
         deadline,
-        // The denominator is fixed here, not read again at resolve: removing an
+        // The denominator is fixed here, not read again at settlement: removing an
         // attestor mid-window would otherwise lower the bar an incident has to clear.
         set_size: config.attestor_count,
         votes_unauthorized: 0,
