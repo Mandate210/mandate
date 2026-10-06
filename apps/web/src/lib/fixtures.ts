@@ -5,7 +5,13 @@
  *
  * All of it is invented. The addresses and signatures are well-formed but belong to
  * nobody: each is a hash of a label (`mandate-mock:<label>`), so they are stable across
- * builds and cannot collide with a real account by anything but chance. There are no
+ * builds and cannot collide with a real account by anything but chance — **except the
+ * program's own accounts** (config, protocols, pools, vaults, policies, declaration
+ * entries, the incident, its attestations). Those are derived from the invented program
+ * id with the program's seeds, exactly as on chain, because SC-007 replays this trail
+ * the way a third party would — and a third party derives the incident's address from
+ * its trigger signature (`tests/sc007-trail.test.ts`). Written out rather than derived
+ * here, to keep web3.js out of the bundle; the test derives them again. There are no
  * protocol names — the contract carries none (only what the chain can back) — and the
  * instruction names stand for what a declared program's on-chain Anchor IDL would say.
  *
@@ -33,59 +39,59 @@ const K = {
   program: '5EXR3NpMkPRcEGJCPmJZWFDU6FpNRGjmDhFikcd4XSga',
   admin: '9qjkyv3e5N3foMrGSqp2fZAfXq9vQYbqBRdhU1VnekR',
   mint: '2EUhCXDaTgaDp1a9FmNzTuBhoUZAxHsXVW4MoR5u8JHR',
-  config: '9NARVcR4cS3NrWYMaA8m61z9B5pDvWEy4qrETBCpu3vy',
-  'meridian:protocol': 'HwV6cgZGYn6hWdTxxVnvfX3Kw4Pg3Gkz4ryvDA3shw4T',
+  config: 'Bv68GDC326igNjJpFzUkWXgL1ma6UauBAEKWXy1Wq84G',
+  'meridian:protocol': 'HW5BndMEEHhoJ2rkwXWz7AtnYZwZFQaZRr7fhJ3RiMNB',
   'meridian:protocol_id': 'Aed6JBx1aZsVQPPob61B1WWHKZ6uNX6WJicu4w66RheR',
   'meridian:authority': 'HoH6QVBaYxEYYzp2oXhXtAko3ukRUbqnpWbuaoJDQZGt',
   'meridian:treasury': '7i4GQun1b1xkDuK89jeh8cZARGETabFccLUgtiuFKXqs',
-  'meridian:pool': 'DzPX2rH4coGaQcnqNCg5MCgbMWRkiWLLG1qDmxKkJq7F',
-  'meridian:vault': '9PZqB9EfXqc4iK4d9J4CDzbws9zBYDtzoBHbbVXMwvVv',
-  'meridian:policy': '8U3hbY3hLdu2XAGoEqgSPEW2Ak332czqiSZAPDU9ht5e',
+  'meridian:pool': 'UvnUtBVjVUpgfVfGm8TFtkUh1YwP9zPzP7MZFfNBKf7',
+  'meridian:vault': '6utyLMcdJey19VrdUBhoNYySez6RKanjULbpcsMsSw3z',
+  'meridian:policy': 'DHee4HQERGXNbNSX9RaDK1V8rof6senS239GZubGauWY',
   'meridian:privileged1': '22dYYvnBax34ZcQpkodZ4MeiTkqXBZuRuXx9MNpp5Dtj',
   'meridian:privileged2': '3RSCCG3MmdbPPK7r3jkX7EpJPZVkQPn2i5coFNqMD9Jp',
   'meridian:privileged3': '6KtBoA6zyf2oxuA7Wp4St8ntDaeetiCkNzFTwEn95Fm1',
   'meridian:privileged4': 'HAsHknHPtVyYri7x89WbVyC5Y4v1jSC8p3H8XcJiy9jF',
   'meridian:privileged5': '13KNxpf1K4wUxHscyZTEitH5qi5z5oc8TiKNXscPEF84',
-  'meridian:decl0': 'AxQ45U1ksybgPitXhvCUuq7mtBraBby7cnkAUdiJZMRZ',
-  'meridian:decl1': 'EUy5uy3XSvQG85WphwD1WkVS6fhMFDJXGZwzJLr5jH62',
-  'meridian:decl2': 'CNRFquifH6X2ALQvyZA7CZfHwjLyoibJV7Pbbhrc1KoE',
-  'meridian:decl3': 'C5NdK6Y1yq34BoUkKi3tg9wuAJhLWefv94gpV3arLkNA',
+  'meridian:decl0': 'BVbqS5MCFx3gLxd8SmmXcDURgpio15xjVYPMKo7VgTrz',
+  'meridian:decl1': 'F6YnKBw6cVLg6YLUxT6rZfN6sDaH9tYMSE9TkE9pWDM9',
+  'meridian:decl2': 'Dbjm9DZV9cyAGBHkobrnsvfmwC663RezrRx7TPHS9S5q',
+  'meridian:decl3': 'CxZZmpWujXeoEQ21drKnYPueD4jEzH3RWN2rqhYjGK8C',
   'meridian:decl-program': 'DV4j5BGiNYwjfWp6eW73oiPExnSxp4H4vq6rVg9Xo5Wx',
-  'solstice:protocol': 'FkNrzePUdpwGhy8NcmLDuPmbpeJdj81mJyVR1epC5CWw',
+  'solstice:protocol': '876kJXhbvVguCGwmTDhwvYEYaPratyPAbnAbJz4UNUkv',
   'solstice:protocol_id': 'G37YGcf96ZCJKk3RLba2osW13fZRwWsCdueA8d6nBZ2V',
   'solstice:authority': '94xMR8Pi2q1a7mB5ygEQfvSXykc8NGxnPAVzFGWwYBpV',
   'solstice:treasury': '3hxnJNJVfmc89WtdzXR76pCCQbLBHGoU1UXmuozZc8jJ',
-  'solstice:pool': '4aa75XUqXYj6QyD8zuFoBVZEm76SM99uKUGCR92rVQGL',
-  'solstice:vault': '4442bcTVxPTJ69yLiGCj28V1CeKTuDd8Gd5jxZbouAnS',
-  'solstice:policy': 'B9fbivYoHSB76fZBpmsAp76FWdcbWyyEru8mG3WutgnA',
+  'solstice:pool': 'BjM5VUW6xtnKPrWKeSxYA7kzbDPCj1QwUjKa3PDcpwXP',
+  'solstice:vault': '54UqZfszdrhvqGhrKpt3ugjdvodjLsuBNpmBbi4i2s3L',
+  'solstice:policy': 'EwkbEhMAfyjTkbgZmW26HeTtQ3Nuzvd5UgNBmoSe7cCY',
   'solstice:privileged1': 'EtzSeumZHUQDnoX3MFhRFtcV12oshPSTwibQYDiHWgNf',
   'solstice:privileged2': '7SvWV1JurXkVTgD7HpjhbavsCUeZ99mDfwcUPjVHzM3q',
   'solstice:privileged3': '4RbkBoZUb9cXyEdL99NjFjeYZNJZjNa733Kjk6hTbB5d',
   'solstice:privileged4': '3RCVxiCnBfV2gtG7E7yEA36szGVCp122ynR8t8jGFhL5',
   'solstice:privileged5': 'Gfu8e2MwU4V7P3QHx9Do8XoWkHHyZDXUUc4qVYH6pyJ3',
-  'solstice:decl0': 'AJzaqgoLHX8MD1vxTSfxjoo4UEA6fZse2QYTSybRcQKR',
-  'solstice:decl1': '5sUPi9eLgb53551j9H3GompKQ1dXkHNeAQDJATyLSh6x',
-  'solstice:decl2': 'BHSVJGGLH7wXg8SjkGRhuYcnEEoWbPnwy91EU8VvyzVW',
-  'solstice:decl3': 'Az9femwrEysJHS5FvqUevP2vHpevAZqSdDHQbghGy3tx',
+  'solstice:decl0': 'Es6iSvhQxqrroUW7yKKa3DjBT2MDqcAzoJXAfj9y2M9h',
+  'solstice:decl1': 'EK9hkMYEaTPyZoW25Q1uPRihAqtV95zVeJTUAUxjn9Sm',
+  'solstice:decl2': '5XGdccCv8m1Pi18iZNGQKpSLYzpsM5KeUd3vwC74ZVYU',
+  'solstice:decl3': '3KiD8yMogLnN1pKMmvK3v5Pef9aaw3iTKjxjnUQGZcPW',
   'solstice:decl-program': 'CUzCJFHheptnMr2jC9Gh3rdb8dyQchtBFmiPbgC86cjx',
-  'kestrel:protocol': 'NhPv3wtexiNsh2AjSd9gSHdWxkGBawtpW9jTx83wNqv',
+  'kestrel:protocol': 'CwJNdUdJGMxmfXAd3iKbRfu32nqNK9rXXt2FaHE17yLH',
   'kestrel:protocol_id': '6dCJLTWJTpdhSj8DQgjoJuy5wmzLVJTn2gQSB2XyB7wC',
   'kestrel:authority': 'BDcfUw6RakhbmVJkR5yac7yd8k13Xqy6fjNiMs5jAEVf',
   'kestrel:treasury': '95QY8nRLDQGMDE3fgLVZYPCMwEdYeZVTy4AxYyr1ZgiE',
-  'kestrel:pool': 'BGDfmh3YGjUmTp8mZ5u6Pg59h5mdJnmzZQe22ZhEXhTs',
-  'kestrel:vault': '244LxYwUuFky5JZfqb8H249pwbVgPwtq88zEHVeFTKFM',
-  'kestrel:policy': 'HzL2NVRCpgf6u7ppi8tjfbyaBoCSiBKaqRcpxFmMw2N6',
+  'kestrel:pool': '8ajsjDbmgC2DEcvfMY1eqaEyYNFiT48bkLpavAFG6GBm',
+  'kestrel:vault': 'C7fNpzLT8CFnzhHfqkbok4mTX6DP8AUbhkGMzNeDboBx',
+  'kestrel:policy': 'F2hwCp2vAv374wpZhpY8jE3pEccCmse1b6NbskhLh56m',
   'kestrel:privileged1': '65ZytyxYyLS8gp7Lmw5afERYKRvhdKHR5posYYKeRrDq',
   'kestrel:privileged2': '6FoMUQYWAEEWJyJ3X3QxnJYpiYgzhH3NkavFGm2kaT9g',
   'kestrel:privileged3': 'HQjWXSurfPAtUPC2g7m8WLG3DWvTv5oXMMonH5DHJqUg',
   'kestrel:privileged4': '3sohJSgFXRc2tN4tdngZRiHGJRgLmSTnAvv5jmcwLRn9',
   'kestrel:privileged5': '2E3HfRq8ELZKVDrrh6yyGxUp5uQnfnmkp8fZvch4HjEK',
-  'kestrel:decl0': 'BdNQrYhS6NnKLkPhaKWq5jeqRwUTEWpWLx1gDy1DEaWi',
-  'kestrel:decl1': 'AXvu3RXmNL2DhNXdUVkiBMpwcAnzgb9vWGMb529z5FHV',
-  'kestrel:decl2': 'DDV63arEsJwKNxKd6aSLcxWFHf9jhm973ztVurKfSqYg',
-  'kestrel:decl3': '9WUy9z5pLCQqP4Yktf16Ng3FYieJG6c8Tz6dzNZiwYiN',
+  'kestrel:decl0': 'DPBKepfrPxriPz2aFBHFtnh3SUtrL3i22tw8kd62FRNe',
+  'kestrel:decl1': 'EGM3XdptXpLPj3FsWmMSzBsZik5PRfNQLYhbEpmumZLU',
+  'kestrel:decl2': '4bGiJkvv9XntMWbpL7CGBZ8NoDppkCf86t9jnrnNomMX',
+  'kestrel:decl3': '6xLnCNRxRxx7mSzLqVExKBvsb4AJY1y3neGsZGUxJrGt',
   'kestrel:decl-program': 'HooJ75KWH72Qj8HCjfUksRyyBUsUb3gEHKpuEYa9FniU',
-  incident: '2t2L4JpzoRBNv7fp1TbLknNesAttDHcTmGAe8jjbHGzS',
+  incident: '6RXZn8PAhUHdpzBj7vYw2sBKG8g1MrAk6u6RFnLcLDaF',
   opener: '7whTeiZfL5Jc8GF9giTYWPbzsUVL86mum4wFq751Anwc',
   attestor1: '45Ep2U1pgMBDpopNwga2s7N4A3bQ9Mq9hW1b2h9XVPnH',
   attestor2: '52e2TqyqYEWAvoyHEWByk3jE6fCc7xgnhbjbiCnCNqjk',
@@ -94,13 +100,13 @@ const K = {
   attestor5: 'DQRQNmJwRXsUxdC2XvwJ3ayeviTJuspQk9EkQ64WChAP',
   attestor6: 'AC8U7AGMHKQzkuRZH6edXdkbbWkkYu4JT4uBeYhNEeAU',
   attestor7: 'G6qenQYjeMUXZsJ3qVHcb9PWyMquFKgUCV1f6Z1ad8PK',
-  attestation1: 'FKKLW47KwLoy4F8944NVXuJbhEVvJCPE3ro5od3HV1NH',
-  attestation2: 'J6Zznv1nWeU9JnLtYwo7jhRySaah7ujNGbmnEzyshGnq',
-  attestation3: '79ZaKXhqxD5Kc9s4f5mXwaAWjWR4fvuVmR2GvheyBxtw',
-  attestation4: '81CKBacbgtuWAUqugT1PPDUfS9Fv8veeQKrTnHY9y2Zv',
-  attestation5: 'CBT3n1fGx1yQTXzue9jajqFY5xh2gs5RcpR3gwDf9eU1',
-  attestation6: 'Dgq3iBtgdhSJo9KdyF6Shtk55KYHSH1yndaViya4DLrU',
-  attestation7: 'GKiYtT44Lf5jUzCjPHidrq95ynwWH4BYUQP4pCxrmUNs',
+  attestation1: '8e8rb84xEdzD8gU6QjUxCWBvxWp1jstj6DPvnyERDGR3',
+  attestation2: 'Ezn2YtuBqTRtRFCmYDbCV3P7ycKVc4kbGnfFxUycG2eE',
+  attestation3: '6PTgg6hXmu5N4rCix2BDkkraJcS5TF1BtNHkJgpeGjwX',
+  attestation4: '6GntuDkS5UPYtYrAqS22KDVWtsGxwrNvpcpQMCbuWnCV',
+  attestation5: '7uJPae7MngeFKJkgjHjHRMo6VPwsRezpmUmZjQhZ1cdN',
+  attestation6: '48LtYEkkQnUeRFkcKMYbCxokNdMoMAY8XBenD3xJ3usu',
+  attestation7: '4QMYvXEws4m8mfAoJFP7jFGDegsyma8hoSqLMrcZajyt',
   'sig:trigger':
     '4Ua1znniuRBWLRUnrm2AP38cCnitDNYA12NusQa6PshAcHRjje84HxbboYTWhSi2FqbhcstoAwuBWqaLn8X8sgwm',
   'sig:opened':
@@ -501,6 +507,17 @@ const detailFor = (slug: Slug): ProtocolDetailResponse => {
 }
 
 export const PROTOCOL_DETAILS: ProtocolDetailResponse[] = SLUGS.map(detailFor)
+
+/**
+ * Meridian's policy as the chain holds it after the payout: exhausted, so the API lists
+ * it nowhere (`policies` keeps only those still reserving capital). The SC-007 replay
+ * reads it by address, as a third party would.
+ */
+export const INCIDENT_POLICY: Policy = settle(
+  summaryFor('meridian', TERMS.meridian, [ISSUED]),
+  ISSUED,
+  PAID,
+).policy
 
 export const POOLS: PoolsResponse = {
   as_of: AS_OF,
