@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mandate — cover for admin keys used without authorization</title>
+<meta name="description" content="Parametric cover for Solana protocols: when privileged keys sign what the protocol never declared, attestors agree and the deciding vote pays the treasury.">
+<link rel="canonical" href="https://mandate210.github.io/mandate/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Mandate">
+<meta property="og:title" content="Mandate — cover for admin keys used without authorization">
+<meta property="og:description" content="A real devnet incident: an undeclared transfer rode with a declared approve. Two attestors agreed, and the deciding vote paid 9,500 USDC 12 s later.">
+<meta property="og:url" content="https://mandate210.github.io/mandate/">
+<meta property="og:image" content="https://mandate210.github.io/mandate/assets/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Mandate: a signed transaction set against the protocol's declaration — approve equals entry 0, transfer matches nothing — paid in 12 seconds by the vote that completed the quorum.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#000000">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="assets/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&amp;display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="eq" viewBox="0 0 84 64"><g style="fill: var(--shadow)" transform="translate(5 5)"><rect x="8" y="16" width="64" height="11"/><rect x="8" y="35" width="64" height="11"/></g><g fill="currentColor"><rect x="8" y="16" width="64" height="11"/><rect x="8" y="35" width="64" height="11"/></g></symbol>
+    <symbol id="ne" viewBox="0 0 84 64"><g style="fill: var(--shadow)" transform="translate(5 5)"><rect x="8" y="16" width="64" height="11"/><rect x="8" y="35" width="64" height="11"/><polygon points="49,2 60,2 31,60 20,60"/></g><g fill="currentColor"><rect x="8" y="16" width="64" height="11"/><rect x="8" y="35" width="64" height="11"/><polygon points="49,2 60,2 31,60 20,60"/></g></symbol>
+    <symbol id="to" viewBox="0 0 84 64"><g style="fill: var(--shadow)" transform="translate(5 5)"><rect x="6" y="26" width="50" height="11"/><polygon points="50,10 76,31.5 50,53"/></g><g fill="currentColor"><rect x="6" y="26" width="50" height="11"/><polygon points="50,10 76,31.5 50,53"/></g></symbol>
+  </defs>
+</svg>
+
+<header class="wrap top">
+  <a class="brand" href="./" aria-label="Mandate, home">
+    <svg class="mark" width="44" height="37" viewBox="360 440 1220 1020" aria-hidden="true" focusable="false">
+      <path class="shadow" transform="translate(28 28)" d="M380 460H442V1280A69 69 0 0 0 580 1280V460H823L972 1023L1123 460H1356V1280A69 69 0 0 0 1494 1280V460H1550V1437H1240V1085L1260 776L1076 1437H831L648 777L668 1085V1437H380Z"/>
+      <path fill="currentColor" d="M380 460H442V1280A69 69 0 0 0 580 1280V460H823L972 1023L1123 460H1356V1280A69 69 0 0 0 1494 1280V460H1550V1437H1240V1085L1260 776L1076 1437H831L648 777L668 1085V1437H380Z"/>
+      <rect class="cut" x="866" y="1129" width="199" height="38"/>
+      <rect class="cut" x="866" y="1215" width="199" height="38"/>
+    </svg>
+    <span class="d">MANDATE</span>
+  </a>
+  <nav class="nav" aria-label="Sections">
+    <a href="#record">The record</a>
+    <a href="#terms">Terms</a>
+    <a href="https://github.com/Mandate210/mandate">Source</a>
+  </nav>
+  <a class="live m" id="live" data-state="unknown" href="https://204-168-183-173.sslip.io/health">Attestor status: checking…</a>
+</header>
+
+<main>
+
+<section class="wrap hero">
+  <h1 class="d sh">When a protocol’s admin keys sign what it never declared, its treasury is paid.</h1>
+  <div class="lede">
+    <p>Mandate is parametric cover for Solana protocols against unauthorized use of privileged access. Attestors compare each privileged transaction with what the protocol declared in advance; the vote that completes their quorum carries the payout. On devnet, with test capital — <a href="#terms">terms below</a>.</p>
+    <p class="quiet">Insurance covers bugs in code. The largest loss of 2026 carried valid signatures — the contract did exactly what it was told.</p>
+  </div>
+  <div class="actions">
+    <a class="btn solid" href="app/incident/5LEvoeyJattPTqvdPYgSvrurdro7m2sAhowgezZgrdcL">Open this incident →</a>
+    <a class="btn" href="app/incident/5LEvoeyJattPTqvdPYgSvrurdro7m2sAhowgezZgrdcL/verify">Replay the decision</a>
+  </div>
+</section>
+
+<section class="wrap record" id="record" aria-labelledby="record-title">
+  <div class="caption m quiet">
+    <span id="record-title">Incident 5LEv…dcL · devnet · 6 Oct 2026</span>
+    <span>One transaction, two instructions</span>
+  </div>
+  <div class="sheet">
+    <div class="colhead d">DECLARED · IN FORCE AT 15:12:46 UTC</div>
+    <div aria-hidden="true"></div>
+    <div class="colhead right d">SIGNED · 15:12:46 UTC</div>
+
+    <div class="cell">
+      <div class="d">Entry #0</div>
+      <div class="m">program&nbsp;&nbsp;SPL Token<br>operation&nbsp;Approve (04)<br>moves funds&nbsp;no<br>in force since 15:10:49 · until 15 Nov</div>
+    </div>
+    <div class="g cell" role="img" aria-label="matches"><svg class="glyph"><use href="#eq"/></svg></div>
+    <div class="cell">
+      <span class="side m quiet">Signed</span>
+      <div class="d">approve</div>
+      <div class="m">1 USDC allowance to a new delegate<br>signed by the privileged key</div>
+    </div>
+
+    <div class="cell row-last">
+      <div class="none m quiet">no entry for this operation</div>
+    </div>
+    <div class="g big cell row-last" role="img" aria-label="matches nothing"><svg class="glyph"><use href="#ne"/></svg></div>
+    <div class="cell row-last">
+      <span class="side m quiet">Signed</span>
+      <div class="d">transfer</div>
+      <div class="m">400 USDC out of the treasury<br>same transaction, same signature</div>
+    </div>
+  </div>
+  <ol class="beats m">
+    <li><span class="d">0 s</span>the transaction</li>
+    <li><span class="d">+7 s</span>incident opened</li>
+    <li><span class="d">+10 s</span>attestation 1 of 2</li>
+    <li><span class="d sh">+12 s</span>attestation 2 completes the quorum and pays 9,500 USDC to the treasury</li>
+  </ol>
+</section>
+
+<section class="wrap part" aria-labelledby="declared">
+  <h2 class="d" id="declared">What the protocol wrote down</h2>
+  <div class="sheet">
+    <div>
+      <p style="margin-bottom: 20px">A declaration entry names an operation the protocol expects its own keys to perform:</p>
+      <dl class="fields m">
+        <dt>program</dt><dd>which program it calls</dd>
+        <dt>operation</dt><dd>which instruction</dd>
+        <dt>window</dt><dd>from when to when — or permanent</dd>
+        <dt>moves funds</dt><dd>yes or no</dd>
+      </dl>
+    </div>
+    <div class="g" aria-hidden="true"><svg class="glyph"><use href="#to"/></svg></div>
+    <div class="stack">
+      <p><strong>A new entry is in force only after a delay</strong> — 30 seconds on this deployment — so a stolen key cannot declare its own theft and act on it at once.</p>
+      <p><strong>Revoking or narrowing is immediate.</strong></p>
+      <p><strong>Permanent entries are allowed only for operations that move no funds</strong> and hand over no control — a pause, not a withdrawal.</p>
+      <p class="quiet">Entries are written with <span class="m">mandate-declare</span> and signed by the protocol’s own key, or emitted unsigned for its multisig.</p>
+    </div>
+  </div>
+</section>
+
+<section class="wrap part" aria-labelledby="signed">
+  <h2 class="d" id="signed">What the key signed</h2>
+  <div class="sheet">
+    <div class="stack">
+      <p>Every instruction of a privileged transaction is checked against the entries in force at that second. One instruction without an entry is enough — the incident above carried a genuine maintenance <span class="m">approve</span> and a <span class="m">transfer</span> nobody declared.</p>
+      <p>Ten shapes that real compromises take on chain, staged as real transactions:</p>
+      <ul class="shapes m">
+        <li>treasury drain</li><li>infinite mint</li><li>authority handover</li><li>freeze user funds</li><li>burn user funds</li><li>lamport drain</li><li>multisig-executed drain</li><li>drain behind a declared operation</li><li>acting before the delay elapses</li><li>acting after revocation</li>
+      </ul>
+    </div>
+    <div class="g" aria-hidden="true"><svg class="glyph"><use href="#eq"/></svg></div>
+    <div class="proofs">
+      <div>
+        <div class="d sh count">0 of 819</div>
+        <p>real privileged transactions on mainnet opened an incident. Upgrade authorities of eight programs taken from a recent block — none typed from memory.</p>
+      </div>
+      <div>
+        <div class="d sh count">10 of 10</div>
+        <p>shapes recognised on devnet, one incident each — and the eleventh run, maintenance the protocol had declared, left alone. Without it, ten of ten is also the score of a system that flags everything. <span class="quiet">6 Oct 2026 · budget ≥ 9 of 10</span></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="wrap part" aria-labelledby="pays">
+  <h2 class="d" id="pays">The vote that pays</h2>
+  <div class="sheet">
+    <div>
+      <p>Three attestors watch; two must agree. The second vote is not followed by a payout — it is the payout, in the same instruction. There is no appeal window.</p>
+      <div class="votes m">
+        <a href="https://explorer.solana.com/address/BpZLNoQs88L4gfKx8samxUdHaZpNuRBgApcr43irUPES?cluster=devnet">BpZL…UPES</a><span>unauthorized</span><span class="t">15:12:56</span>
+        <a class="strong" href="https://explorer.solana.com/address/B7sS2L32qCJZj8mRK9S99uivD5ZSn13QopZZh6dBu5Da?cluster=devnet">B7sS…u5Da</a><span class="strong">unauthorized · pays</span><span class="t strong">15:12:58</span>
+        <span class="quiet">MAeP…mGCF</span><span class="quiet">not needed</span><span class="t quiet">—</span>
+      </div>
+    </div>
+    <div class="g" aria-hidden="true"><svg class="glyph"><use href="#eq"/></svg></div>
+    <div>
+      <div class="sum m">
+        <span>policy limit</span><span class="r">10,000 USDC</span>
+        <span>protocol’s own retention</span><span class="r">− 500 USDC</span>
+        <span class="total">paid to the treasury</span><span class="total d sh r">9,500</span>
+        <span class="quiet">pool capital</span><span class="r quiet">100,100 → 90,600</span>
+      </div>
+      <p class="after quiet">The 400 USDC actually moved is not in the sum: the payout is the policy limit, not the loss. The retention is why staging an incident against yourself loses money.</p>
+    </div>
+  </div>
+  <div class="figures">
+    <div><span class="d">10 s</span>confirmation to payout, p95 of 20 runs. <span class="quiet">Budget 30 s.</span></div>
+    <div><span class="d">14.4 s</span>slowest of ten, offending transaction to money in the treasury. <span class="quiet">Budget 180 s.</span></div>
+    <div><span class="d">$0.006</span>in fees to carry one incident, worst case. <span class="quiet">Budget $1.</span></div>
+    <div><span class="d">40 %</span>of attestors down, and the quorum still decides.</div>
+  </div>
+  <p class="when m quiet">Measured on devnet, 6 October 2026.</p>
+</section>
+
+<section class="wrap part" aria-labelledby="check">
+  <h2 class="d tight" id="check">Check it without us</h2>
+  <p class="intro">Every step of the record is a transaction anyone can read. The decision replays from the public API and an RPC node alone — four devnet incidents in under three seconds each. The ten-minute bound for a person with an explorer is not measured yet.</p>
+  <div class="links m">
+    <span>The transaction</span><span class="sig">2LG96zeU…CENmRiZrkSp8c</span><a href="https://explorer.solana.com/tx/2LG96zeUy8ZoZoLoZApTeet8DExPdpCa3VtbcsTBCdbnUDC9CLoFq3h4XaTDC4cER1jsCeCcfPVCENmRiZrkSp8c?cluster=devnet">explorer ↗</a>
+    <span>Incident opened</span><span class="sig">3pMBEGej…NguEXLfnzfAznf</span><a href="https://explorer.solana.com/tx/3pMBEGejsjeeKJ1FaNuaW3bNXDoMqJscLADdAqFdJrWh2rSnZEGY9jsaEzqjZPox91jeut6h48NguEXLfnzfAznf?cluster=devnet">explorer ↗</a>
+    <span>Attestation 1</span><span class="sig">3duqCJCh…zHdCU7da</span><a href="https://explorer.solana.com/tx/3duqCJChc1oKAUWr5foiYFHWrh83jrBeFnoCnByJhberDEo8NP89raeGzvErWyhqZradtcGtHstNLT9zHdCU7da?cluster=devnet">explorer ↗</a>
+    <span class="strong">Attestation 2 · payout</span><span class="sig strong">36aA2Fqf…HYXytJTEhMmh</span><a class="strong" href="https://explorer.solana.com/tx/36aA2FqfzcGM3XhmST2ivJdBbC94F8CocYn9CSca2Sr2pMhDsZzxg4yik5P1xxqqXegSc69HQFYYHDXytJTEhMmh?cluster=devnet">explorer ↗</a>
+    <span>Incident page</span><span class="sig">the record as the app shows it</span><a href="app/incident/5LEvoeyJattPTqvdPYgSvrurdro7m2sAhowgezZgrdcL">open →</a>
+    <span>Replay</span><span class="sig">every account and rule the decision used</span><a href="app/incident/5LEvoeyJattPTqvdPYgSvrurdro7m2sAhowgezZgrdcL/verify">open →</a>
+  </div>
+</section>
+
+<section class="wrap part" id="terms" aria-labelledby="terms-title">
+  <h2 class="d" id="terms-title">Terms of this deployment</h2>
+  <div class="sheet terms">
+    <div>
+      <div class="d">Today</div>
+      <ul>
+        <li>Devnet only. No mainnet, no external audit — both come before any real money.</li>
+        <li>All three attestors are run by us. The quorum is counted honestly; its independence is arithmetic, not real. No stake and no slashing yet.</li>
+        <li>The capital in every pool is ours, and so are the policies.</li>
+        <li>No real protocol is covered. The protocols are test protocols; the ten compromises are shapes, not any company’s incident.</li>
+        <li>USDC here is a devnet test token.</li>
+        <li>There is nothing to buy, deposit or connect.</li>
+      </ul>
+    </div>
+    <div class="g" aria-hidden="true"><svg class="glyph"><use href="#ne"/></svg></div>
+    <div>
+      <div class="d">Never</div>
+      <ul>
+        <li>Cover for code exploits, oracle failures or de-pegs.</li>
+        <li>Blocking, co-signing or delaying a transaction — it watches and pays, after the fact.</li>
+        <li>Splitting the payout among the protocol’s users. It pays one treasury and stops.</li>
+        <li>Recovering stolen funds.</li>
+        <li>A human appeal against the quorum.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="price">A fixed sum pays more than a small loss and less than a catastrophic one. That is the price of not assessing damage.</p>
+</section>
+
+</main>
+
+<footer class="wrap">
+  <div>
+    <div class="d">MANDATE</div>
+    <p class="quiet">No licence yet.</p>
+  </div>
+  <div class="m">
+    program <a href="https://explorer.solana.com/address/HMtvDKR9i4WKxfMfC7fGXXiiReh3APGoNsiCcrbCzMHk?cluster=devnet">HMtv…zMHk</a><br>
+    first deployment <a href="https://explorer.solana.com/address/DsRdHv4QRYQ7teVhwuLVttktF792gvDFQdiuraQ4eF4P?cluster=devnet">DsRd…eF4P</a>, still live
+  </div>
+  <div class="out">
+    <a href="https://github.com/Mandate210/mandate">Source on GitHub</a>
+    <a href="https://github.com/Mandate210/mandate/issues">Questions: open an issue</a>
+    <a href="app/">All pools and incidents</a>
+  </div>
+</footer>
+
+<script>
+// The one live fact on the page: the attestors' own heartbeats, as the public API
+// folds them into /health. Anything short of a readable answer says so — it never
+// prints a green it did not receive.
+;(() => {
+  const el = document.getElementById('live')
+  const show = (state, text) => {
+    el.dataset.state = state
+    el.textContent = text
+  }
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), 6000)
+  fetch(el.href, { signal: ctrl.signal })
+    .then((r) => r.json())
+    .then((h) => {
+      const all = Array.isArray(h.attestors) ? h.attestors : []
+      const ok = all.filter((a) => a.ok).length
+      if (all.length === 0) throw new Error('no attestors in /health')
+      const lag = Math.max(...all.map((a) => Number(a.lag_slots) || 0))
+      show(
+        ok === all.length ? 'up' : 'down',
+        `${ok} of ${all.length} attestors watching · ${lag} slot${lag === 1 ? '' : 's'} behind the chain`,
+      )
+    })
+    .catch(() => show('unknown', 'Attestor status unavailable'))
+    .finally(() => clearTimeout(timer))
+})()
+</script>
+</body>
+</html>

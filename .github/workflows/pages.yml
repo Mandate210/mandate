@@ -1,0 +1,78 @@
+# Deploys the site to GitHub Pages on every push to main, as one artifact:
+#   https://mandate210.github.io/mandate/        apps/landing — the landing page (T072)
+#   https://mandate210.github.io/mandate/app/    apps/web — the app, on the public API
+#
+# Pages serves static files only. The app reads everything from the API on the VM
+# (docs/deploy-hetzner.md); its CORS is `*`, so no origin has to be registered there.
+#
+# The app's router is not hash-based, so the site root's 404.html is the app's shell
+# (apps/web/scripts/pages-fallback.mjs): a deep link into app/ renders, and a link from
+# before T072, when the app sat at the root, is forwarded to the same route under app/.
+#
+# Repository variables (Settings → Secrets and variables → Actions → Variables), both
+# optional:
+#   API_URL          the public API      default: https://204-168-183-173.sslip.io
+#   PAGES_BASE_PATH  /app/               only with a custom domain (the landing then
+#                                        takes the domain's root);
+#                                        default: /<repository name>/app/
+#
+# Enable once: Settings → Pages → Build and deployment → Source: GitHub Actions.
+# Until then Pages keeps serving the old gh-pages branch and this deploy job fails.
+
+name: pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+
+      # The same gate that guards every commit — a red one does not reach the site.
+      - run: pnpm gate
+
+      - name: Build apps/web
+        env:
+          BASE_PATH: ${{ vars.PAGES_BASE_PATH || format('/{0}/app/', github.event.repository.name) }}
+          VITE_API_URL: ${{ vars.API_URL || 'https://204-168-183-173.sslip.io' }}
+        run: pnpm --filter @mandate/web build:pages
+
+      - name: Assemble the site
+        run: |
+          mkdir -p site
+          cp -r apps/landing/. site/
+          cp -r apps/web/dist site/app
+          mv site/app/404.html site/404.html
+          mv site/app/.nojekyll site/.nojekyll
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
