@@ -52,9 +52,14 @@ slowest full cycle at 15.8s, p95 at 12s and $0.008 in fees. Every incident, ever
 attestation and every payout on either is readable by anyone, without asking us
 for anything.
 
-**Interface:** [a demo of the flow](https://mandate210.github.io/mandate/),
-running on mock data — the protocols, the incident and the amounts in it are
-invented, and every page says so above the header.
+**Interface:** [the app](https://mandate210.github.io/mandate/app/) reads devnet
+through the public API — every pool, incident, attestation and payout on it is the
+chain's. [The landing page](https://mandate210.github.io/mandate/) walks through one
+of those incidents, line by line. Both only read: nothing there signs or writes.
+
+**Running:** the API and three attestors run on one VM; each attestor reports how far
+it has looked, and [`/health`](https://204-168-183-173.sslip.io/health) goes red when
+any of them falls silent (`docs/deploy-hetzner.md`).
 
 ## Try it
 
@@ -82,25 +87,26 @@ Worth knowing before drawing conclusions:
   the nodes belong to one party, its independence is arithmetic rather than real.
 - **No mainnet and no external audit.** Neither is close, and both come before
   anything touches real money.
-- One defect that only appears under real network latency is open and blocks the
-  next milestone: nothing ever closes an incident whose window expired, so pool
-  capital stays frozen. (The other one — attestors racing to open two incidents on
-  one event — is closed: an incident is now addressed by the transaction that
-  triggered it, so a second one cannot exist.)
+- The two defects real network latency exposed are closed: attestors racing to open
+  two incidents on one event (an incident is now addressed by the transaction that
+  triggered it, so a second one cannot exist), and incidents whose window expired
+  never being closed (attestors now sweep them, releasing the capital they held).
 
 ## Layout
 
 ```
 programs/drain-cover/   Anchor program — the only source of truth
 apps/attestor/          worker: watch privileged addresses → compare → attest
-apps/web/               the interface, on mock data for now
+apps/web/               the interface — reads the API, never signs
+apps/landing/           the landing page — static, no build
+apps/cli/               mandate-declare: a covered protocol's declaration entries
 packages/shared/        the declaration-matching rule, as a pure function
 packages/sdk/           typed program client
 scenarios/              ten reproduced compromises, and the devnet measurements
 tests/                  integration tests against a live validator
 
-apps/api/               placeholder — read-only REST + indexer, not built yet
-packages/db/            placeholder — a cache of chain state, never truth
+apps/api/               read-only REST + indexer
+packages/db/            a cache of chain state, never truth
 ```
 
 The program is the only source of truth by design: it holds the capital, counts
