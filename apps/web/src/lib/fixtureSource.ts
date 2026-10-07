@@ -14,7 +14,17 @@ const notFound = (message: string, details: Record<string, unknown>): never => {
 const INCIDENTS = [INCIDENT_DETAIL.incident]
 
 const route = (path: string, query: URLSearchParams): unknown => {
-  if (path === '/health') return { ok: true, slot: INCIDENT_DETAIL.as_of.slot, lag_slots: 0 }
+  // No attestors watched and no quorum needed: the fixtures describe no running system.
+  if (path === '/health') {
+    return {
+      ok: true,
+      slot: INCIDENT_DETAIL.as_of.slot,
+      lag_slots: 0,
+      attestors: [],
+      quorum_needed: 0,
+      quorum_alive: true,
+    }
+  }
   if (path === '/config') return CONFIG
   if (path === '/pools') return POOLS
 

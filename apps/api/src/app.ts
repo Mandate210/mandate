@@ -8,7 +8,7 @@ import { errorBody } from './errors'
 import { type RateLimitOptions, rateLimit } from './middleware'
 import { configRoutes } from './routes/config'
 import { declarationRoutes } from './routes/declarations'
-import { healthRoutes } from './routes/health'
+import { type AttestorProbe, healthRoutes } from './routes/health'
 import { incidentRoutes } from './routes/incidents'
 import { poolRoutes } from './routes/pools'
 
@@ -21,11 +21,14 @@ export const createApp = ({
   tip,
   logger,
   limit,
+  attestors,
 }: {
   db: Db
   tip: () => Promise<number>
   logger?: AppLogger
   limit?: RateLimitOptions
+  /** Attestor heartbeats folded into `/health` (T069). */
+  attestors?: () => Promise<AttestorProbe[]>
 }) =>
   new Hono()
     // Any origin: the data is public (FR-030), there are no cookies to protect, and SC-007
@@ -41,7 +44,7 @@ export const createApp = ({
     )
     // Then the limit, so a refused request costs no query and no RPC call.
     .use('*', rateLimit(limit))
-    .route('/', healthRoutes({ db, tip }))
+    .route('/', healthRoutes({ db, tip, ...(attestors ? { attestors } : {}) }))
     .route('/', configRoutes(db))
     .route('/', poolRoutes(db))
     .route('/', declarationRoutes(db))

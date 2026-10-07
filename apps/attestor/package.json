@@ -13,10 +13,12 @@
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",
+    "@hono/node-server": "^1.13.7",
     "@mandate/sdk": "workspace:*",
     "@mandate/shared": "workspace:*",
     "@solana/spl-token": "^0.4.9",
     "@solana/web3.js": "^1.95.4",
+    "hono": "^4.6.14",
     "pino": "^9.5.0"
   },
   "devDependencies": {
@@ -29,6 +31,7 @@
   "exports": {
     "./act": "./src/act.ts",
     "./chain": "./src/chain.ts",
+    "./heartbeat": "./src/heartbeat.ts",
     "./sweep": "./src/sweep.ts",
     "./watch": "./src/watch.ts"
   }

@@ -91,14 +91,7 @@ export const configResponseSchema = z.object({
   paused: z.boolean(),
 })
 
-// ── Health ────────────────────────────────────────────────────────────────────
-
-/** `GET /health`. `lag_slots` is how far the index is behind the cluster tip. */
-export const healthResponseSchema = z.object({
-  ok: z.boolean(),
-  slot: countSchema,
-  lag_slots: countSchema,
-})
+// `GET /health` lives in `liveness.ts`, beside the attestor report it aggregates.
 
 // ── Pools and policies ────────────────────────────────────────────────────────
 
@@ -358,7 +351,6 @@ export const isInForce = (
 
 export type AsOf = z.infer<typeof asOfSchema>
 export type ConfigResponse = z.infer<typeof configResponseSchema>
-export type HealthResponse = z.infer<typeof healthResponseSchema>
 export type Policy = z.infer<typeof policySchema>
 export type PoolSummary = z.infer<typeof poolSummarySchema>
 export type PoolsResponse = z.infer<typeof poolsResponseSchema>

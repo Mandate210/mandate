@@ -14,6 +14,7 @@ import { createApp } from './app'
 import { loadRepoEnv } from './env'
 import { connectionIndexerRpc, createIndexer } from './indexer'
 import { REQUESTS_PER_MINUTE } from './middleware'
+import { probeAttestors } from './routes/health'
 
 const logger = pino({ name: 'api' })
 
@@ -32,6 +33,23 @@ const perMinute = (): number => {
     throw new Error(`API_RATE_LIMIT_PER_MIN must be a positive integer, got "${raw}"`)
   }
   return value
+}
+
+/**
+ * Attestor heartbeats to fold into `/health` (T069), comma-separated. Each must parse as
+ * a URL here, at startup: a typo found by the first monitor ping is an attestor reported
+ * `unreachable` for a reason nobody would look for.
+ */
+const attestorHealthUrls = (): string[] => {
+  const raw = process.env.ATTESTOR_HEALTH_URLS ?? ''
+  const urls = raw
+    .split(',')
+    .map((url) => url.trim())
+    .filter((url) => url !== '')
+  for (const url of urls) {
+    if (!URL.canParse(url)) throw new Error(`ATTESTOR_HEALTH_URLS has an invalid URL: "${url}"`)
+  }
+  return urls
 }
 
 loadRepoEnv()
@@ -57,6 +75,7 @@ const main = async (): Promise<void> => {
     tip: () => connection.getSlot('confirmed'),
     logger,
     limit: { perMinute: perMinute() },
+    attestors: probeAttestors(attestorHealthUrls()),
   })
   const server = serve({ fetch: app.fetch, port: Number(process.env.PORT ?? 3000) }, (info) =>
     logger.info({ port: info.port }, 'api listening'),

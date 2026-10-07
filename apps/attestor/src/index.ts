@@ -17,8 +17,15 @@ import { Connection, Keypair } from '@solana/web3.js'
 import pino from 'pino'
 import { createActor } from './act'
 import { createChain, createSweepChain } from './chain'
+import { buildReport, serveHeartbeat } from './heartbeat'
 import { DEFAULT_SWEEP_INTERVAL_SECONDS, createSweeper } from './sweep'
-import { type WatchedAddress, connectionWatchRpc, createWatcher } from './watch'
+import {
+  DEFAULT_WATCH_POLICY,
+  type WatchPolicy,
+  type WatchedAddress,
+  connectionWatchRpc,
+  createWatcher,
+} from './watch'
 
 const logger = pino({ name: 'attestor' })
 
@@ -51,6 +58,21 @@ const sweepInterval = (): number => {
   const parsed = Number(value)
   if (!Number.isFinite(parsed) || parsed < 0) {
     throw new Error('ATTESTOR_SWEEP_SECONDS is not a non-negative number')
+  }
+  return parsed
+}
+
+/**
+ * Port of the heartbeat (T069), or none. Unset means no server, which is right for a
+ * local run of several attestors and wrong for a hosted one — `api` then reports it
+ * `unreachable`, which is how a forgotten port gets noticed.
+ */
+const heartbeatPort = (): number | undefined => {
+  const value = process.env.ATTESTOR_HEALTH_PORT
+  if (value === undefined || value === '') return undefined
+  const parsed = Number(value)
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65_535) {
+    throw new Error('ATTESTOR_HEALTH_PORT is not a port number')
   }
   return parsed
 }
@@ -110,15 +132,20 @@ const main = async (): Promise<void> => {
   const reconcileSeconds = seconds('ATTESTOR_RECONCILE_SECONDS')
   const startupLookbackSeconds = seconds('ATTESTOR_STARTUP_LOOKBACK_SECONDS')
 
+  // Resolved here rather than inside the watcher, so the heartbeat reports the policy the
+  // attestor actually runs and `api` judges it by that.
+  const policy: WatchPolicy = {
+    ...DEFAULT_WATCH_POLICY,
+    ...(pollSeconds === undefined ? {} : { pollSeconds }),
+    ...(reconcileSeconds === undefined ? {} : { reconcileSeconds }),
+    ...(startupLookbackSeconds === undefined ? {} : { startupLookbackSeconds }),
+  }
+
   const watcher = createWatcher({
     rpc: connectionWatchRpc(connection),
     watched,
     logger,
-    policy: {
-      ...(pollSeconds === undefined ? {} : { pollSeconds }),
-      ...(reconcileSeconds === undefined ? {} : { reconcileSeconds }),
-      ...(startupLookbackSeconds === undefined ? {} : { startupLookbackSeconds }),
-    },
+    policy,
     onTransaction: async (transaction) => {
       const outcome = await actor.act(transaction)
       logger.info({ signature: transaction.signature, ...outcome }, 'handled')
@@ -138,8 +165,28 @@ const main = async (): Promise<void> => {
           intervalSeconds,
         })
 
+  // Before the watcher starts, so the startup sweep shows as `starting` rather than as
+  // an attestor that does not answer at all.
+  const port = heartbeatPort()
+  const heartbeat =
+    port === undefined
+      ? null
+      : await serveHeartbeat({
+          port,
+          ...(process.env.ATTESTOR_HEALTH_HOST ? { host: process.env.ATTESTOR_HEALTH_HOST } : {}),
+          report: () =>
+            buildReport({
+              attestor: attestor.publicKey.toBase58(),
+              health: watcher.health(),
+              policy,
+              now: Date.now(),
+            }),
+        })
+  if (heartbeat) logger.info({ address: heartbeat.address() }, 'heartbeat listening')
+
   const shutdown = (signal: string): void => {
     logger.info({ signal }, 'stopping')
+    heartbeat?.close()
     sweeper?.stop()
     watcher
       .stop()

@@ -5,5 +5,6 @@
 // with one set of tests (docs/PLAN.md → "Звірка з декларацією").
 export * from './api'
 export * from './declaration'
+export * from './liveness'
 export * from './observed'
 export * from './rpc-transaction'

@@ -84,6 +84,8 @@ export interface WatchRpc {
   subscribeSlots(handler: (slot: number) => void): number
   unsubscribeSlots(id: number): Promise<void>
   getSignatures(address: string, page: SignaturePage): Promise<SignatureRecord[]>
+  /** The confirmed tip — what a complete sweep can vouch for (T069). */
+  getSlot(): Promise<number>
 }
 
 /** pino's call shape, kept as an interface so tests need no logger at all. */
@@ -217,6 +219,24 @@ export const createSeenSet = (capacity: number) => {
   }
 }
 
+/**
+ * What the watcher can vouch for, as raw facts (T069). Clock readings are milliseconds
+ * from the injected `now`; `heartbeat.ts` turns them into the public report.
+ */
+export interface WatcherHealth {
+  /** The newest slot notification, and when it arrived. Null before the first one. */
+  stream: { slot: number; at: number } | null
+  /**
+   * The last sweep that read every watched address to its end without an error, with the
+   * confirmed tip read when it began. A sweep that failed on one address, or whose history
+   * ran past `maxPages`, is not complete: the gap is what liveness exists to show.
+   */
+  lastCompleteSweep: { slot: number; at: number } | null
+  /** The slot of the oldest transaction waiting for a retry. Nothing past it is handled. */
+  oldestPendingSlot: number | null
+  pending: number
+}
+
 export interface Watcher {
   /** Subscribes, then sweeps the startup window. Live transactions are covered first. */
   start(): Promise<void>
@@ -228,6 +248,7 @@ export interface Watcher {
   readonly stalled: boolean
   /** Transactions the handler has failed on and that wait for another attempt. */
   readonly pending: number
+  health(): WatcherHealth
 }
 
 export interface WatcherOptions {
@@ -269,6 +290,8 @@ export const createWatcher = ({
   let timer: ReturnType<typeof setInterval> | null = null
   let sweeping = false
   let liveness: LivenessState = { lastSlotAt: now(), lastSweepAt: 0, stalled: false }
+  let stream: WatcherHealth['stream'] = null
+  let lastCompleteSweep: WatcherHealth['lastCompleteSweep'] = null
 
   /**
    * Transactions the handler failed on, by `protocol|signature`. Before T077 a failure
@@ -333,7 +356,9 @@ export const createWatcher = ({
    * changed nothing on chain, so opening an incident on it would be a false positive of
    * exactly the kind SC-002 measures.
    */
-  const collect = async (entry: WatchedAddress): Promise<SignatureRecord[]> => {
+  const collect = async (
+    entry: WatchedAddress,
+  ): Promise<{ records: SignatureRecord[]; complete: boolean }> => {
     const cursor = cursors.get(keyOf(entry))
     const floor = cursor ? null : Math.floor(now() / 1000) - policy.startupLookbackSeconds
     const collected: SignatureRecord[] = []
@@ -382,17 +407,29 @@ export const createWatcher = ({
       cursors.set(keyOf(entry), { signature: newest.signature, slot: newest.slot })
     }
 
-    return collected.filter((record) => record.err == null).reverse()
+    return {
+      records: collected.filter((record) => record.err == null).reverse(),
+      complete: reachedEnd,
+    }
   }
 
   const sweep = async (reason: SweepReason): Promise<void> => {
     if (sweeping) return
     sweeping = true
     liveness = { ...liveness, lastSweepAt: now() }
+    // Read before the first page, so the sweep claims no more than it can have seen. A
+    // tip that cannot be read leaves the sweep useful but unable to vouch for anything.
+    const coverage = await rpc.getSlot().then(
+      (slot) => slot,
+      () => null,
+    )
+    let complete = coverage !== null
     try {
       for (const entry of watched) {
         try {
-          for (const record of await collect(entry)) {
+          const { records, complete: read } = await collect(entry)
+          if (!read) complete = false
+          for (const record of records) {
             await emit({
               protocol: entry.protocol,
               address: entry.address,
@@ -404,12 +441,14 @@ export const createWatcher = ({
         } catch (error) {
           // The cursor was not advanced, so the next sweep re-reads this address from
           // where it left off. Failing one address must not skip the rest.
+          complete = false
           logger.error(
             { address: entry.address, protocol: entry.protocol, reason, error },
             'sweep failed for one address',
           )
         }
       }
+      if (complete && coverage !== null) lastCompleteSweep = { slot: coverage, at: now() }
     } finally {
       sweeping = false
     }
@@ -430,11 +469,14 @@ export const createWatcher = ({
 
   return {
     async start(): Promise<void> {
-      // The slot subscription is the liveness signal. Nothing reads the slot numbers
-      // themselves — what matters is that notifications keep arriving, which is the only
+      // The slot subscription is the liveness signal. The watcher reads no slot numbers
+      // itself — what matters is that notifications keep arriving, which is the only
       // thing that distinguishes a dead socket from a quiet one.
-      slotSubscription = rpc.subscribeSlots(() => {
+      slotSubscription = rpc.subscribeSlots((slot) => {
         liveness = { ...liveness, lastSlotAt: now() }
+        // Kept for the heartbeat only (T069). The newest, not the latest to arrive: a
+        // notification delivered out of order must not walk the reported slot back.
+        if (stream === null || slot >= stream.slot) stream = { slot, at: now() }
       })
 
       for (const entry of watched) {
@@ -487,6 +529,16 @@ export const createWatcher = ({
     get pending(): number {
       return retries.size
     },
+
+    health(): WatcherHealth {
+      let oldestPendingSlot: number | null = null
+      for (const { transaction } of retries.values()) {
+        if (oldestPendingSlot === null || transaction.slot < oldestPendingSlot) {
+          oldestPendingSlot = transaction.slot
+        }
+      }
+      return { stream, lastCompleteSweep, oldestPendingSlot, pending: retries.size }
+    },
   }
 }
 
@@ -510,6 +562,7 @@ export const connectionWatchRpc = (connection: Connection): WatchRpc => ({
   unsubscribeMentions: (id) => connection.removeOnLogsListener(id),
   subscribeSlots: (handler) => connection.onSlotChange((info) => handler(info.slot)),
   unsubscribeSlots: (id) => connection.removeSlotChangeListener(id),
+  getSlot: () => connection.getSlot('confirmed'),
   getSignatures: async (address, page) => {
     const options: { until?: string; before?: string; limit: number } = { limit: page.limit }
     if (page.until !== undefined) options.until = page.until

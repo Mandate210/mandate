@@ -14,6 +14,7 @@ import { addresses, encode, fields, keys, programId, sig } from '../fixtures'
 import { createIndexer } from '../indexer'
 import { type TestDb, openTestDb } from '../test-db'
 import { MAX_LAG_SLOTS } from './health'
+import { liveAttestors } from './health.fixtures'
 
 let testDb: TestDb
 let db: Db
@@ -31,8 +32,12 @@ beforeEach(async () => {
   await testDb.clear()
 })
 
-/** The api over the test database, with a cluster tip the test sets. */
-const api = (tip: () => Promise<number> = async () => 100) => createApp({ db, tip })
+/**
+ * The api over the test database, with a cluster tip the test sets — and as many live
+ * attestors as the fixture quorum needs, so `/health` here measures the indexer alone.
+ */
+const api = (tip: () => Promise<number> = async () => 100) =>
+  createApp({ db, tip, attestors: liveAttestors(2) })
 
 /** The fixture world, indexed by the real indexer at slot 100 — as the cache holds it. */
 const indexed = async () => {
@@ -63,7 +68,14 @@ describe('before the first census', () => {
   it('reports itself unhealthy, with the whole chain as its lag', async () => {
     const { status, body } = await getJson('/health', async () => 500)
     expect(status).toBe(503)
-    expect(healthResponseSchema.parse(body)).toEqual({ ok: false, slot: 0, lag_slots: 500 })
+    // No census, so no `Config` either: the quorum cannot be known yet.
+    expect(healthResponseSchema.parse(body)).toMatchObject({
+      ok: false,
+      slot: 0,
+      lag_slots: 500,
+      quorum_needed: null,
+      quorum_alive: false,
+    })
   })
 })
 
@@ -238,10 +250,12 @@ describe('GET /health', () => {
     const { status, body } = await getJson('/health', async () => 100 + MAX_LAG_SLOTS)
 
     expect(status).toBe(200)
-    expect(healthResponseSchema.parse(body)).toEqual({
+    expect(healthResponseSchema.parse(body)).toMatchObject({
       ok: true,
       slot: 100,
       lag_slots: MAX_LAG_SLOTS,
+      quorum_needed: 2,
+      quorum_alive: true,
     })
   })
 
@@ -259,7 +273,7 @@ describe('GET /health', () => {
   it('never reports a lead over the cluster as negative lag', async () => {
     await indexed()
     const { body } = await getJson('/health', async () => 90)
-    expect(healthResponseSchema.parse(body)).toEqual({ ok: true, slot: 100, lag_slots: 0 })
+    expect(healthResponseSchema.parse(body)).toMatchObject({ ok: true, slot: 100, lag_slots: 0 })
   })
 
   it('answers 503 in the error format when the tip cannot be read', async () => {

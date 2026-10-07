@@ -35,6 +35,7 @@ const fakeRpc = (history: Record<string, SignatureRecord[]>) => {
   const slotHandlers = new Map<number, (slot: number) => void>()
   let nextId = 1
   let failNext = 0
+  let tip: number | Error = 1_000
 
   const rpc: WatchRpc = {
     subscribeMentions: (address, handler) => {
@@ -68,6 +69,10 @@ const fakeRpc = (history: Record<string, SignatureRecord[]>) => {
       const to = untilIndex === -1 ? all.length : untilIndex
       return all.slice(from, to).slice(0, page.limit)
     },
+    getSlot: async () => {
+      if (tip instanceof Error) throw tip
+      return tip
+    },
   }
 
   return {
@@ -85,6 +90,9 @@ const fakeRpc = (history: Record<string, SignatureRecord[]>) => {
       for (const handler of slotHandlers.values()) handler(slot)
     },
     subscriptionCount: () => mentions.size + slotHandlers.size,
+    setTip: (slot: number | Error) => {
+      tip = slot
+    },
   }
 }
 
@@ -607,6 +615,117 @@ describe('createWatcher — liveness', () => {
 
     expect(watcher.stalled).toBe(false)
     expect(chain.calls).toHaveLength(afterStart)
+    await watcher.stop()
+  })
+})
+
+describe('createWatcher — what it can vouch for (T069)', () => {
+  it('reports nothing before it has started', () => {
+    const watcher = createWatcher({ rpc: fakeRpc({}).rpc, watched: watchedOne, ...collector() })
+    expect(watcher.health()).toEqual({
+      stream: null,
+      lastCompleteSweep: null,
+      oldestPendingSlot: null,
+      pending: 0,
+    })
+  })
+
+  it('vouches for the tip read before a sweep that read every address to its end', async () => {
+    let clock = 1_000_000
+    const chain = fakeRpc({ [ADDRESS]: [record('sig-a', 50)] })
+    chain.setTip(700)
+    const watcher = createWatcher({
+      rpc: chain.rpc,
+      watched: watchedOne,
+      now: () => clock,
+      ...collector(),
+    })
+    await watcher.start()
+    expect(watcher.health().lastCompleteSweep).toEqual({ slot: 700, at: 1_000_000 })
+
+    clock += 10_000
+    chain.setTip(725)
+    await watcher.sweep('reconcile')
+    expect(watcher.health().lastCompleteSweep).toEqual({ slot: 725, at: 1_010_000 })
+    await watcher.stop()
+  })
+
+  // A sweep that failed on one address read the rest, but vouches for none of it: the
+  // address it missed is exactly where the incident could be.
+  it('does not count a sweep that failed on one address', async () => {
+    let clock = 1_000_000
+    const chain = fakeRpc({ [ADDRESS]: [], [OTHER]: [] })
+    const watcher = createWatcher({
+      rpc: chain.rpc,
+      watched: [...watchedOne, { protocol: PROTOCOL, address: OTHER }],
+      now: () => clock,
+      ...collector(),
+    })
+    await watcher.start()
+    const before = watcher.health().lastCompleteSweep
+
+    clock += 10_000
+    chain.failOnce()
+    await watcher.sweep('reconcile')
+    expect(watcher.health().lastCompleteSweep).toEqual(before)
+    await watcher.stop()
+  })
+
+  it('does not count a sweep whose tip could not be read', async () => {
+    const chain = fakeRpc({ [ADDRESS]: [] })
+    chain.setTip(new Error('rpc down'))
+    const watcher = createWatcher({ rpc: chain.rpc, watched: watchedOne, ...collector() })
+    await watcher.start()
+    expect(watcher.health().lastCompleteSweep).toBeNull()
+    await watcher.stop()
+  })
+
+  it('does not count a sweep whose history ran past the pages it may read', async () => {
+    const chain = fakeRpc({
+      [ADDRESS]: [record('sig-3', 3), record('sig-2', 2), record('sig-1', 1)],
+    })
+    const watcher = createWatcher({
+      rpc: chain.rpc,
+      watched: watchedOne,
+      policy: { pageSize: 1, maxPages: 2 },
+      ...collector(),
+    })
+    await watcher.start()
+    expect(watcher.health().lastCompleteSweep).toBeNull()
+    await watcher.stop()
+  })
+
+  it('keeps the newest slot notification, however they arrive', async () => {
+    let clock = 1_000_000
+    const chain = fakeRpc({})
+    const watcher = createWatcher({
+      rpc: chain.rpc,
+      watched: watchedOne,
+      now: () => clock,
+      ...collector(),
+    })
+    await watcher.start()
+    chain.pushSlot(90)
+    clock += 400
+    chain.pushSlot(89)
+    expect(watcher.health().stream).toEqual({ slot: 90, at: 1_000_000 })
+    await watcher.stop()
+  })
+
+  it('reports the oldest transaction still waiting for its retry', async () => {
+    const chain = fakeRpc({})
+    const watcher = createWatcher({
+      rpc: chain.rpc,
+      watched: watchedOne,
+      onTransaction: () => {
+        throw new Error('not yet')
+      },
+    })
+    await watcher.start()
+    chain.pushLog(ADDRESS, 'later', 80)
+    chain.pushLog(ADDRESS, 'earlier', 60)
+    await flush()
+    expect(watcher.health()).toMatchObject({ oldestPendingSlot: 60, pending: 2 })
     await watcher.stop()
   })
 })
