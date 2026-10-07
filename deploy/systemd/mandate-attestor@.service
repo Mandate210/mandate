@@ -1,0 +1,26 @@
+# One attestor, one key: `mandate-attestor@1` reads /etc/mandate/attestor-1.env.
+# Separate processes on purpose — each stands for a party of its own, so one crashing
+# or running out of memory takes no other vote with it (docs/deploy-hetzner.md).
+[Unit]
+Description=Mandate attestor %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=mandate
+Group=mandate
+WorkingDirectory=/opt/mandate/app/apps/attestor
+EnvironmentFile=/etc/mandate/common.env
+EnvironmentFile=/etc/mandate/attestor-%i.env
+ExecStart=/usr/local/bin/node --import tsx src/index.ts
+Restart=always
+RestartSec=5
+MemoryMax=500M
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/mandate
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,25 @@
+# The public read-only API and the indexer (docs/deploy-hetzner.md).
+[Unit]
+Description=Mandate api — read-only REST and the indexer
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=mandate
+Group=mandate
+WorkingDirectory=/opt/mandate/app/apps/api
+EnvironmentFile=/etc/mandate/common.env
+EnvironmentFile=/etc/mandate/api.env
+# tsx, as `pnpm census` and `pnpm dev` run it: the workspace packages export TypeScript.
+ExecStart=/usr/local/bin/node --import tsx src/index.ts
+Restart=always
+RestartSec=5
+MemoryMax=700M
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/mandate
+
+[Install]
+WantedBy=multi-user.target

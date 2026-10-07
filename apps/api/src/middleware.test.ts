@@ -82,47 +82,71 @@ describe('createBucketStore', () => {
   })
 })
 
-describe('addressFromForwardedFor', () => {
-  it('is pinned to one platform hop, as measured on Render', () => {
-    expect(TRUSTED_PROXY_HOPS).toBe(1)
+describe('addressFromForwardedFor — behind Caddy, the deployed host', () => {
+  it('trusts no platform hop: Caddy passes the caller and nothing after it', () => {
+    expect(TRUSTED_PROXY_HOPS).toBe(0)
   })
 
+  it('reads the caller as the last entry', () => {
+    expect(addressFromForwardedFor('203.0.113.7')).toBe('203.0.113.7')
+  })
+
+  // Caddy drops a forged header itself; were one ever to reach us appended to, the
+  // caller's own address is still the entry counted.
+  it('cannot be forged: entries a caller prepends stay to the left', () => {
+    for (const forged of ['1.1.1.1', '1.1.1.1, 2.2.2.2']) {
+      expect(addressFromForwardedFor(`${forged}, 203.0.113.7`)).toBe('203.0.113.7')
+    }
+  })
+
+  it('steps over a private tail — Caddy and the api share a loopback', () => {
+    expect(addressFromForwardedFor('203.0.113.7, 127.0.0.1')).toBe('203.0.113.7')
+  })
+})
+
+describe('addressFromForwardedFor — one platform hop, as measured on Render', () => {
+  const RENDER_HOPS = 1
+
   it('reads the caller one step back from the end', () => {
-    expect(addressFromForwardedFor('203.0.113.7, 216.24.57.4')).toBe('203.0.113.7')
+    expect(addressFromForwardedFor('203.0.113.7, 216.24.57.4', RENDER_HOPS)).toBe('203.0.113.7')
   })
 
   it('cannot be forged: entries a caller prepends stay to the left', () => {
     for (const forged of ['1.1.1.1', '1.1.1.1, 2.2.2.2', '9.9.9.9, 8.8.8.8, 7.7.7.7']) {
-      expect(addressFromForwardedFor(`${forged}, 203.0.113.7, 216.24.57.4`)).toBe('203.0.113.7')
+      expect(addressFromForwardedFor(`${forged}, 203.0.113.7, 216.24.57.4`, RENDER_HOPS)).toBe(
+        '203.0.113.7',
+      )
     }
   })
 
   it('gives one caller one address whichever platform proxy carried the request', () => {
     const seen = new Set(
       ['216.24.57.4', '216.24.57.252', '216.24.60.0'].map((proxy) =>
-        addressFromForwardedFor(`203.0.113.7, ${proxy}`),
+        addressFromForwardedFor(`203.0.113.7, ${proxy}`, RENDER_HOPS),
       ),
     )
     expect([...seen]).toEqual(['203.0.113.7'])
   })
 
   it('steps over a private tail before counting the platform hop', () => {
-    expect(addressFromForwardedFor('203.0.113.7, 216.24.57.4, 10.0.0.3, 172.16.4.1')).toBe(
-      '203.0.113.7',
-    )
-    expect(addressFromForwardedFor('203.0.113.7, 216.24.57.4, 127.0.0.1, fd12:3456::1')).toBe(
-      '203.0.113.7',
-    )
-  })
-
-  it('drops ports, so a caller is not a new bucket per connection', () => {
-    expect(addressFromForwardedFor('203.0.113.7:51234, 216.24.57.4')).toBe('203.0.113.7')
-    expect(addressFromForwardedFor('[2001:db8::7]:443, 216.24.57.4')).toBe('2001:db8::7')
-    expect(addressFromForwardedFor('2001:db8::7, 216.24.57.4')).toBe('2001:db8::7')
+    expect(
+      addressFromForwardedFor('203.0.113.7, 216.24.57.4, 10.0.0.3, 172.16.4.1', RENDER_HOPS),
+    ).toBe('203.0.113.7')
+    expect(
+      addressFromForwardedFor('203.0.113.7, 216.24.57.4, 127.0.0.1, fd12:3456::1', RENDER_HOPS),
+    ).toBe('203.0.113.7')
   })
 
   it('falls back to the first entry when the chain is shorter than the hops', () => {
-    expect(addressFromForwardedFor('203.0.113.7')).toBe('203.0.113.7')
+    expect(addressFromForwardedFor('203.0.113.7', RENDER_HOPS)).toBe('203.0.113.7')
+  })
+})
+
+describe('addressFromForwardedFor — either host', () => {
+  it('drops ports, so a caller is not a new bucket per connection', () => {
+    expect(addressFromForwardedFor('203.0.113.7:51234')).toBe('203.0.113.7')
+    expect(addressFromForwardedFor('[2001:db8::7]:443')).toBe('2001:db8::7')
+    expect(addressFromForwardedFor('2001:db8::7')).toBe('2001:db8::7')
   })
 
   it('has no answer without the header, so the socket decides', () => {
@@ -156,8 +180,9 @@ describe('mounted in the app', () => {
     return { app, tipCalls: () => tipCalls }
   }
 
+  /** As Caddy hands a request over: the caller's own address, and nothing else. */
   const from = (address: string) => ({
-    headers: { 'x-forwarded-for': `${address}, 216.24.57.4` },
+    headers: { 'x-forwarded-for': address },
   })
 
   it('refuses the 61st request of a minute in the contract’s error format', async () => {

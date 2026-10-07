@@ -96,15 +96,18 @@ export const createBucketStore = (
 /**
  * How many entries the hosting platform appends to `x-forwarded-for` after the caller.
  *
- * Measured on Render (2026-09-25, on another service of the same plan), not guessed: the
- * last entry is a public proxy address of the platform that wanders between several
- * values, so reading it handed one client several buckets. A constant rather than an
- * environment variable: a value larger than the truth makes the limit bypassable with a
- * forged header, and nothing but a live measurement shows that. T059 measures it again
- * after the deploy — drain the bucket, wait a minute, count what is served: 60 means one
- * bucket, 120 two.
+ * **0 since T059 (2026-10-07): the api runs behind Caddy on our own VM.** Caddy trusts no
+ * proxy by default, so it drops whatever `x-forwarded-for` a caller sent and passes on
+ * exactly one entry — the caller's own address, read from the socket. Nothing sits after
+ * it. On Render it was 1, measured there on 2026-09-25: the last entry was a platform
+ * proxy that wandered between addresses, and reading it handed one client several buckets.
+ *
+ * A constant rather than an environment variable: a value larger than the truth makes the
+ * limit bypassable with a forged header, and nothing but a live measurement shows that.
+ * Measure after every change of host — drain the bucket, wait a minute, count what is
+ * served: 60 means one bucket, 120 two — and send a forged header while doing it.
  */
-export const TRUSTED_PROXY_HOPS = 1
+export const TRUSTED_PROXY_HOPS = 0
 
 /** `ip:port` and `[v6]:port` to the bare address, or each connection is a new bucket. */
 const withoutPort = (hop: string): string => {
@@ -139,16 +142,19 @@ const isInternal = (hop: string) => INTERNAL.some((range) => range.test(hop))
  * `TRUSTED_PROXY_HOPS` public entries. A chain shorter than that — local, or a single
  * proxy — yields its first entry; in production a caller can only make it longer.
  */
-export const addressFromForwardedFor = (header: string | undefined): string | undefined => {
-  const hops = (header ?? '')
+export const addressFromForwardedFor = (
+  header: string | undefined,
+  hops: number = TRUSTED_PROXY_HOPS,
+): string | undefined => {
+  const entries = (header ?? '')
     .split(',')
     .map((hop) => withoutPort(hop.trim()))
     .filter((hop) => hop.length > 0)
-  if (hops.length === 0) return undefined
+  if (entries.length === 0) return undefined
 
-  let end = hops.length
-  while (end > 1 && isInternal(hops[end - 1] ?? '')) end -= 1
-  return hops[Math.max(0, end - 1 - TRUSTED_PROXY_HOPS)]
+  let end = entries.length
+  while (end > 1 && isInternal(entries[end - 1] ?? '')) end -= 1
+  return entries[Math.max(0, end - 1 - hops)]
 }
 
 /** Without a proxy in front — a local run — the socket is the caller. */

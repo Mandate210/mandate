@@ -1,0 +1,10 @@
+# HTTPS in front of the api. sslip.io resolves the name to the address written in it,
+# which is all Let's Encrypt needs to issue a certificate — no domain to buy.
+#
+# Caddy trusts no proxy by default: it drops any `x-forwarded-for` a caller sends and
+# passes exactly one entry, the caller's address. `TRUSTED_PROXY_HOPS = 0` in
+# apps/api/src/middleware.ts depends on that; adding `trusted_proxies` here changes it.
+204-168-183-173.sslip.io {
+	encode gzip
+	reverse_proxy 127.0.0.1:3000
+}
