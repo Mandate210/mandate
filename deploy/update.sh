@@ -15,7 +15,7 @@ cd "$APP"
 as_mandate git fetch --quiet origin main
 as_mandate git merge --ff-only --quiet origin/main
 as_mandate pnpm install --frozen-lockfile --reporter=silent
-echo "at $(git rev-parse --short HEAD)"
+echo "at $(as_mandate git rev-parse --short HEAD)"
 
 install -m 644 deploy/systemd/mandate-api.service deploy/systemd/mandate-attestor@.service /etc/systemd/system/
 install -m 644 deploy/Caddyfile /etc/caddy/Caddyfile
@@ -30,7 +30,8 @@ for n in "${ATTESTORS[@]}"; do
   port=$(sed -n 's/^ATTESTOR_HEALTH_PORT=//p' "/etc/mandate/attestor-$n.env")
   systemctl restart "mandate-attestor@$n"
   for _ in $(seq 1 60); do
-    if curl -fsS -o /dev/null "http://127.0.0.1:$port/health"; then
+    # Quiet while it waits: refused and 503 are both the expected "not yet".
+    if curl -fs -o /dev/null "http://127.0.0.1:$port/health"; then
       echo "attestor $n green"
       continue 2
     fi
