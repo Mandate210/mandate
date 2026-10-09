@@ -52,6 +52,7 @@ export const buildReport = ({
       ? { slot: health.lastCompleteSweep.slot, at: seconds(health.lastCompleteSweep.at) }
       : null,
     pending: health.pending,
+    protocols: health.protocols,
     policy: {
       stall_seconds: policy.stallSeconds,
       poll_seconds: policy.pollSeconds,

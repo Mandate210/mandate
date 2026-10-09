@@ -13,6 +13,7 @@ const healthy = (overrides: Partial<WatcherHealth> = {}): WatcherHealth => ({
   lastCompleteSweep: { slot: 850, at: NOW - 60_000 },
   oldestPendingSlot: null,
   pending: 0,
+  protocols: 4,
   ...overrides,
 })
 
@@ -46,6 +47,10 @@ describe('buildReport', () => {
     expect(report.stream).toEqual({ slot: 1_000, at: 1_799_999_999 })
     expect(report.last_complete_sweep).toEqual({ slot: 850, at: 1_799_999_940 })
     expect(report.policy).toEqual({ stall_seconds: 30, poll_seconds: 60, reconcile_seconds: 600 })
+  })
+
+  it('says how many protocols it watches (T079)', () => {
+    expect(reportOf(healthy({ protocols: 7 })).protocols).toBe(7)
   })
 
   it('goes red when the safety net has not completed in two reconcile intervals', () => {

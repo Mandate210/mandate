@@ -54,6 +54,7 @@ describe('GET /health — attestors (T069)', () => {
         examined_slot: 398,
         lag_slots: 2,
         last_complete_sweep_at: one.last_complete_sweep?.at,
+        protocols: 3,
       },
       expect.objectContaining({ attestor: two.attestor, ok: true, lag_slots: 0 }),
     ])
@@ -76,7 +77,20 @@ describe('GET /health — attestors (T069)', () => {
       examined_slot: null,
       lag_slots: null,
       last_complete_sweep_at: null,
+      protocols: null,
     })
+  })
+
+  // T079: an attestor that missed a registration shows it as a smaller number than the
+  // rest. One built before the field still parses — it is run by somebody else.
+  it('reports how many protocols each attestor watches, null from one that does not say', async () => {
+    const { protocols: _, ...older } = attestorReport()
+    const { status, body } = await health([
+      { report: attestorReport({ protocols: 5 }) },
+      { report: older },
+    ])
+    expect(status).toBe(200)
+    expect(body.attestors.map((attestor) => attestor.protocols)).toEqual([5, null])
   })
 
   it('says the quorum is gone when fewer live attestors remain than it needs', async () => {

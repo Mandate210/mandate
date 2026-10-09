@@ -70,6 +70,7 @@ const statusOf = (probe: AttestorProbe, tip: number): AttestorStatus => {
       examined_slot: null,
       lag_slots: null,
       last_complete_sweep_at: null,
+      protocols: null,
     }
   }
   const { report } = probe
@@ -82,6 +83,7 @@ const statusOf = (probe: AttestorProbe, tip: number): AttestorStatus => {
     examined_slot: report.examined_slot,
     lag_slots,
     last_complete_sweep_at: report.last_complete_sweep?.at ?? null,
+    protocols: report.protocols ?? null,
   }
 }
 

@@ -127,4 +127,27 @@ describe('schemas', () => {
     }
     expect(healthResponseSchema.parse(body)).toEqual(body)
   })
+
+  // `web` ships to Pages before the VM runs the `api` that sends `protocols` (T079).
+  it('still reads a /health from an api that predates the protocol count', () => {
+    const body = {
+      ok: true,
+      slot: 509_194_334,
+      lag_slots: 323,
+      attestors: [
+        {
+          attestor: 'BpZLNoQs88L4gfKx8samxUdHaZpNuRBgApcr43irUPES',
+          ok: true,
+          reason: null,
+          examined_slot: 509_194_659,
+          lag_slots: 0,
+          last_complete_sweep_at: 1_791_552_673,
+        },
+      ],
+      quorum_needed: 2,
+      quorum_alive: true,
+    }
+    expect(healthResponseSchema.parse(body)).toEqual(body)
+    expect(attestorReportSchema.shape.protocols.safeParse(undefined).success).toBe(true)
+  })
 })

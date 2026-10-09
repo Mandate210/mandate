@@ -627,6 +627,7 @@ describe('createWatcher — what it can vouch for (T069)', () => {
       lastCompleteSweep: null,
       oldestPendingSlot: null,
       pending: 0,
+      protocols: 1,
     })
   })
 
@@ -727,5 +728,122 @@ describe('createWatcher — what it can vouch for (T069)', () => {
     await flush()
     expect(watcher.health()).toMatchObject({ oldestPendingSlot: 60, pending: 2 })
     await watcher.stop()
+  })
+})
+
+describe('createWatcher — protocols registered while it runs (T079)', () => {
+  const LATER = 'LaterProtocolPDA111111111111111111111111111'
+  const later: WatchedAddress[] = [{ protocol: LATER, address: OTHER }]
+
+  it('watches a new address live, and reads back what it did since registration', async () => {
+    const chain = fakeRpc({ [OTHER]: [record('sig-before', 7)] })
+    const sink = collector()
+    const watcher = createWatcher({ rpc: chain.rpc, watched: watchedOne, ...sink })
+    await watcher.start()
+
+    expect(await watcher.watch(later)).toBe(1)
+    chain.pushLog(OTHER, 'sig-live', 8)
+    await watcher.stop()
+
+    expect(sink.seen).toEqual([
+      { protocol: LATER, address: OTHER, signature: 'sig-before', slot: 7, source: 'sweep' },
+      { protocol: LATER, address: OTHER, signature: 'sig-live', slot: 8, source: 'stream' },
+    ])
+  })
+
+  it('ignores what it already watches, however often it is reported', async () => {
+    const chain = fakeRpc({})
+    const watcher = createWatcher({ rpc: chain.rpc, watched: watchedOne, ...collector() })
+    await watcher.start()
+    const subscriptions = chain.subscriptionCount()
+
+    expect(await watcher.watch(watchedOne)).toBe(0)
+    expect(await watcher.watch(later)).toBe(1)
+    expect(await watcher.watch(later)).toBe(0)
+    expect(chain.subscriptionCount()).toBe(subscriptions + 1)
+    await watcher.stop()
+  })
+
+  // A subscription notification and a rescan can report the same protocol at once.
+  it('subscribes once when the same protocol is reported twice at the same moment', async () => {
+    const chain = fakeRpc({})
+    const watcher = createWatcher({ rpc: chain.rpc, watched: watchedOne, ...collector() })
+    await watcher.start()
+    const subscriptions = chain.subscriptionCount()
+
+    expect(await Promise.all([watcher.watch(later), watcher.watch(later)])).toEqual([1, 0])
+    expect(chain.subscriptionCount()).toBe(subscriptions + 1)
+    await watcher.stop()
+  })
+
+  it('takes entries reported before start into its starting list', async () => {
+    const chain = fakeRpc({})
+    const sink = collector()
+    const watcher = createWatcher({ rpc: chain.rpc, watched: [], ...sink })
+
+    expect(await watcher.watch(later)).toBe(1)
+    await watcher.start()
+    chain.pushLog(OTHER, 'sig-live', 8)
+    await watcher.stop()
+
+    expect(sink.seen.map((tx) => tx.signature)).toEqual(['sig-live'])
+  })
+
+  it('counts protocols, not addresses', async () => {
+    const chain = fakeRpc({})
+    const watcher = createWatcher({
+      rpc: chain.rpc,
+      watched: [
+        { protocol: PROTOCOL, address: ADDRESS },
+        { protocol: PROTOCOL, address: OTHER },
+      ],
+      ...collector(),
+    })
+    expect(watcher.health().protocols).toBe(1)
+    await watcher.start()
+    await watcher.watch([
+      { protocol: LATER, address: 'LaterPrivileged1111111111111111111111111111' },
+    ])
+    expect(watcher.health().protocols).toBe(2)
+    await watcher.stop()
+  })
+
+  // Counted only once subscribed: the count is what a prep script waits on before it
+  // fires, and a count ahead of the subscription would let a transaction slip past.
+  it('leaves an address it could not subscribe to for the next report', async () => {
+    const chain = fakeRpc({})
+    let refuse = true
+    const rpc: WatchRpc = {
+      ...chain.rpc,
+      subscribeMentions: (address, handler) =>
+        refuse && address === OTHER
+          ? Promise.reject(new Error('socket closed'))
+          : chain.rpc.subscribeMentions(address, handler),
+    }
+    const watcher = createWatcher({ rpc, watched: watchedOne, ...collector() })
+    await watcher.start()
+
+    expect(await watcher.watch(later)).toBe(0)
+    expect(watcher.health().protocols).toBe(1)
+    refuse = false
+    expect(await watcher.watch(later)).toBe(1)
+    expect(watcher.health().protocols).toBe(2)
+    await watcher.stop()
+  })
+
+  it('brings the next full sweep forward when the first read of a new address fails', async () => {
+    const chain = fakeRpc({ [OTHER]: [record('sig-before', 7)] })
+    const sink = collector()
+    const watcher = createWatcher({ rpc: chain.rpc, watched: watchedOne, ...sink })
+    await watcher.start()
+
+    chain.failOnce()
+    await watcher.watch(later)
+    expect(sink.seen).toEqual([])
+
+    watcher.tick()
+    await flush()
+    await watcher.stop()
+    expect(sink.seen.map((tx) => tx.signature)).toEqual(['sig-before'])
   })
 })

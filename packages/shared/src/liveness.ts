@@ -58,6 +58,12 @@ export const attestorReportSchema = z.object({
   last_complete_sweep: z.object({ slot: countSchema, at: unixTsSchema }).nullable(),
   /** Transactions the decision failed on, waiting for another attempt (T077). */
   pending: countSchema,
+  /**
+   * Covered protocols the attestor is watching (T079). Every attestor reads the same
+   * registry, so one that shows fewer than the rest has missed a registration. Optional
+   * because attestors are run by other parties, on versions older than this field.
+   */
+  protocols: countSchema.optional(),
   policy: z.object({
     stall_seconds: z.number().positive(),
     poll_seconds: z.number().positive(),
@@ -77,6 +83,12 @@ export const attestorStatusSchema = z.object({
   /** Cluster tip less `examined_slot`; null when either is unknown. */
   lag_slots: countSchema.nullable(),
   last_complete_sweep_at: unixTsSchema.nullable(),
+  /**
+   * As the attestor reported it; null when it did not answer or predates the field.
+   * Optional as well: `web` ships to Pages ahead of the `api` it reads, and an `api`
+   * from before T079 does not send it.
+   */
+  protocols: countSchema.nullable().optional(),
 })
 
 /**

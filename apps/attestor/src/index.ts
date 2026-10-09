@@ -16,16 +16,11 @@ import { base58Decode } from '@mandate/shared'
 import { Connection, Keypair } from '@solana/web3.js'
 import pino from 'pino'
 import { createActor } from './act'
-import { createChain, createSweepChain } from './chain'
+import { createChain, createProtocolSource, createSweepChain } from './chain'
 import { buildReport, serveHeartbeat } from './heartbeat'
+import { DEFAULT_PROTOCOL_RESCAN_SECONDS, createProtocolTracker } from './protocols'
 import { DEFAULT_SWEEP_INTERVAL_SECONDS, createSweeper } from './sweep'
-import {
-  DEFAULT_WATCH_POLICY,
-  type WatchPolicy,
-  type WatchedAddress,
-  connectionWatchRpc,
-  createWatcher,
-} from './watch'
+import { DEFAULT_WATCH_POLICY, type WatchPolicy, connectionWatchRpc, createWatcher } from './watch'
 
 const logger = pino({ name: 'attestor' })
 
@@ -92,25 +87,6 @@ const loadAttestor = (): Keypair => {
   return Keypair.fromSecretKey(Uint8Array.from(bytes))
 }
 
-/**
- * Every privileged address of every registered protocol, read from the chain.
- *
- * Read once at startup: a protocol registered afterwards is picked up by the next
- * restart. Rescanning on a timer is a `packages/db` concern in P2, and until there is
- * more than a handful of protocols the restart is the cheaper answer.
- */
-const watchedAddresses = async (
-  program: ReturnType<typeof createProgram>,
-): Promise<WatchedAddress[]> => {
-  const protocols = await program.account.protocol.all()
-  return protocols.flatMap(({ publicKey, account }) =>
-    account.privileged.map((address) => ({
-      protocol: publicKey.toBase58(),
-      address: address.toBase58(),
-    })),
-  )
-}
-
 const main = async (): Promise<void> => {
   const attestor = loadAttestor()
   const connection = new Connection(required('SOLANA_RPC_URL'), {
@@ -121,16 +97,13 @@ const main = async (): Promise<void> => {
     new AnchorProvider(connection, new Wallet(attestor), { commitment: 'confirmed' }),
   )
 
-  const watched = await watchedAddresses(program)
-  if (watched.length === 0) {
-    logger.warn({}, 'no registered protocol has a privileged address; nothing to watch')
-  }
-
   const actor = createActor({ chain: createChain({ program, connection, attestor }), logger })
 
   const pollSeconds = seconds('ATTESTOR_FALLBACK_POLL_SECONDS')
   const reconcileSeconds = seconds('ATTESTOR_RECONCILE_SECONDS')
   const startupLookbackSeconds = seconds('ATTESTOR_STARTUP_LOOKBACK_SECONDS')
+  const rescanSeconds =
+    seconds('ATTESTOR_PROTOCOL_RESCAN_SECONDS') ?? DEFAULT_PROTOCOL_RESCAN_SECONDS
 
   // Resolved here rather than inside the watcher, so the heartbeat reports the policy the
   // attestor actually runs and `api` judges it by that.
@@ -141,9 +114,20 @@ const main = async (): Promise<void> => {
     ...(startupLookbackSeconds === undefined ? {} : { startupLookbackSeconds }),
   }
 
+  // A protocol the rescan finds is read back over the startup window, and it can have
+  // been registered up to one rescan ago — so a longer rescan would leave a gap no read
+  // covers (T079).
+  if (rescanSeconds >= policy.startupLookbackSeconds) {
+    throw new Error(
+      `ATTESTOR_PROTOCOL_RESCAN_SECONDS (${rescanSeconds}) must be shorter than the startup lookback (${policy.startupLookbackSeconds})`,
+    )
+  }
+
+  // Empty at construction: the tracker's first read of the registry fills it before
+  // `start`, after its subscription is up, so no registration falls between the two.
   const watcher = createWatcher({
     rpc: connectionWatchRpc(connection),
-    watched,
+    watched: [],
     logger,
     policy,
     onTransaction: async (transaction) => {
@@ -164,6 +148,17 @@ const main = async (): Promise<void> => {
           logger,
           intervalSeconds,
         })
+
+  const protocols = createProtocolTracker({
+    source: createProtocolSource({ program, connection }),
+    watcher,
+    intervalSeconds: rescanSeconds,
+    logger,
+  })
+  await protocols.start()
+  if (watcher.health().protocols === 0) {
+    logger.warn({}, 'no registered protocol yet; watching for registrations')
+  }
 
   // Before the watcher starts, so the startup sweep shows as `starting` rather than as
   // an attestor that does not answer at all.
@@ -188,8 +183,9 @@ const main = async (): Promise<void> => {
     logger.info({ signal }, 'stopping')
     heartbeat?.close()
     sweeper?.stop()
-    watcher
+    protocols
       .stop()
+      .then(() => watcher.stop())
       .catch((error: unknown) => logger.error({ error }, 'failed to stop cleanly'))
       .finally(() => process.exit(0))
   }
@@ -197,7 +193,7 @@ const main = async (): Promise<void> => {
   process.on('SIGTERM', () => shutdown('SIGTERM'))
 
   logger.info(
-    { attestor: attestor.publicKey.toBase58(), addresses: watched.length },
+    { attestor: attestor.publicKey.toBase58(), protocols: watcher.health().protocols },
     'attestor started',
   )
   await watcher.start()

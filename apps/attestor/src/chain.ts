@@ -23,7 +23,9 @@ import { base58Decode } from '@mandate/shared'
 import { getAssociatedTokenAddressSync } from '@solana/spl-token'
 import { type Connection, type Keypair, PublicKey, SystemProgram } from '@solana/web3.js'
 import type { ActChain, AttestVerdict, IncidentRef, ProtocolState } from './act'
+import type { ProtocolSource } from './protocols'
 import type { ReservedPolicy, SweepChain, SweepIncident, SweepPolicy } from './sweep'
+import type { WatchedAddress } from './watch'
 
 export const createChain = ({
   program,
@@ -388,3 +390,51 @@ export const createSweepChain = ({
  */
 const holdsReservation = (status: object): boolean =>
   !('expired' in status) && !('exhausted' in status)
+
+/** A protocol's privileged addresses as the watcher takes them: one entry each. */
+export const privilegedAddresses = (
+  protocol: string,
+  privileged: readonly PublicKey[],
+): WatchedAddress[] => privileged.map((address) => ({ protocol, address: address.toBase58() }))
+
+/**
+ * The registry behind `ProtocolSource` (T079): `getProgramAccounts` for the full read, a
+ * program-account subscription for the fast path. Both filter on the `Protocol`
+ * discriminator, taken from the coder rather than written down — the same reason
+ * `filters.ts` derives its offsets.
+ */
+export const createProtocolSource = ({
+  program,
+  connection,
+}: {
+  program: Program<DrainCover>
+  connection: Connection
+}): ProtocolSource => ({
+  list: async () => {
+    const protocols = await program.account.protocol.all()
+    return protocols.flatMap(({ publicKey, account }) =>
+      privilegedAddresses(publicKey.toBase58(), account.privileged),
+    )
+  },
+  subscribe: async (handler) => {
+    const id = connection.onProgramAccountChange(
+      program.programId,
+      ({ accountId, accountInfo }) => {
+        let account: { privileged: PublicKey[] }
+        try {
+          account = program.coder.accounts.decode('protocol', accountInfo.data)
+        } catch {
+          // Not thrown into the socket's callback. A layout this client cannot decode
+          // fails `list` as well, and the rescan logs it there.
+          return
+        }
+        handler(privilegedAddresses(accountId.toBase58(), account.privileged))
+      },
+      {
+        commitment: 'confirmed',
+        filters: [{ memcmp: program.coder.accounts.memcmp('protocol') }],
+      },
+    )
+    return () => connection.removeProgramAccountChangeListener(id)
+  },
+})

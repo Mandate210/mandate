@@ -158,7 +158,11 @@ export const DEFAULT_WATCH_POLICY: WatchPolicy = {
   retryMaxSeconds: 600,
 }
 
-export type SweepReason = 'startup' | 'stalled' | 'recovered' | 'reconcile'
+/**
+ * Why a sweep ran. `added` is the first read of an address the watcher took on while
+ * running (T079) — only that address, not a pass over the rest.
+ */
+export type SweepReason = 'startup' | 'stalled' | 'recovered' | 'reconcile' | 'added'
 
 export interface LivenessState {
   /** Millisecond clock reading of the last slot notification. */
@@ -235,6 +239,11 @@ export interface WatcherHealth {
   /** The slot of the oldest transaction waiting for a retry. Nothing past it is handled. */
   oldestPendingSlot: number | null
   pending: number
+  /**
+   * Distinct protocols with at least one watched address (T079). Every attestor reads the
+   * same registry, so one that reports fewer than the others has missed a registration.
+   */
+  protocols: number
 }
 
 export interface Watcher {
@@ -243,6 +252,14 @@ export interface Watcher {
   stop(): Promise<void>
   /** One pass over every watched address. Safe to call at any time; never overlaps. */
   sweep(reason: SweepReason): Promise<void>
+  /**
+   * Starts watching addresses of protocols registered after `start` (T079), and returns
+   * how many of them were new. Already-watched entries are ignored, so the same protocol
+   * may be reported any number of times. A new address is subscribed and then read back
+   * over the startup window at once, which covers whatever it did between registration
+   * and now. Calls are serialized; before `start` the entries simply join the list.
+   */
+  watch(entries: readonly WatchedAddress[]): Promise<number>
   /** The timer body. Public so a test can drive it without waiting on real time. */
   tick(): void
   readonly stalled: boolean
@@ -253,6 +270,7 @@ export interface Watcher {
 
 export interface WatcherOptions {
   rpc: WatchRpc
+  /** Watched from `start`. Later registrations come through `watch`. */
   watched: readonly WatchedAddress[]
   /**
    * Called once per transaction, awaited during a sweep so incidents are opened in the
@@ -275,7 +293,7 @@ const keyOf = (entry: WatchedAddress): string => `${entry.protocol}|${entry.addr
 
 export const createWatcher = ({
   rpc,
-  watched,
+  watched: initial,
   onTransaction,
   policy: overrides,
   logger = silentLogger,
@@ -285,6 +303,18 @@ export const createWatcher = ({
   const seen = createSeenSet(policy.seenCapacity)
   const cursors = new Map<string, Cursor>()
   const logSubscriptions: number[] = []
+
+  // Grows while running (T079), never shrinks: `Protocol.privileged` is fixed at
+  // registration, so an address once watched stays watched.
+  const watched: WatchedAddress[] = []
+  const known = new Set<string>()
+  for (const entry of initial) {
+    if (known.has(keyOf(entry))) continue
+    known.add(keyOf(entry))
+    watched.push(entry)
+  }
+  let started = false
+  let adding: Promise<unknown> = Promise.resolve()
 
   let slotSubscription: number | null = null
   let timer: ReturnType<typeof setInterval> | null = null
@@ -413,6 +443,31 @@ export const createWatcher = ({
     }
   }
 
+  /** Reads one address to its end and hands over what it found. False if it could not. */
+  const sweepOne = async (entry: WatchedAddress, reason: SweepReason): Promise<boolean> => {
+    try {
+      const { records, complete } = await collect(entry)
+      for (const record of records) {
+        await emit({
+          protocol: entry.protocol,
+          address: entry.address,
+          signature: record.signature,
+          slot: record.slot,
+          source: 'sweep',
+        })
+      }
+      return complete
+    } catch (error) {
+      // The cursor was not advanced, so the next sweep re-reads this address from
+      // where it left off. Failing one address must not skip the rest.
+      logger.error(
+        { address: entry.address, protocol: entry.protocol, reason, error },
+        'sweep failed for one address',
+      )
+      return false
+    }
+  }
+
   const sweep = async (reason: SweepReason): Promise<void> => {
     if (sweeping) return
     sweeping = true
@@ -425,33 +480,83 @@ export const createWatcher = ({
     )
     let complete = coverage !== null
     try {
-      for (const entry of watched) {
-        try {
-          const { records, complete: read } = await collect(entry)
-          if (!read) complete = false
-          for (const record of records) {
-            await emit({
-              protocol: entry.protocol,
-              address: entry.address,
-              signature: record.signature,
-              slot: record.slot,
-              source: 'sweep',
-            })
-          }
-        } catch (error) {
-          // The cursor was not advanced, so the next sweep re-reads this address from
-          // where it left off. Failing one address must not skip the rest.
-          complete = false
-          logger.error(
-            { address: entry.address, protocol: entry.protocol, reason, error },
-            'sweep failed for one address',
-          )
-        }
+      // By index rather than over a snapshot: an address `watch` adds mid-sweep is read
+      // by this sweep too, or the coverage it claims would not include it.
+      for (let index = 0; index < watched.length; index += 1) {
+        const entry = watched[index]
+        if (entry && !(await sweepOne(entry, reason))) complete = false
       }
       if (complete && coverage !== null) lastCompleteSweep = { slot: coverage, at: now() }
     } finally {
       sweeping = false
     }
+  }
+
+  const subscribe = async (entry: WatchedAddress): Promise<void> => {
+    const id = await rpc.subscribeMentions(entry.address, (event, slot) => {
+      if (event.err != null) return
+      // Deliberately not advancing the cursor: the socket may have dropped an older
+      // signature, and moving the cursor past it would put it beyond the reach of
+      // every future sweep. Only a sweep, which reads history in order, may advance.
+      void emit({
+        protocol: entry.protocol,
+        address: entry.address,
+        signature: event.signature,
+        slot,
+        source: 'stream',
+      })
+    })
+    logSubscriptions.push(id)
+  }
+
+  const add = async (entries: readonly WatchedAddress[]): Promise<number> => {
+    const fresh: WatchedAddress[] = []
+    for (const entry of entries) {
+      const key = keyOf(entry)
+      if (known.has(key) || fresh.some((other) => keyOf(other) === key)) continue
+      fresh.push(entry)
+    }
+    if (fresh.length === 0) return 0
+    if (!started) {
+      for (const entry of fresh) known.add(keyOf(entry))
+      watched.push(...fresh)
+      return fresh.length
+    }
+
+    const added: WatchedAddress[] = []
+    for (const entry of fresh) {
+      try {
+        // Subscribed before it is counted, so `protocols` in the heartbeat never claims
+        // an address a transaction could still slip past.
+        await subscribe(entry)
+        known.add(keyOf(entry))
+        watched.push(entry)
+        added.push(entry)
+      } catch (error) {
+        // Left unknown, so the next report of the same protocol tries again.
+        logger.error(
+          { address: entry.address, protocol: entry.protocol, error },
+          'could not subscribe to a newly registered address',
+        )
+      }
+    }
+    if (added.length === 0) return 0
+    logger.info(
+      {
+        protocols: [...new Set(added.map((entry) => entry.protocol))],
+        addresses: added.length,
+      },
+      'watching newly registered addresses',
+    )
+
+    // The subscription covers from now on; this read covers registration until now.
+    let read = true
+    for (const entry of added) {
+      if (!(await sweepOne(entry, 'added'))) read = false
+    }
+    // A first read that failed would otherwise wait out the reconcile interval.
+    if (!read) liveness = { ...liveness, lastSweepAt: 0 }
+    return added.length
   }
 
   const tick = (): void => {
@@ -479,22 +584,8 @@ export const createWatcher = ({
         if (stream === null || slot >= stream.slot) stream = { slot, at: now() }
       })
 
-      for (const entry of watched) {
-        const id = await rpc.subscribeMentions(entry.address, (event, slot) => {
-          if (event.err != null) return
-          // Deliberately not advancing the cursor: the socket may have dropped an older
-          // signature, and moving the cursor past it would put it beyond the reach of
-          // every future sweep. Only a sweep, which reads history in order, may advance.
-          void emit({
-            protocol: entry.protocol,
-            address: entry.address,
-            signature: event.signature,
-            slot,
-            source: 'stream',
-          })
-        })
-        logSubscriptions.push(id)
-      }
+      for (const entry of watched) await subscribe(entry)
+      started = true
 
       liveness = { ...liveness, lastSlotAt: now() }
       logger.info({ addresses: watched.length }, 'watching privileged addresses')
@@ -506,6 +597,7 @@ export const createWatcher = ({
     },
 
     async stop(): Promise<void> {
+      started = false
       if (timer) {
         clearInterval(timer)
         timer = null
@@ -522,6 +614,12 @@ export const createWatcher = ({
     sweep,
     tick,
 
+    watch(entries: readonly WatchedAddress[]): Promise<number> {
+      const run = adding.then(() => add(entries))
+      adding = run.catch(() => {})
+      return run
+    },
+
     get stalled(): boolean {
       return liveness.stalled
     },
@@ -537,7 +635,13 @@ export const createWatcher = ({
           oldestPendingSlot = transaction.slot
         }
       }
-      return { stream, lastCompleteSweep, oldestPendingSlot, pending: retries.size }
+      return {
+        stream,
+        lastCompleteSweep,
+        oldestPendingSlot,
+        pending: retries.size,
+        protocols: new Set(watched.map((entry) => entry.protocol)).size,
+      }
     },
   }
 }

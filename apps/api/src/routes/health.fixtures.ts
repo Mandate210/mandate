@@ -25,6 +25,7 @@ export const attestorReport = (
     stream: { slot: 1_000_000_000, at: REPORT_NOW - 1 },
     last_complete_sweep: { slot: 1_000_000_000, at: REPORT_NOW - 60 },
     pending: 0,
+    protocols: 3,
     policy: { stall_seconds: 30, poll_seconds: 60, reconcile_seconds: 600 },
     ...overrides,
   }
