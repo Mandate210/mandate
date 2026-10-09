@@ -341,6 +341,14 @@ const buildStage = async (
 }
 
 /**
+ * The beneficiary's balance in the settlement asset. Read **before** firing: attestors
+ * that are not in this process (`--hosted`) can pay out sooner than a read after the shot
+ * returns, and then «before» already holds the payout and the run sees nothing arrive.
+ */
+export const beneficiaryBalance = (env: TestEnv, target: RegisteredProtocol): Promise<bigint> =>
+  balanceOf(env, getAssociatedTokenAddressSync(env.assetMint, target.treasury, true))
+
+/**
  * Waits for the incident raised **by this transaction** to settle, or gives up.
  *
  * The trigger signature is checked, not assumed. Any transaction touching the
@@ -359,6 +367,8 @@ export const awaitDecision = async (
   target: RegisteredProtocol,
   signature: string,
   budgetSeconds: number,
+  /** `beneficiaryBalance` read before the transaction was fired. */
+  before: bigint,
 ): Promise<{
   settled: boolean
   seconds: number
@@ -368,7 +378,6 @@ export const awaitDecision = async (
 }> => {
   const started = Date.now()
   const beneficiary = getAssociatedTokenAddressSync(env.assetMint, target.treasury, true)
-  const before = await balanceOf(env, beneficiary)
 
   for (;;) {
     const raised = await incidentForTrigger(program, target.protocol, signature)
@@ -688,6 +697,7 @@ export const runScenario = async ({
 
   for (const stage of stages) {
     process.stdout.write(`  ${stage.compromise.id.padEnd(36)} `)
+    const before = await beneficiaryBalance(env, stage.target)
     const signature = await stage.compromise.fire(stage.world)
     const decision = await awaitDecision(
       program,
@@ -695,6 +705,7 @@ export const runScenario = async ({
       stage.target,
       signature,
       CYCLE_BUDGET_SECONDS,
+      before,
     )
     const opened = await incidentsOpenedOn(program, stage.target.protocol)
     results.push({
