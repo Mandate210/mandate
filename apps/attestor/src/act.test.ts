@@ -55,6 +55,8 @@ interface FakeOptions {
   protocol?: ProtocolState | null
   entries?: DeclarationEntry[]
   policySeq?: number | null
+  /** `start_ts` of the policy in force. Before `AT` unless a test says otherwise. */
+  policyStart?: number
   incident?: IncidentRef | null
   /** Incidents that appear only once the open has been attempted — the race. */
   incidentAfterOpen?: IncidentRef | null
@@ -97,7 +99,10 @@ const fake = (options: FakeOptions = {}): Fake => {
     loadProtocol: async () =>
       options.protocol === undefined ? { privileged: [ADMIN] } : options.protocol,
     loadDeclaration: async () => options.entries ?? [pauseEntry],
-    findPolicyInForce: async () => (options.policySeq === undefined ? 7 : options.policySeq),
+    findPolicyInForce: async () => {
+      const seq = options.policySeq === undefined ? 7 : options.policySeq
+      return seq === null ? null : { seq, startTs: options.policyStart ?? AT - 3_600 }
+    },
     findIncidentByTrigger: async () => {
       triggerLookups += 1
       if (attemptedOpen && options.incidentAfterOpen !== undefined) return options.incidentAfterOpen
@@ -210,6 +215,29 @@ describe('createActor — not opening what the program would refuse', () => {
       reason: 'no-policy-in-force',
     })
     expect(chain.opened).toEqual([])
+  })
+
+  // Decided 2026-10-09. An attestor reads history back after a restart or when a
+  // protocol is registered (T079); without this, a policy issued today would pay for
+  // what the keys did yesterday.
+  it('does not open an incident on a transaction from before the policy began', async () => {
+    const chain = fake({ transaction: observed(DRAIN), policyStart: AT + 1 })
+
+    expect(await createActor({ chain }).act(delivered())).toEqual({
+      kind: 'not-opened',
+      reason: 'before-policy',
+    })
+    expect(chain.opened).toEqual([])
+  })
+
+  it('opens one on a transaction in the very second the policy began', async () => {
+    const chain = fake({ transaction: observed(DRAIN), policyStart: AT })
+
+    expect(await createActor({ chain }).act(delivered())).toMatchObject({
+      kind: 'attested',
+      verdict: 'unauthorized',
+      opened: true,
+    })
   })
 
   it('does not attest on a settled incident', async () => {

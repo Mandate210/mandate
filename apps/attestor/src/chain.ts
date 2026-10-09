@@ -88,7 +88,9 @@ export const createChain = ({
      * Judged at *now*, not at the transaction's block time, because that is what
      * `validate_open` checks — a client that picked by any other rule would build
      * transactions the program rejects. The program stays the authority on it; this only
-     * avoids paying for the refusal.
+     * avoids paying for the refusal. Whether the policy covers *this* transaction — its
+     * block time against `start_ts` — is `act`'s question, which is why the start comes
+     * back with the number.
      */
     findPolicyInForce: async (protocol) => {
       const key = new PublicKey(protocol)
@@ -106,7 +108,8 @@ export const createChain = ({
           policy.premiumPaid.toNumber() > 0 &&
           at >= policy.startTs.toNumber() &&
           at < policy.endTs.toNumber()
-        if (inForce) return seqs[index] ?? null
+        const seq = seqs[index]
+        if (inForce && seq !== undefined) return { seq, startTs: policy.startTs.toNumber() }
       }
       return null
     },

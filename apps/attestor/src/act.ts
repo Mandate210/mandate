@@ -35,6 +35,13 @@ import type { PrivilegedTransaction } from './watch'
 /** The two classifications `Attestation` stores. */
 export type AttestVerdict = 'unauthorized' | 'authorized'
 
+/** `Policy`, narrowed to what opening an incident needs. */
+export interface PolicyInForce {
+  seq: number
+  /** Cluster time the cover began. A transaction before it is not covered by it. */
+  startTs: number
+}
+
 /** `Protocol`, narrowed to what a decision needs. */
 export interface ProtocolState {
   /** `Protocol.privileged` — the addresses whose involvement makes a transaction ours. */
@@ -63,8 +70,11 @@ export interface ActChain {
   /** Every entry of the protocol's declaration, as stored. The rule needs all of them:
    * it decides which were effective at the transaction's own clock, not at ours. */
   loadDeclaration(protocol: string): Promise<DeclarationEntry[]>
-  /** The sequence number of a policy the program will accept an incident against. */
-  findPolicyInForce(protocol: string): Promise<number | null>
+  /**
+   * A policy the program will accept an incident against: its sequence number, and
+   * when its cover began (`Policy.start_ts`, Unix seconds).
+   */
+  findPolicyInForce(protocol: string): Promise<PolicyInForce | null>
   /** The incident of this protocol for this trigger signature, if it exists. There is
    * only one address it could be at. */
   findIncidentByTrigger(protocol: string, signature: string): Promise<IncidentRef | null>
@@ -106,12 +116,23 @@ export type IgnoreReason =
   /** Declared or not, the incident is settled and takes no more attestations. */
   | 'incident-settled'
 
+export type NotOpenedReason =
+  /** No policy is in force now, so the program would refuse the incident (FR-016). */
+  | 'no-policy-in-force'
+  /**
+   * A policy is in force, but the transaction happened before its cover began (FR-016,
+   * decided 2026-10-09). An attestor reads history back — a restart, a newly registered
+   * protocol (T079) — and without this it would pay for events from before the policy
+   * under it.
+   */
+  | 'before-policy'
+
 export type ActOutcome =
   | { kind: 'ignored'; reason: IgnoreReason }
   /** Nothing was opened, because the program would have refused it (`validate_open`).
    * Reported rather than swallowed: a protocol whose cover has lapsed while its keys
    * are being used is worth seeing in a log. */
-  | { kind: 'not-opened'; reason: 'no-policy-in-force' }
+  | { kind: 'not-opened'; reason: NotOpenedReason }
   | {
       kind: 'attested'
       verdict: AttestVerdict
@@ -228,14 +249,25 @@ export const createActor = ({
     // The program refuses an incident against a policy that is not in force, and it is
     // right to (`validate_open`): opening one would freeze pool capital and burn a bond
     // on a claim that could never pay out (FR-016).
-    const policySeq = await chain.findPolicyInForce(protocol)
-    if (policySeq === null) {
+    const policy = await chain.findPolicyInForce(protocol)
+    if (policy === null) {
       logger.warn(
         { protocol, signature },
         'undeclared privileged transaction on an uncovered protocol',
       )
       return { kind: 'not-opened', reason: 'no-policy-in-force' }
     }
+    // The transaction's own clock, as with the declaration: cover is a fact about when
+    // the event happened, not about when an attestor got round to reading it. Both
+    // numbers are public, so the trail reproduces this the same way (SC-007).
+    if (transaction.blockTime < policy.startTs) {
+      logger.warn(
+        { protocol, signature, blockTime: transaction.blockTime, policyStart: policy.startTs },
+        'undeclared privileged transaction from before the policy began',
+      )
+      return { kind: 'not-opened', reason: 'before-policy' }
+    }
+    const policySeq = policy.seq
 
     logger.info(
       { protocol, signature, basis: verdict.basis, uncovered: verdict.uncovered.length },
