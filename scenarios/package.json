@@ -6,6 +6,7 @@
   "scripts": {
     "compromise": "tsx compromise.ts",
     "devnet:compromise": "tsx compromise.ts --devnet",
+    "devnet:compromise:hosted": "tsx compromise.ts --devnet --hosted",
     "devnet:setup": "tsx devnet-setup.ts",
     "devnet:measure": "tsx measure.ts",
     "test": "vitest run --passWithNoTests",

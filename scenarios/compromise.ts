@@ -29,11 +29,21 @@
 // workers, and then only fires transactions: the watching, the verdict, the incident,
 // the attestations and the payout are the workers' own doing, which is the whole claim
 // SC-005 makes.
+//
+// `--devnet --hosted` starts no workers at all (T080): the votes come from the attestors
+// the deployment runs, and the scenario waits for their `/health` to show they watch
+// what it staged before it fires (`hosted.ts`). `MANDATE_API_URL` overrides the API.
 
+import { pathToFileURL } from 'node:url'
 import { AnchorProvider, BN, type Program, Wallet } from '@coral-xyz/anchor'
 import { createActor } from '@mandate/attestor/act'
 import { createChain } from '@mandate/attestor/chain'
-import { type WatchedAddress, connectionWatchRpc, createWatcher } from '@mandate/attestor/watch'
+import {
+  type WatchedAddress,
+  type Watcher,
+  connectionWatchRpc,
+  createWatcher,
+} from '@mandate/attestor/watch'
 import {
   type DrainCover,
   createJsonRpc,
@@ -78,6 +88,7 @@ import {
   sendWith,
 } from './compromises'
 import { decodeKeypair, readState, secondsPerSlot, setupDevnetEnv } from './devnet'
+import { DEFAULT_API_URL, protocolCounts, readHealth, waitForHostedAttestors } from './hosted'
 
 /** Thirty seconds where the product parameter is a day — see the note at the top. */
 const DECLARATION_DELAY = 30
@@ -116,6 +127,13 @@ const ATTESTOR_COUNT = 3
  */
 const ATTESTOR_SOL = 0.15
 
+/**
+ * How long `--hosted` waits for the deployment to watch the staged protocols. A dropped
+ * subscription notification is made up by the attestors' registry rescan, which runs
+ * every 600 s (T079) — so a little over one interval, not a guess.
+ */
+const HOSTED_WATCH_TIMEOUT_SECONDS = 660
+
 const POOL_CAPITAL = asset(100_000)
 const POLICY_LIMIT = asset(10_000)
 const POLICY_RETENTION = asset(500)
@@ -150,7 +168,10 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
  * already carries one from another suite cannot run this. Said plainly rather than
  * failing later on a confusing timing assertion.
  */
-const ensureScenarioConfig = async (program: Program<DrainCover>, env: TestEnv): Promise<void> => {
+export const ensureScenarioConfig = async (
+  program: Program<DrainCover>,
+  env: TestEnv,
+): Promise<void> => {
   const existing = await program.account.config.fetchNullable(findConfig(program.programId))
   if (existing !== null) {
     if (existing.declarationDelay.toNumber() !== DECLARATION_DELAY) {
@@ -177,7 +198,7 @@ const ensureScenarioConfig = async (program: Program<DrainCover>, env: TestEnv):
     .rpc()
 }
 
-interface Stage {
+export interface Stage {
   compromise: Compromise
   target: RegisteredProtocol
   world: CompromiseWorld
@@ -212,16 +233,13 @@ const buildStage = async (
       )
     : (privileged as Keypair).publicKey
 
-  const target = await registerProtocol(program, env, [privilegedAddress])
-  await fundPool(program, env, target, POOL_CAPITAL)
-  await issuePolicy(program, env, target, {
-    limit: POLICY_LIMIT,
-    retention: POLICY_RETENTION,
-    premium: POLICY_PREMIUM,
-  })
-  // The program does not need this since T078 — the deciding vote opens the account if
-  // it is missing — but the run reads the beneficiary's balance before the payout.
-  await env.assetAccount(target.treasury)
+  // **Everything the privileged key does to set the stage happens before the protocol is
+  // registered, and the policy starts after it.** An attestor reads an address back when
+  // it first watches it (T079), and with `--hosted` that is seconds after registration —
+  // so a mint signed by the key after the policy began would be an undeclared privileged
+  // transaction under cover, and paid out before the scenario fired anything. The policy
+  // does not cover what happened before it (FR-016), which is what keeps the staging out
+  // of the result. Workers this run starts itself skip it anyway (lookback 0 below).
 
   // A token the privileged address is the authority over — the protocol's own asset.
   const token = await createMint(env.connection, env.payer, privilegedAddress, privilegedAddress, 6)
@@ -264,6 +282,22 @@ const buildStage = async (
   if (compromise.needsSol !== undefined) {
     await env.fund(privilegedAddress, compromise.needsSol)
   }
+
+  // Strictly later than every block the staging landed in: `issuePolicy` would otherwise
+  // backdate the start by a minute.
+  const staged = await clusterTimestamp(env.connection)
+  await waitPastClusterTime(env.connection, staged)
+  const target = await registerProtocol(program, env, [privilegedAddress])
+  await fundPool(program, env, target, POOL_CAPITAL)
+  await issuePolicy(program, env, target, {
+    limit: POLICY_LIMIT,
+    retention: POLICY_RETENTION,
+    premium: POLICY_PREMIUM,
+    startTs: staged + 1,
+  })
+  // The program does not need this since T078 — the deciding vote opens the account if
+  // it is missing — but the run reads the beneficiary's balance before the payout.
+  await env.assetAccount(target.treasury)
 
   const world: CompromiseWorld = {
     connection: env.connection,
@@ -319,7 +353,7 @@ const buildStage = async (
  * `payout` field, for the same reason: the field records what the program intended to
  * send, and SC-005 is about money that arrived.
  */
-const awaitDecision = async (
+export const awaitDecision = async (
   program: Program<DrainCover>,
   env: TestEnv,
   target: RegisteredProtocol,
@@ -394,7 +428,7 @@ const incidentForTrigger = async (
 }
 
 /** `Protocol.incident_count`: every incident ever opened against it, duplicates included. */
-const incidentsOpenedOn = async (
+export const incidentsOpenedOn = async (
   program: Program<DrainCover>,
   protocol: PublicKey,
 ): Promise<number> => (await program.account.protocol.fetch(protocol)).incidentCount.toNumber()
@@ -442,7 +476,10 @@ const bs58 = (bytes: number[]): string => {
  * hours — which is why the devnet entry point reuses a set admitted in an earlier
  * session instead of calling this.
  */
-const admitFreshSet = async (program: Program<DrainCover>, env: TestEnv): Promise<Keypair[]> => {
+export const admitFreshSet = async (
+  program: Program<DrainCover>,
+  env: TestEnv,
+): Promise<Keypair[]> => {
   const attestorKeys: Keypair[] = []
   for (let index = 0; index < ATTESTOR_COUNT; index += 1) {
     const keypair = await env.fundedKeypair(ATTESTOR_SOL)
@@ -453,29 +490,40 @@ const admitFreshSet = async (program: Program<DrainCover>, env: TestEnv): Promis
   return attestorKeys
 }
 
+export interface RunOptions {
+  program: Program<DrainCover>
+  env: TestEnv
+  /** Already in the set and already able to vote in the current epoch. With `hosted`,
+   * only their addresses are used — to top up the bond and fees they spend. */
+  attestorKeys: Keypair[]
+  /** Vote with the deployment's attestors instead of starting workers here (T080). */
+  hosted?: { apiUrl: string }
+}
+
+export interface PreparedRun {
+  /** One per compromise, in the order given. */
+  stages: Stage[]
+  /** `LEGITIMATE`: a declared operation, on which no incident may open. */
+  control: Stage
+  /** Started workers; empty with `hosted`. The caller stops them. */
+  watchers: Watcher[]
+}
+
 /**
- * The scenario itself, from an empty world to the two criteria.
+ * Everything before the first shot: the world staged, the attestors funded, every
+ * declaration in force on the cluster's clock, and somebody watching — workers started
+ * here, or the deployment's attestors confirmed through `/health`.
  *
- * Takes its environment and its attestors rather than making them, because those are
- * the only two things devnet does differently: money there is transferred instead of
- * airdropped, and the attestor set has to have been admitted an epoch earlier. Every
- * judgement below is the same on both, which is the point — a devnet run that shared
- * none of this code would be evidence about a different program.
+ * Exported for the demo recording, which stages one compromise and the control and
+ * fires when the camera is ready (T080). Same code, so what is filmed is this run.
  */
-export const runScenario = async ({
+export const prepareRun = async ({
   program,
   env,
   attestorKeys,
-  cluster,
-}: {
-  program: Program<DrainCover>
-  env: TestEnv
-  /** Already in the set and already able to vote in the current epoch. */
-  attestorKeys: Keypair[]
-  /** Set on a public cluster, so every payout can be printed as a link somebody
-   * outside this process can open. That link is half of what M1 promises to show. */
-  cluster?: 'devnet'
-}): Promise<void> => {
+  hosted,
+  compromises = COMPROMISES,
+}: RunOptions & { compromises?: Compromise[] }): Promise<PreparedRun> => {
   // **Can these workers carry a quorum at all.**
   //
   // The set is global to the deployment and the denominator is whatever `Config` says,
@@ -493,9 +541,23 @@ export const runScenario = async ({
     )
   }
 
-  say(`staging ${COMPROMISES.length} protocols, one per compromise, plus the control…`)
+  // Read before staging, so the wait below can tell the new protocols from the old.
+  let baseline: Map<string, number> | null = null
+  if (hosted !== undefined) {
+    const health = await readHealth(hosted.apiUrl)
+    baseline = protocolCounts(health)
+    const live = health.attestors.filter((status) => status.ok).length
+    if (live < needed) {
+      throw new Error(
+        `Only ${live} of the deployment's attestors are healthy at ${hosted.apiUrl}/health and a quorum needs ${needed}. Nothing staged.`,
+      )
+    }
+    say(`deployment at ${hosted.apiUrl}: ${baseline.size} attestors, ${live} healthy\n`)
+  }
+
+  say(`staging ${compromises.length} protocols, one per compromise, plus the control…`)
   const stages: Stage[] = []
-  for (const compromise of COMPROMISES) {
+  for (const compromise of compromises) {
     stages.push(await buildStage(program, env, compromise))
   }
   const control = await buildStage(program, env, LEGITIMATE)
@@ -514,7 +576,7 @@ export const runScenario = async ({
     address: stage.world.privilegedAddress.toBase58(),
   }))
 
-  const watchers = attestorKeys.map((attestor) => {
+  const watchers = (hosted === undefined ? attestorKeys : []).map((attestor) => {
     const provider = new AnchorProvider(env.connection, new Wallet(attestor), {
       commitment: 'confirmed',
     })
@@ -574,10 +636,44 @@ export const runScenario = async ({
     }
   }
 
-  // Far enough past the staging that no sweep can reach back into it.
-  await sleep(2_000)
-  for (const watcher of watchers) await watcher.start()
-  say(`${watchers.length} attestor workers watching ${watched.length} privileged addresses\n`)
+  if (hosted !== undefined && baseline !== null) {
+    say(`waiting for the deployment's attestors to watch the ${watched.length} new protocols…`)
+    const seconds = await waitForHostedAttestors({
+      apiUrl: hosted.apiUrl,
+      baseline,
+      added: watched.length,
+      timeoutSeconds: HOSTED_WATCH_TIMEOUT_SECONDS,
+    })
+    say(`  ${baseline.size} hosted attestors watching them after ${seconds.toFixed(0)}s\n`)
+  } else {
+    // Far enough past the staging that no sweep can reach back into it.
+    await sleep(2_000)
+    for (const watcher of watchers) await watcher.start()
+    say(`${watchers.length} attestor workers watching ${watched.length} privileged addresses\n`)
+  }
+
+  return { stages, control, watchers }
+}
+
+/**
+ * The scenario itself, from an empty world to the two criteria.
+ *
+ * Takes its environment and its attestors rather than making them, because those are
+ * the only two things devnet does differently: money there is transferred instead of
+ * airdropped, and the attestor set has to have been admitted an epoch earlier. Every
+ * judgement below is the same on both, which is the point — a devnet run that shared
+ * none of this code would be evidence about a different program.
+ */
+export const runScenario = async ({
+  cluster,
+  ...options
+}: RunOptions & {
+  /** Set on a public cluster, so every payout can be printed as a link somebody
+   * outside this process can open. That link is half of what M1 promises to show. */
+  cluster?: 'devnet'
+}): Promise<void> => {
+  const { program, env } = options
+  const { stages, control, watchers } = await prepareRun(options)
 
   const results: {
     id: string
@@ -749,7 +845,7 @@ export const runScenario = async ({
  * `Config` is checked and never created: it is a singleton whose parameters are fixed
  * forever, and devnet has no `--reset` to undo a wrong one.
  */
-const setupOnDevnet = async (): Promise<{
+export const setupOnDevnet = async (): Promise<{
   env: TestEnv
   program: Program<DrainCover>
   attestorKeys: Keypair[]
@@ -814,8 +910,14 @@ const setupOnValidator = async (): Promise<{
 
 const main = async (): Promise<void> => {
   const onDevnet = process.argv.includes('--devnet')
+  const hosted = process.argv.includes('--hosted')
+  if (hosted && !onDevnet) {
+    throw new Error('--hosted needs --devnet: a local validator has no deployment to vote.')
+  }
 
-  say(`mandate — compromise scenario (T028), ${onDevnet ? 'devnet' : 'local validator'}\n`)
+  say(
+    `mandate — compromise scenario (T028), ${onDevnet ? 'devnet' : 'local validator'}${hosted ? ', hosted attestors (T080)' : ''}\n`,
+  )
   const { env, program, attestorKeys } = onDevnet ? await setupOnDevnet() : await setupOnValidator()
 
   await runScenario({
@@ -823,10 +925,14 @@ const main = async (): Promise<void> => {
     env,
     attestorKeys,
     ...(onDevnet ? { cluster: 'devnet' as const } : {}),
+    ...(hosted ? { hosted: { apiUrl: process.env.MANDATE_API_URL || DEFAULT_API_URL } } : {}),
   })
 }
 
-main().catch((error: unknown) => {
-  console.error(error)
-  process.exit(1)
-})
+// Imported by the demo recording for `prepareRun` (T080); run only as a script.
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error: unknown) => {
+    console.error(error)
+    process.exit(1)
+  })
+}

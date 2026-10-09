@@ -102,7 +102,9 @@ pnpm --filter @mandate/scenarios compromise     # Windows, after --reset + deplo
 ```
 
 It stages ten compromises as real transactions, starts real attestor workers and
-measures SC-003 and SC-005. It runs with a **30-second declaration delay** where the
+measures SC-003 and SC-005. On devnet, `devnet:compromise:hosted` starts no workers:
+the deployment's attestors vote, and the run waits until each one's `/health` counts
+the protocols it staged before it fires (T080). It runs with a **30-second declaration delay** where the
 integration suite uses 24 hours — three of its scenarios and its control turn on an
 entry being in force, and none of them is reachable in a three-minute run otherwise.
 `Config` fixes that delay forever at creation, so the scenario and the integration
