@@ -3,7 +3,7 @@ name = "drain-cover"
 version = "0.1.0"
 edition = "2021"
 description = "Parametric cover against unauthorized use of a protocol's privileged admin access"
-license = "UNLICENSED"
+license = "Apache-2.0"
 
 [lib]
 crate-type = ["cdylib", "lib"]

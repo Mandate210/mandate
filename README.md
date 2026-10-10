@@ -116,3 +116,7 @@ from Postgres, it is in the wrong place.
 
 Requirements and success criteria are in `docs/SPEC.md`, the architecture and its
 risks in `docs/PLAN.md`.
+
+## License
+
+Apache-2.0 — see [`LICENSE`](LICENSE). Copyright 2026 Mandate210.
