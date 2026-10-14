@@ -25,17 +25,29 @@ released automatically — no claim review, no negotiation, no trust in an insur
 
 ## Status
 
-**`v0.1.0` — the cycle closes on devnet, unattended.** A compromise is staged as a
-real transaction, workers notice it, classify it, reach a quorum and the payout
-lands in the protocol's treasury. Nobody touches anything in between.
+**`v0.3.0` — the cover runs as a deployment, not as a demo.** Three attestors and
+the API run on a server of their own, and anyone can watch them work: the app and
+the landing page read real devnet data, and `/health` says how far each attestor
+has looked. A compromise staged as a real transaction is noticed, classified and
+paid out by those attestors alone — the vote that completes the quorum carries the
+payout in the same instruction. Nobody touches anything in between.
 
 | Measured on devnet | Budget | Result |
 |---|---|---|
-| Compromise shapes recognised, of ten reproduced | ≥ 9 | **10** |
+| Compromise shapes paid out by the deployment's attestors, of ten reproduced | ≥ 9 | **10** |
 | False incidents, over 819 real historical privileged transactions | 0 | **0** |
-| Offending transaction → money in the treasury | ≤ 180s | **~20s** |
-| Confirmation → payout initiated (p95) | ≤ 30s | **12s** |
-| Fees to carry one incident | ≤ $1.00 | **$0.008** |
+| Offending transaction → money in the treasury, slowest of the ten | ≤ 180s | **4.2s** |
+| Confirmation → payout initiated (p95, 20 runs) | ≤ 30s | **10s** |
+| Fees to carry one incident | ≤ $1.00 | **$0.006** |
+
+The first and third rows come from one run of `devnet:compromise:hosted` on
+2026-10-09, in which the scenario started no workers of its own: it only fired the
+transactions, and the three attestors on the server voted. Nine of the payouts landed
+between 1.6s and 4.2s after the offending transaction was confirmed. The tenth,
+`freeze-user-funds`, was paid in full too, but the run read the treasury's balance
+only after firing and so could not time it — the scenario now reads it before. Each
+event opened exactly one incident. The p95 and the fees come from `devnet:measure`
+on 2026-10-06; at `v0.1.0` they were 12s and $0.008, and the slowest cycle was ~20s.
 
 The control matters as much as the count: a maintenance operation the protocol had
 declared in advance is left alone. Without that, "ten of ten" is equally the score
@@ -43,12 +55,11 @@ of a system that opens an incident on everything it sees.
 
 **Deployed:** program `HMtvDKR9i4WKxfMfC7fGXXiiReh3APGoNsiCcrbCzMHk` on Solana
 [devnet](https://explorer.solana.com/address/HMtvDKR9i4WKxfMfC7fGXXiiReh3APGoNsiCcrbCzMHk?cluster=devnet).
-The numbers above were first measured on the previous deployment,
+Every number in the table above was measured on it. The `v0.1.0` numbers came from
+the previous deployment,
 [`DsRdHv4QRYQ7teVhwuLVttktF792gvDFQdiuraQ4eF4P`](https://explorer.solana.com/address/DsRdHv4QRYQ7teVhwuLVttktF792gvDFQdiuraQ4eF4P?cluster=devnet),
 which stays live: its configuration is fixed at creation, so a program with a
-changed account layout had to go out under a new address. The same two runs,
-repeated on the current program on 2026-09-30, gave ten of ten recognised, the
-slowest full cycle at 15.8s, p95 at 12s and $0.008 in fees. Every incident, every
+changed account layout had to go out under a new address. Every incident, every
 attestation and every payout on either is readable by anyone, without asking us
 for anything.
 
@@ -69,11 +80,14 @@ the verdict, the incident, the attestations and the payout are the workers' own
 doing — which is the whole claim.
 
 ```bash
-pnpm --filter @mandate/scenarios devnet:compromise    # against devnet
-pnpm --filter @mandate/scenarios compromise           # against a local validator
+pnpm --filter @mandate/scenarios devnet:compromise          # against devnet
+pnpm --filter @mandate/scenarios devnet:compromise:hosted   # devnet, the deployment's attestors vote
+pnpm --filter @mandate/scenarios compromise                 # against a local validator
 ```
 
-It prints an explorer link for every incident it settles. Running it against
+With `:hosted` it starts no workers at all: it waits until every attestor's
+`/health` counts the protocols it staged, then fires. It prints an explorer link
+for every incident it settles. Running it against
 devnet needs a funded key and a deployment of your own — `docs/deploy-devnet.md`
 is the runbook, including what a deployment fixes forever and what it costs.
 
@@ -85,6 +99,7 @@ Worth knowing before drawing conclusions:
   underwriters cannot deposit yet.
 - **Every attestor is run by us.** The quorum is counted honestly, but while all
   the nodes belong to one party, its independence is arithmetic rather than real.
+  Attestors put up no stake yet, so a wrong vote costs them nothing.
 - **No mainnet and no external audit.** Neither is close, and both come before
   anything touches real money.
 - The two defects real network latency exposed are closed: attestors racing to open
