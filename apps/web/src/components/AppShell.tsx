@@ -14,19 +14,32 @@ const NAV = [
 /**
  * How many incidents are open right now, from `/incidents?status=open` — the header's
  * one live signal, linking to them. A page holds twenty, so beyond that it says «20+».
+ * On a phone the words go and an open incident keeps its dot and number (T076); none
+ * open says nothing there, the header has no room to spare for it.
  */
 const OpenIncidents = () => {
   const open = useQuery(queries.incidents({ status: 'open' }))
   if (open.data === undefined) return null
   const count = open.data.incidents.length
+  const number = `${count}${open.data.next_cursor === null ? '' : '+'}`
   const label =
-    count === 0 ? 'no open incidents' : `${count}${open.data.next_cursor === null ? '' : '+'} open`
+    count === 0 ? (
+      'no open incidents'
+    ) : (
+      <>
+        {number}
+        <span className="hidden sm:inline"> open</span>
+      </>
+    )
   return (
     <Link
       to="/incidents?status=open"
+      aria-label={count === 0 ? 'No open incidents' : `${number} open incidents`}
       className={cn(
-        'hidden sm:flex items-center gap-2 mono text-[10px] uppercase tracking-[0.16em] transition-colors duration-150',
-        count === 0 ? 'text-dim-foreground hover:text-muted-foreground' : 'text-alert',
+        'items-center gap-2 mono text-[10px] uppercase tracking-[0.16em] transition-colors duration-150',
+        count === 0
+          ? 'hidden sm:flex text-dim-foreground hover:text-muted-foreground'
+          : 'flex text-alert',
       )}
     >
       <span
