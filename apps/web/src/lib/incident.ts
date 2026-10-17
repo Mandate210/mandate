@@ -140,3 +140,66 @@ export const REPLAY_MAX_SECONDS = 60
  */
 export const replaySpeed = (duration: number): number =>
   duration <= REPLAY_MAX_SECONDS ? 1 : duration / REPLAY_MAX_SECONDS
+
+/** A named point on the phase strip above the timeline (T058). */
+export type Milestone = {
+  kind: 'trigger' | 'opened' | 'quorum' | 'paid' | 'decided' | 'closed'
+  t: number
+}
+
+/**
+ * The few moments worth naming at a glance, out of the full record: the trigger, the
+ * opening, the vote that completed the quorum and the payout — one mark when the
+ * deciding vote paid in its own transaction, so the strip does not draw two at the same
+ * second claiming two transactions. An incident closed without a payout ends at its
+ * deadline, which is the end `endOf` gives it.
+ */
+export const milestonesOf = (
+  events: IncidentEvent[],
+  detail: IncidentDetailResponse,
+): Milestone[] => {
+  const settlement = settlementOf(events)
+  const marks: Milestone[] = []
+  for (const e of events) {
+    if (e.kind === 'trigger') marks.push({ kind: 'trigger', t: e.t })
+    else if (e.kind === 'opened') marks.push({ kind: 'opened', t: e.t })
+    else if (e.kind === 'attestation' && e.quorumReached)
+      marks.push({ kind: settlement?.kind === 'deciding-vote' ? 'decided' : 'quorum', t: e.t })
+    else if (e.kind === 'payout' && settlement?.kind !== 'deciding-vote')
+      marks.push({ kind: 'paid', t: e.t })
+  }
+  const end = endOf(detail)
+  if (detail.incident.status === 'closed_no_payout' && end !== null)
+    marks.push({ kind: 'closed', t: end })
+  return marks
+}
+
+/** `T+22 s`, `T+14 min`, `T+24 h` — seconds while they read as seconds. */
+export const sinceLabel = (t: number): string => {
+  const s = Math.max(0, Math.round(t))
+  if (s < 120) return `T+${s} s`
+  if (s < 7200) return `T+${Math.round(s / 60)} min`
+  const h = s / 3600
+  return `T+${h < 10 ? Number(h.toFixed(1)) : Math.round(h)} h`
+}
+
+export type LabelSlot = { row: number; align: 'start' | 'end' }
+
+/**
+ * Where each mark's label goes on a strip `width` pixels wide: hanging right of its
+ * mark, or left of it when it would run off the end, and on the first row where it
+ * overlaps no label already placed — so marks a second apart stay legible on a strip
+ * that spans a day. `xs` in pixels, in the order the marks are drawn.
+ */
+export const labelSlots = (xs: number[], width: number, labelWidth: number): LabelSlot[] => {
+  const rows: Array<Array<[number, number]>> = []
+  return xs.map((x) => {
+    const align = x + labelWidth <= width ? 'start' : 'end'
+    const from = align === 'start' ? x : x - labelWidth
+    const to = from + labelWidth
+    let row = rows.findIndex((taken) => taken.every(([a, b]) => to <= a || from >= b))
+    if (row === -1) row = rows.push([]) - 1
+    rows[row]?.push([from, to])
+    return { row, align }
+  })
+}

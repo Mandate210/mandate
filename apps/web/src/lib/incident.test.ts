@@ -5,8 +5,11 @@ import {
   REPLAY_MAX_SECONDS,
   clockOf,
   endOf,
+  labelSlots,
+  milestonesOf,
   replaySpeed,
   settlementOf,
+  sinceLabel,
   timelineOf,
 } from './incident'
 
@@ -147,5 +150,97 @@ describe('a replay', () => {
     expect(replaySpeed(10)).toBe(1)
     expect(replaySpeed(REPLAY_MAX_SECONDS)).toBe(1)
     expect(replaySpeed(86_400) * REPLAY_MAX_SECONDS).toBe(86_400)
+  })
+})
+
+describe('the phase strip', () => {
+  const marks = (detail: IncidentDetailResponse) =>
+    milestonesOf(timelineOf(detail), detail).map((m) => [m.kind, m.t])
+
+  it('names the trigger, the opening, the quorum and a separate payout', () => {
+    expect(marks(devnet())).toEqual([
+      ['trigger', 0],
+      ['opened', 5],
+      ['quorum', 7],
+      ['paid', 10],
+    ])
+  })
+
+  it('draws one mark when the deciding vote paid in its own transaction', () => {
+    const detail = devnet()
+    const deciding = detail.attestations[1]
+    if (deciding === undefined || detail.payout === null) throw new Error('fixture')
+    const paid = {
+      ...detail,
+      payout: { ...detail.payout, signature: deciding.signature ?? '', at: deciding.submitted_at },
+    }
+    expect(marks(paid)).toEqual([
+      ['trigger', 0],
+      ['opened', 5],
+      ['decided', 7],
+    ])
+  })
+
+  it('ends an incident closed without a payout at its deadline', () => {
+    const detail = devnet()
+    const closed = {
+      ...detail,
+      incident: { ...detail.incident, status: 'closed_no_payout' as const },
+      attestations: detail.attestations.slice(0, 1),
+      payout: null,
+    }
+    expect(marks(closed)).toEqual([
+      ['trigger', 0],
+      ['opened', 5],
+      ['closed', detail.incident.deadline - TRIGGER],
+    ])
+  })
+
+  it('names nothing past the quorum while the incident is open', () => {
+    const detail = devnet()
+    const open = {
+      ...detail,
+      incident: { ...detail.incident, status: 'open' as const },
+      attestations: detail.attestations.slice(0, 1),
+      payout: null,
+    }
+    expect(marks(open)).toEqual([
+      ['trigger', 0],
+      ['opened', 5],
+    ])
+  })
+
+  it('reads in seconds up to two minutes, then minutes, then hours', () => {
+    expect([0, 22, 119.4, 120, 7199, 7200, 86_400].map(sinceLabel)).toEqual([
+      'T+0 s',
+      'T+22 s',
+      'T+119 s',
+      'T+2 min',
+      'T+120 min',
+      'T+2 h',
+      'T+24 h',
+    ])
+  })
+
+  it('stacks labels that would overlap and keeps the rest on the first row', () => {
+    // A 24-hour window: trigger, opening and quorum within seconds, the close at the end.
+    expect(labelSlots([0, 1, 2, 600], 600, 100)).toEqual([
+      { row: 0, align: 'start' },
+      { row: 1, align: 'start' },
+      { row: 2, align: 'start' },
+      { row: 0, align: 'end' },
+    ])
+    expect(labelSlots([0, 100, 250, 400], 600, 100).map((s) => s.row)).toEqual([0, 0, 0, 0])
+  })
+
+  it('turns a label left of its mark rather than past the end of the strip', () => {
+    expect(labelSlots([0, 550], 600, 100)).toEqual([
+      { row: 0, align: 'start' },
+      { row: 0, align: 'end' },
+    ])
+    // Ending exactly at the edge still fits.
+    expect(labelSlots([500], 600, 100)).toEqual([{ row: 0, align: 'start' }])
+    // Turned left, it can collide with a label that would have cleared it hanging right.
+    expect(labelSlots([440, 550], 600, 100).map((s) => s.row)).toEqual([0, 1])
   })
 })

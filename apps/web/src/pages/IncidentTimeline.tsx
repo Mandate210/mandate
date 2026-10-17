@@ -1,5 +1,6 @@
 import Address from '@/components/Address'
 import { IncidentStatus } from '@/components/IncidentHistory'
+import PhaseStrip from '@/components/PhaseStrip'
 import { AsOfLine, Failure, Loading } from '@/components/QueryState'
 import { ApiError, queries } from '@/lib/api'
 import { amount, short, utcSecond } from '@/lib/format'
@@ -8,6 +9,7 @@ import {
   type Settlement,
   clockOf,
   endOf,
+  milestonesOf,
   settlementOf,
   timelineOf,
 } from '@/lib/incident'
@@ -117,29 +119,19 @@ const Timeline = ({
 
       {/* ---- counter ---- */}
       <div className="panel rounded-sm overflow-hidden">
-        <div className="flex flex-wrap items-stretch">
-          <div className="flex-1 min-w-0 sm:min-w-[320px] px-6 py-7">
+        <div className="flex flex-wrap items-center">
+          <div className="flex-[0_1_auto] min-w-0 px-6 py-7">
             <div className="label">
               {from === 'trigger' ? 'Since the trigger transaction' : 'Since the incident opened'}
             </div>
-            <div className="mt-2 flex items-baseline gap-3">
-              <span
-                className={cn(
-                  'mono tabular-nums leading-[0.85] font-medium tracking-[-0.03em]',
-                  'text-[clamp(4.5rem,14vw,11rem)]',
-                  paid ? 'text-alert' : 'text-foreground',
-                )}
-              >
-                {open || replaying ? elapsed.toFixed(1) : elapsed.toLocaleString('en-US')}
-              </span>
-              <span
-                className={cn(
-                  'mono text-[clamp(1.25rem,3vw,2rem)] font-medium',
-                  paid ? 'text-alert' : 'text-muted-foreground',
-                )}
-              >
-                s
-              </span>
+            {/* The replay's widest reading sits invisibly under the live one, so the block
+                keeps its width while the digits change and the strip beside it holds still. */}
+            <div className="mt-2 grid">
+              <Reading
+                value={open || replaying ? elapsed.toFixed(1) : elapsed.toLocaleString('en-US')}
+                paid={paid}
+              />
+              {end !== null && <Reading value={end.toFixed(1)} paid={paid} ghost />}
             </div>
             <div className="mt-3 mono text-[11.5px] uppercase tracking-[0.16em]">
               <StatusLine
@@ -152,30 +144,40 @@ const Timeline = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-2 border-t xl:border-t-0 xl:border-l border-border divide-x divide-border xl:divide-x-0 w-full xl:w-auto">
-            <Cell label="Incident">
-              <span title={incident.address}>{short(incident.address)}</span>
-            </Cell>
-            <Cell label="Protocol">
-              <Link
-                to={`/protocol/${incident.protocol}`}
-                title={incident.protocol}
-                className="underline underline-offset-4 decoration-border-strong hover:decoration-foreground"
-              >
-                {short(incident.protocol)}
-              </Link>
-            </Cell>
-            <Cell label="Quorum" alert={tally >= incident.quorum_needed}>
-              {Math.min(tally, incident.quorum_needed)} / {incident.quorum_needed}
-            </Cell>
-            <Cell label="Payout" alert={paid}>
-              {detail.payout !== null && paid
-                ? amount(detail.payout.amount, decimals)
-                : incident.status === 'closed_no_payout'
-                  ? 'none'
-                  : '—'}
-            </Cell>
+          <div className="flex-[1_1_260px] min-w-0 px-6 pb-7 lg:pt-7 lg:pl-4 xl:pl-10 lg:pr-10">
+            <PhaseStrip
+              events={events}
+              milestones={milestonesOf(events, detail)}
+              span={end ?? Math.max(elapsed, events.at(-1)?.t ?? 0, 1)}
+              elapsed={elapsed}
+              live={open && !replaying}
+            />
           </div>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 border-t border-border">
+          <Cell label="Incident">
+            <span title={incident.address}>{short(incident.address)}</span>
+          </Cell>
+          <Cell label="Protocol">
+            <Link
+              to={`/protocol/${incident.protocol}`}
+              title={incident.protocol}
+              className="underline underline-offset-4 decoration-border-strong hover:decoration-foreground"
+            >
+              {short(incident.protocol)}
+            </Link>
+          </Cell>
+          <Cell label="Quorum" alert={tally >= incident.quorum_needed}>
+            {Math.min(tally, incident.quorum_needed)} / {incident.quorum_needed}
+          </Cell>
+          <Cell label="Payout" alert={paid}>
+            {detail.payout !== null && paid
+              ? amount(detail.payout.amount, decimals)
+              : incident.status === 'closed_no_payout'
+                ? 'none'
+                : '—'}
+          </Cell>
         </div>
       </div>
 
@@ -254,6 +256,31 @@ const Timeline = ({
 const buttonClass =
   'mono text-[11px] uppercase tracking-[0.14em] inline-flex items-center gap-2 px-3.5 h-8 rounded-sm border border-border-strong text-muted-foreground transition-colors duration-150 hover:text-foreground hover:border-foreground/40'
 
+const Reading = ({ value, paid, ghost }: { value: string; paid: boolean; ghost?: boolean }) => (
+  <div
+    aria-hidden={ghost}
+    className={cn('[grid-area:1/1] flex items-baseline gap-3', ghost && 'invisible')}
+  >
+    <span
+      className={cn(
+        'mono tabular-nums leading-[0.85] font-medium tracking-[-0.03em]',
+        'text-[clamp(4.5rem,14vw,11rem)]',
+        paid ? 'text-alert' : 'text-foreground',
+      )}
+    >
+      {value}
+    </span>
+    <span
+      className={cn(
+        'mono text-[clamp(1.25rem,3vw,2rem)] font-medium',
+        paid ? 'text-alert' : 'text-muted-foreground',
+      )}
+    >
+      s
+    </span>
+  </div>
+)
+
 const StatusLine = ({
   detail,
   decimals,
@@ -306,7 +333,9 @@ const Cell = ({
   alert?: boolean
   children: React.ReactNode
 }) => (
-  <div className="px-5 py-4 min-w-0 sm:min-w-[150px] border-b border-border last:border-b-0 xl:border-b xl:last:border-b-0">
+  // Two by two, then one row: the rule goes right of a cell with a neighbour beside it and
+  // under a cell with one below it — never on the panel's own edge.
+  <div className="px-5 md:px-6 py-4 min-w-0 border-border odd:border-r md:border-r md:last:border-r-0 [&:nth-child(-n+2)]:border-b md:[&:nth-child(-n+2)]:border-b-0">
     <div className="label">{label}</div>
     <div
       className={cn(
