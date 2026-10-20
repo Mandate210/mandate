@@ -1,11 +1,17 @@
 import { AnchorProvider, Wallet } from '@coral-xyz/anchor'
-import { createMint, getOrCreateAssociatedTokenAccount, mintTo } from '@solana/spl-token'
+import {
+  createAssociatedTokenAccountIdempotentInstruction,
+  createMint,
+  createMintToInstruction,
+  getAssociatedTokenAddressSync,
+} from '@solana/spl-token'
 import {
   Connection,
   Keypair,
   LAMPORTS_PER_SOL,
   type PublicKey,
   SYSVAR_CLOCK_PUBKEY,
+  Transaction,
 } from '@solana/web3.js'
 
 /// Decimals of the settlement asset. USDC has six, and the program handles one
@@ -197,12 +203,27 @@ export const setupTestEnv = async (): Promise<TestEnv> => {
   }
   const assetMint = mint.publicKey
 
+  /**
+   * One transaction through the Anchor provider, not `getOrCreateAssociatedTokenAccount`
+   * + `mintTo` (T033). Those send through `Connection`, which reuses a **finalized**
+   * blockhash for up to 30 s — already ~32 slots old when fetched, while a local
+   * validator at ~220 ms a slot expires it after 150 slots, about 33 s. From roughly
+   * 26 s into the cache every such send fails with «Blockhash not found», and
+   * `getOrCreate…` swallows that and reports the account as missing. A suite that
+   * waits ~20 s between steps lands in that window. The provider fetches a fresh
+   * blockhash per send, and nothing here swallows an error.
+   */
   const assetAccount = async (owner: PublicKey, amount = 0n): Promise<PublicKey> => {
-    const account = await getOrCreateAssociatedTokenAccount(connection, payer, assetMint, owner)
+    const account = getAssociatedTokenAddressSync(assetMint, owner, true)
+    if (amount === 0n && (await connection.getAccountInfo(account)) !== null) return account
+    const tx = new Transaction().add(
+      createAssociatedTokenAccountIdempotentInstruction(payer.publicKey, account, owner, assetMint),
+    )
     if (amount > 0n) {
-      await mintTo(connection, payer, assetMint, account.address, payer, amount)
+      tx.add(createMintToInstruction(assetMint, account, payer.publicKey, amount))
     }
-    return account.address
+    await provider.sendAndConfirm(tx)
+    return account
   }
 
   return { connection, payer, provider, assetMint, fundedKeypair, fund, assetAccount }
