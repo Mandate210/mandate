@@ -359,6 +359,129 @@ export type DrainCover = {
       "args": []
     },
     {
+      "name": "completeWithdraw",
+      "docs": [
+        "Pays out the requested shares at the price now, once the wait is over and",
+        "while no incident is open on the pool (FR-019). Only free capital leaves:",
+        "what locked capital would have paid stays requested (FR-020). A request is",
+        "completable for one wait's length after it unlocks."
+      ],
+      "discriminator": [
+        172,
+        129,
+        141,
+        17,
+        95,
+        253,
+        251,
+        98
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "docs": [
+            "Read for the wait, which also sizes the window, and for the asset (FR-014)."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "underwriter",
+          "docs": [
+            "The owner of the position: its seeds contain this key."
+          ],
+          "signer": true
+        },
+        {
+          "name": "protocol",
+          "docs": [
+            "CHECK is unnecessary: the pool PDA is derived from this protocol, and the",
+            "pool signs the transfer out of its vault with the same seeds."
+          ]
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "protocol"
+              }
+            ]
+          }
+        },
+        {
+          "name": "position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "pool"
+              },
+              {
+                "kind": "account",
+                "path": "underwriter"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "destination",
+          "docs": [
+            "Any account of the settlement asset: the owner signs, so where the money goes",
+            "is theirs to say."
+          ],
+          "writable": true
+        },
+        {
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "deposit",
       "docs": [
         "Puts capital into a pool and issues shares against it (FR-017). Open to",
@@ -1983,6 +2106,26 @@ export type DrainCover = {
       "code": 6037,
       "name": "withdrawExceedsShares",
       "msg": "Withdrawal request exceeds the shares this position holds"
+    },
+    {
+      "code": 6038,
+      "name": "noWithdrawRequested",
+      "msg": "This position has no withdrawal requested"
+    },
+    {
+      "code": 6039,
+      "name": "withdrawNotUnlocked",
+      "msg": "Withdrawal wait has not ended yet"
+    },
+    {
+      "code": 6040,
+      "name": "withdrawRequestExpired",
+      "msg": "Withdrawal request has expired; request again"
+    },
+    {
+      "code": 6041,
+      "name": "withdrawTooSmall",
+      "msg": "Shares requested are worth less than one unit of the asset"
     }
   ],
   "types": [
@@ -2682,8 +2825,9 @@ export type DrainCover = {
           {
             "name": "unlockTs",
             "docs": [
-              "When the requested withdrawal may be completed (FR-019). Meaningless while",
-              "`pending_withdraw` is zero."
+              "When the requested withdrawal may be completed (FR-019). It stays completable",
+              "for one `Config.withdraw_delay` after this, and then lapses (T033).",
+              "Meaningless while `pending_withdraw` is zero."
             ],
             "type": "i64"
           }

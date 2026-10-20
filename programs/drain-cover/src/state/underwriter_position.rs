@@ -17,7 +17,8 @@ pub struct UnderwriterPosition {
     /// They stay in `shares` meanwhile and keep both earning and bearing losses:
     /// the capital behind them is still backing policies. Zero means no request.
     pub pending_withdraw: u64,
-    /// When the requested withdrawal may be completed (FR-019). Meaningless while
-    /// `pending_withdraw` is zero.
+    /// When the requested withdrawal may be completed (FR-019). It stays completable
+    /// for one `Config.withdraw_delay` after this, and then lapses (T033).
+    /// Meaningless while `pending_withdraw` is zero.
     pub unlock_ts: i64,
 }

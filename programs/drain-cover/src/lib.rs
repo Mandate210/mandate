@@ -160,6 +160,14 @@ pub mod drain_cover {
         instructions::request_withdraw::handle_request_withdraw(ctx, shares)
     }
 
+    /// Pays out the requested shares at the price now, once the wait is over and
+    /// while no incident is open on the pool (FR-019). Only free capital leaves:
+    /// what locked capital would have paid stays requested (FR-020). A request is
+    /// completable for one wait's length after it unlocks.
+    pub fn complete_withdraw(ctx: Context<CompleteWithdraw>) -> Result<()> {
+        instructions::complete_withdraw::handle_complete_withdraw(ctx)
+    }
+
     /// Admits an attestor to the permissive set or removes one (FR-008).
     /// Admission takes effect with the next epoch; removal, at once.
     pub fn set_attestor(

@@ -12,6 +12,7 @@
 
 pub mod attest;
 pub mod close_expired_incident;
+pub mod complete_withdraw;
 pub mod deposit;
 pub mod initialize;
 pub mod issue_policy;
@@ -31,6 +32,7 @@ pub mod submit_declaration;
 // rejects in CI.
 pub use attest::*;
 pub use close_expired_incident::*;
+pub use complete_withdraw::*;
 pub use deposit::*;
 pub use initialize::*;
 pub use issue_policy::*;

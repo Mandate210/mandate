@@ -125,4 +125,18 @@ pub enum DrainCoverError {
     /// clock on an amount the underwriter did not ask for.
     #[msg("Withdrawal request exceeds the shares this position holds")]
     WithdrawExceedsShares,
+    #[msg("This position has no withdrawal requested")]
+    NoWithdrawRequested,
+    /// The wait covers the gap between an event and the incident about it (FR-019).
+    #[msg("Withdrawal wait has not ended yet")]
+    WithdrawNotUnlocked,
+    /// A request that could be completed at any later moment would be a standing
+    /// option to leave within seconds of seeing a compromise — before anyone opens an
+    /// incident about it. That gap is exactly what the wait exists to cover.
+    #[msg("Withdrawal request has expired; request again")]
+    WithdrawRequestExpired,
+    /// Rounding is down, so shares worth less than one unit of the asset would be
+    /// burned for nothing. Refused for the same reason as `DepositTooSmall`.
+    #[msg("Shares requested are worth less than one unit of the asset")]
+    WithdrawTooSmall,
 }

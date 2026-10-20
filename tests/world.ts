@@ -586,3 +586,33 @@ export const requestWithdraw = async (
     .signers([underwriter])
     .rpc()
 }
+
+/**
+ * Pays out `underwriter`'s requested shares (FR-019, FR-020, T033) into their asset
+ * account, which is returned so the caller can read what arrived. `position` is
+ * passed rather than derived so that a test can offer somebody else's.
+ */
+export const completeWithdraw = async (
+  program: Program<DrainCover>,
+  env: TestEnv,
+  target: RegisteredProtocol,
+  underwriter: Keypair,
+  position: PublicKey = findPosition(program.programId, target.pool, underwriter.publicKey),
+): Promise<PublicKey> => {
+  const destination = await env.assetAccount(underwriter.publicKey)
+
+  await program.methods
+    .completeWithdraw()
+    .accountsPartial({
+      underwriter: underwriter.publicKey,
+      protocol: target.protocol,
+      pool: target.pool,
+      position,
+      vault: target.vault,
+      destination,
+    })
+    .signers([underwriter])
+    .rpc()
+
+  return destination
+}
