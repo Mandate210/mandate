@@ -364,7 +364,8 @@ export type DrainCover = {
         "Pays out the requested shares at the price now, once the wait is over and",
         "while no incident is open on the pool (FR-019). Only free capital leaves:",
         "what locked capital would have paid stays requested (FR-020). A request is",
-        "completable for one wait's length after it unlocks."
+        "completable for one wait's length after it unlocks, and a window that closed",
+        "while the pool was blocked starts over once the incident closes."
       ],
       "discriminator": [
         172,
@@ -838,6 +839,64 @@ export type DrainCover = {
           "type": "u64"
         }
       ]
+    },
+    {
+      "name": "migratePool",
+      "docs": [
+        "Grows a pool written before T082 to the current layout. No other instruction",
+        "reads an old pool, so anyone may push it through; the caller pays the rent."
+      ],
+      "discriminator": [
+        55,
+        170,
+        171,
+        123,
+        210,
+        69,
+        39,
+        172
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocol"
+        },
+        {
+          "name": "pool",
+          "docs": [
+            "is the whole reason this instruction exists. The address comes from the seeds;",
+            "owner, discriminator and length are checked by `migrate_legacy_pool` and the",
+            "handler."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "protocol"
+              }
+            ]
+          }
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
     },
     {
       "name": "openIncident",
@@ -2126,6 +2185,11 @@ export type DrainCover = {
       "code": 6041,
       "name": "withdrawTooSmall",
       "msg": "Shares requested are worth less than one unit of the asset"
+    },
+    {
+      "code": 6042,
+      "name": "poolNotLegacy",
+      "msg": "Account is not a pool in the layout before T082"
     }
   ],
   "types": [
@@ -2703,7 +2767,8 @@ export type DrainCover = {
           {
             "name": "openIncidents",
             "docs": [
-              "Withdrawals are blocked while this is non-zero (FR-019)."
+              "Withdrawals are blocked while this is non-zero (FR-019). Changed only through",
+              "`open_incident` and `close_incident`, which keep the block's run below."
             ],
             "type": "u32"
           },
@@ -2715,6 +2780,24 @@ export type DrainCover = {
               "that never changes."
             ],
             "type": "u8"
+          },
+          {
+            "name": "blockedSince",
+            "docs": [
+              "When the latest run of blocked time began: the moment `open_incidents` left",
+              "zero, unless that was within one `withdraw_delay` of the previous run ending —",
+              "then the run carries on. Zero until the first incident."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "unblockedAt",
+            "docs": [
+              "When the latest run ended, `open_incidents` back at zero. Zero until the first",
+              "incident closes. A request whose window closed inside the run gets a fresh one",
+              "from here (`withdraw_lapses_at`)."
+            ],
+            "type": "i64"
           }
         ]
       }

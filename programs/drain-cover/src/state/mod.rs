@@ -47,7 +47,9 @@ mod tests {
         //   + three u64 sequence counters
         assert_eq!(Protocol::INIT_SPACE, 637);
         // vault 32 + assets 8 + shares 8 + locked 8 + open 4 + bump 1
-        assert_eq!(Pool::INIT_SPACE, 61);
+        //   + blocked run 8 + 8 (T082; the 61 before it is `LEGACY_POOL_LEN`)
+        assert_eq!(Pool::INIT_SPACE, 77);
+        assert_eq!(LEGACY_POOL_LEN, 8 + 61);
         // shares 8 + pending 8 + unlock 8
         assert_eq!(UnderwriterPosition::INIT_SPACE, 24);
         // limit 8 + retention 8 + remaining 8 + start 8 + end 8 + premium 8

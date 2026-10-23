@@ -102,6 +102,10 @@ export const fixtureChain = async (): Promise<FixtureChain> => {
     locked_limit: bn(detail.pool.locked_limit),
     open_incidents: detail.pool.open_incidents,
     bump: 255,
+    // The trail's incident is the pool's only one: it blocked the pool from opening
+    // to payout (T082).
+    blocked_since: bn(trail.opened.at),
+    unblocked_at: bn(trail.payout?.at ?? 0),
   })
   await put(at.policy, 'Policy', {
     limit: bn(INCIDENT_POLICY.limit),

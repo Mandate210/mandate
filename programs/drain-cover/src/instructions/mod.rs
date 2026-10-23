@@ -6,7 +6,8 @@
 //           with T036), submit_declaration, revoke_declaration, set_attestor,
 //           open_incident, attest (settles on the deciding vote —
 //           `resolve` was folded into it by T078), close_expired_incident
-// US2 (P2): deposit, release_expired_policy, request_withdraw, complete_withdraw
+// US2 (P2): deposit, release_expired_policy, request_withdraw, complete_withdraw,
+//           migrate_pool (one-off, grows pools written before T082)
 // US3 (P3): register_attestor, sweep_attestors
 // US4 (P4): open_policy, pause_new_policies
 
@@ -16,6 +17,7 @@ pub mod complete_withdraw;
 pub mod deposit;
 pub mod initialize;
 pub mod issue_policy;
+pub mod migrate_pool;
 pub mod open_incident;
 pub mod register_protocol;
 pub mod release_expired_policy;
@@ -36,6 +38,7 @@ pub use complete_withdraw::*;
 pub use deposit::*;
 pub use initialize::*;
 pub use issue_policy::*;
+pub use migrate_pool::*;
 pub use open_incident::*;
 pub use register_protocol::*;
 pub use release_expired_policy::*;

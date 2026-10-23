@@ -34,6 +34,7 @@ pnpm dev         # all apps
 pnpm lint:fix    # biome check --write
 pnpm --filter @mandate/attestor sweep   # one pass over expired incidents, then exit
 pnpm --filter @mandate/api census        # one census of the program into the cache, then exit
+pnpm --filter @mandate/scenarios migrate-pools [--devnet] [--apply]   # grow pre-T082 pools — docs/deploy-devnet.md
 pnpm --filter @mandate/cli declare list --protocol <addr>   # submit/narrow/revoke too — docs/protocol-guide.md
 anchor build     # regenerates the IDL that packages/sdk depends on
 anchor deploy    # deploys to whatever cluster Anchor.toml points at

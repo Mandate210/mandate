@@ -213,7 +213,7 @@ pub fn handle_attest(ctx: Context<Attest>, verdict: Verdict) -> Result<()> {
         AfterVote::CloseUnpaid => false,
     };
 
-    let settled = settle(ctx.accounts, pay)?;
+    let settled = settle(ctx.accounts, pay, now)?;
     emit_cpi!(settled);
     Ok(())
 }
@@ -223,7 +223,7 @@ pub fn handle_attest(ctx: Context<Attest>, verdict: Verdict) -> Result<()> {
 ///
 /// T038 wedges the attestor accounting in here — reward for agreeing with the
 /// decision, slashing for contradicting it.
-fn settle(accounts: &mut Attest, pay: bool) -> Result<IncidentSettled> {
+fn settle(accounts: &mut Attest, pay: bool, now: i64) -> Result<IncidentSettled> {
     let (payout, shortfall) = if pay {
         settle_payout(accounts.policy.payable(), accounts.pool.total_assets)
     } else {
@@ -283,10 +283,7 @@ fn settle(accounts: &mut Attest, pay: bool) -> Result<IncidentSettled> {
     let incident = &mut accounts.incident;
 
     // The reservation this incident placed on the pool's capital ends with it (FR-019).
-    pool.open_incidents = pool
-        .open_incidents
-        .checked_sub(1)
-        .ok_or(DrainCoverError::MathOverflow)?;
+    pool.close_incident(now)?;
 
     if !pay {
         // The account stays, with its tally and its trigger signature, because the

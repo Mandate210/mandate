@@ -147,12 +147,7 @@ pub fn handle_close_expired_incident(ctx: Context<CloseExpiredIncident>) -> Resu
     // The reservation this incident placed on the pool's capital is released here and
     // only here (FR-019); `locked_limit` is not touched, because the policy keeps its
     // cover and nothing was paid against it.
-    ctx.accounts.pool.open_incidents = ctx
-        .accounts
-        .pool
-        .open_incidents
-        .checked_sub(1)
-        .ok_or(DrainCoverError::MathOverflow)?;
+    ctx.accounts.pool.close_incident(now)?;
 
     // The account stays, with its tally and its trigger signature, because the trail
     // has to survive the incident (FR-011, SC-007).

@@ -9,6 +9,7 @@
     "devnet:compromise:hosted": "tsx compromise.ts --devnet --hosted",
     "devnet:setup": "tsx devnet-setup.ts",
     "devnet:measure": "tsx measure.ts",
+    "migrate-pools": "tsx migrate-pools.ts",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

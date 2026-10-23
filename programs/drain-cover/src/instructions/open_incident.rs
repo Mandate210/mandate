@@ -111,13 +111,11 @@ pub fn handle_open_incident(
         config.open_bond,
     )?;
 
-    let pool = &mut ctx.accounts.pool;
     // Withdrawals are blocked while a pool has an open incident (FR-019), which is
-    // why every path out of an incident — payout or expiry — has to decrement this.
-    pool.open_incidents = pool
-        .open_incidents
-        .checked_add(1)
-        .ok_or(DrainCoverError::MathOverflow)?;
+    // why every path out of an incident — payout or expiry — has to close it again.
+    ctx.accounts
+        .pool
+        .open_incident(now, ctx.accounts.config.withdraw_delay)?;
 
     ctx.accounts.incident.set_inner(Incident {
         policy: ctx.accounts.policy.key(),

@@ -217,7 +217,7 @@ US1 (P1) потребує: програму, `attestor`, мінімальний 
 |---|---|---|
 | `Config` | `["config"]` | `admin`, `asset_mint`, `declaration_delay`, `attest_window`, `withdraw_delay`, `quorum_bps`, `attestor_count`, `open_bond`, `paused` |
 | `Protocol` | `["protocol", protocol_id]` | `authority`, `treasury`, `privileged: Vec<Pubkey>` (cap 16), `pool`, `new_policies_paused`, `next_policy_seq`, `next_declaration_seq`, `incident_count` |
-| `Pool` | `["pool", protocol]` | `vault`, `total_assets`, `total_shares`, `locked_limit`, `open_incidents`, `bump` |
+| `Pool` | `["pool", protocol]` | `vault`, `total_assets`, `total_shares`, `locked_limit`, `open_incidents`, `bump`, `blocked_since`, `unblocked_at` (T082) |
 | `UnderwriterPosition` | `["position", pool, owner]` | `shares`, `pending_withdraw`, `unlock_ts` |
 | `Policy` | `["policy", protocol, seq]` | `limit`, `retention`, `remaining_limit`, `start_ts`, `end_ts`, `premium_paid`, `beneficiary`, `status` |
 | `DeclarationEntry` | `["decl", protocol, seq]` | `program_id`, `ix_discriminator: [u8;8]`, `not_before`, `not_after: Option<i64>`, `moves_funds: bool`, `submitted_at`, `effective_at`, `revoked_at` |
@@ -392,7 +392,7 @@ $0.000001). SC-010 із бюджетом 0.1% на 50 операціях має 
   частка, що виходить, ніколи не забирає більше, ніж коштує, тож тим, хто лишився, ціна
   частки не падає (юніт-властивість `leaving_never_costs_those_who_stay`).
 - **Порядок відмов:** немає запиту (`NoWithdrawRequested`) → ще не настав `unlock_ts`
-  (`WithdrawNotUnlocked`) → вікно минуло (`WithdrawRequestExpired`) → відкритий інцидент
+  (`WithdrawNotUnlocked`) → вікно минуло (`WithdrawRequestExpired`; з T082 — з урахуванням смуги блокування) → відкритий інцидент
   (`WithdrawalBlockedByIncident`, FR-019) → пул обнулено виплатою (`PoolWipedOut` — ціни
   частки немає, нуль не переказуємо) → `locked_limit > total_assets` (`MathOverflow`:
   облік уже зламаний, підлога в нуль це сховала б).
@@ -412,6 +412,32 @@ $0.000001). SC-010 із бюджетом 0.1% на 50 операціях має 
 **Лишається ризиком:** запит **нічого не резервує**, тож `underwrite` може продати поліси
 з капіталу, що стоїть у черзі на вихід. Частковий вивід пом'якшує це, але не знімає:
 поліс на 30 днів переживе 7-денне вікно, і решту доведеться запитати знову.
+
+**Вікно переживає інцидент (T082, FR-019, SPEC → US2 п.4).** Знайдено в T035: інцидент,
+відкритий довше, ніж лишалося вікна, анулював запит, і після закриття андеррайтер
+запитував знову й чекав ще 7 днів, тоді як SPEC обіцяє блок лише «до закриття
+інциденту». Рішення власника 2026-10-23 — **продовжувати вікно**:
+
+- `Pool` веде **смугу блокування**: `blocked_since` — коли `open_incidents` пішов з 0,
+  `unblocked_at` — коли повернувся в 0. Лічильник змінюють лише `Pool::open_incident` і
+  `Pool::close_incident` (`open_incident`, `attest` на вирішальному голосі,
+  `close_expired_incident`).
+- **Вікно, що закрилося б усередині смуги, починається заново: повний `withdraw_delay`
+  від `unblocked_at`** (`Pool::withdraw_lapses_at`). Поки смуга триває, живий запит
+  відхиляється як `WithdrawalBlockedByIncident`, а не як протухлий.
+- **Протухлий запит інцидент не воскрешає.** Якщо вікно закрилося до початку смуги,
+  воно лишається закритим. Тому правило не `max(unlock_ts, closed_at) + delay`: таке
+  знову дало б постійний опціон, який вікно мало прибрати.
+- **Інцидент, відкритий протягом `delay` після кінця смуги, продовжує ту саму смугу.**
+  Інакше другий інцидент у новому вікні вбив би запит удруге. Ціна цього: запит, чиє
+  вікно закрилося в проміжку між смугами, коли пул не був заблокований, оживає разом
+  із ними. Це щонайбільше один `delay` після його власного вікна, і лише через інцидент.
+- **Розкладка:** поля дописані **в кінець** `Pool` (69 → 85 байт), тож старий пул — це
+  новий, обрізаний з кінця. `migrate_pool` (permissionless, платник доплачує ренту)
+  дорощує старі пули на devnet: `docs/deploy-devnet.md` → «Міграція пулів (T082)».
+  Пул, мігрований під час інциденту, вважається заблокованим від моменту міграції.
+  `LEGACY_POOL_SIZE` і `padLegacyPool` в SDK дають replay SC-007 читати обидві довжини;
+  тест `pool-layout.test.ts` тримає «росте лише з кінця».
 
 **Ізоляція пулів (FR-002)** — структурна: у кожного `Pool` власний `vault` (token account, owner = PDA пулу). Спільного сховища не існує, тож перелити капітал між пулами неможливо навіть помилково.
 

@@ -25,6 +25,7 @@ import {
   findPolicy,
   findPool,
   findVault,
+  padLegacyPool,
   readTransaction,
   settlementsIn,
 } from '@mandate/sdk'
@@ -190,7 +191,9 @@ export const replayDecision = async (
       report('foreign-account', `${address} is not a ${kind}`)
       return null
     }
-    return coder.accounts.decode(kind, data) as Fields
+    // A pool written before T082 is the current layout cut short, and stays so until
+    // `migrate_pool` runs. Nothing here reads the fields it lacks.
+    return coder.accounts.decode(kind, kind === 'Pool' ? padLegacyPool(data) : data) as Fields
   }
 
   // ── Where everything is ───────────────────────────────────────────────────

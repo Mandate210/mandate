@@ -163,9 +163,16 @@ pub mod drain_cover {
     /// Pays out the requested shares at the price now, once the wait is over and
     /// while no incident is open on the pool (FR-019). Only free capital leaves:
     /// what locked capital would have paid stays requested (FR-020). A request is
-    /// completable for one wait's length after it unlocks.
+    /// completable for one wait's length after it unlocks, and a window that closed
+    /// while the pool was blocked starts over once the incident closes.
     pub fn complete_withdraw(ctx: Context<CompleteWithdraw>) -> Result<()> {
         instructions::complete_withdraw::handle_complete_withdraw(ctx)
+    }
+
+    /// Grows a pool written before T082 to the current layout. No other instruction
+    /// reads an old pool, so anyone may push it through; the caller pays the rent.
+    pub fn migrate_pool(ctx: Context<MigratePool>) -> Result<()> {
+        instructions::migrate_pool::handle_migrate_pool(ctx)
     }
 
     /// Admits an attestor to the permissive set or removes one (FR-008).

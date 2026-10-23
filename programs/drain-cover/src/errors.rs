@@ -139,4 +139,8 @@ pub enum DrainCoverError {
     /// burned for nothing. Refused for the same reason as `DepositTooSmall`.
     #[msg("Shares requested are worth less than one unit of the asset")]
     WithdrawTooSmall,
+    /// `migrate_pool` grows a pool written before T082 and nothing else: a pool
+    /// already at the current length, or another account of the old one.
+    #[msg("Account is not a pool in the layout before T082")]
+    PoolNotLegacy,
 }

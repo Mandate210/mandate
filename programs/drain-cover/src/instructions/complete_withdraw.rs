@@ -25,7 +25,9 @@ use crate::state::{Config, Pool, UnderwriterPosition, CONFIG_SEED, POOL_SEED, PO
 /// A request that stayed completable forever would be a standing option to leave the
 /// moment a compromise is visible, ahead of the incident about it — the gap the wait
 /// is there to cover. No new `Config` field: the window reuses the delay, so the
-/// layout and every deployed `Config` stay as they are.
+/// layout and every deployed `Config` stay as they are. **An incident does not use the
+/// window up** (owner's decision 2026-10-23): a window that closed while the pool was
+/// blocked starts over from the end of the block (`Pool::withdraw_lapses_at`).
 #[derive(Accounts)]
 pub struct CompleteWithdraw<'info> {
     /// Read for the wait, which also sizes the window, and for the asset (FR-014).
@@ -90,11 +92,12 @@ pub fn plan_withdraw_completion(
         now >= position.unlock_ts,
         DrainCoverError::WithdrawNotUnlocked
     );
-    let lapses_at = position
-        .unlock_ts
-        .checked_add(delay)
-        .ok_or(DrainCoverError::MathOverflow)?;
-    require!(now < lapses_at, DrainCoverError::WithdrawRequestExpired);
+    // No end while the pool is blocked and the request outlived the block's start:
+    // the open-incident check below refuses it, and the window restarts once the
+    // incident closes.
+    if let Some(lapses_at) = pool.withdraw_lapses_at(position.unlock_ts, delay)? {
+        require!(now < lapses_at, DrainCoverError::WithdrawRequestExpired);
+    }
 
     require!(
         pool.open_incidents == 0,
@@ -191,6 +194,8 @@ mod tests {
             total_shares,
             locked_limit,
             open_incidents: 0,
+            blocked_since: 0,
+            unblocked_at: 0,
             bump: 255,
         }
     }
@@ -258,6 +263,42 @@ mod tests {
         let pl = pool(1_000, 1_000, 0);
         assert!(plan_withdraw_completion(&p, &pl, UNLOCK + WEEK - 1, WEEK).is_ok());
         // The end is exclusive, like a policy's `end_ts`.
+        assert_eq!(
+            refused(plan_withdraw_completion(&p, &pl, UNLOCK + WEEK, WEEK)),
+            code(DrainCoverError::WithdrawRequestExpired)
+        );
+    }
+
+    /// SPEC → US2, acceptance 4: blocked *until* the incident closes, not past it. The
+    /// window would have closed during the incident; it is a full wait again from the
+    /// moment the pool unblocked.
+    #[test]
+    fn a_window_an_incident_ran_out_starts_over_when_it_closes() {
+        let p = position(1_000, 400);
+        let mut pl = pool(1_000, 1_000, 0);
+        pl.open_incident(UNLOCK + 1, WEEK).unwrap();
+        // Past the window's own end, and the refusal names the incident, not the
+        // window: the request is still alive.
+        assert_eq!(
+            refused(plan_withdraw_completion(&p, &pl, UNLOCK + WEEK + 1, WEEK)),
+            code(DrainCoverError::WithdrawalBlockedByIncident)
+        );
+
+        let closed = UNLOCK + 2 * WEEK;
+        pl.close_incident(closed).unwrap();
+        assert!(plan_withdraw_completion(&p, &pl, closed, WEEK).is_ok());
+        assert!(plan_withdraw_completion(&p, &pl, closed + WEEK - 1, WEEK).is_ok());
+        assert_eq!(
+            refused(plan_withdraw_completion(&p, &pl, closed + WEEK, WEEK)),
+            code(DrainCoverError::WithdrawRequestExpired)
+        );
+    }
+
+    #[test]
+    fn an_incident_after_the_window_closed_is_refused_as_lapsed() {
+        let p = position(1_000, 400);
+        let mut pl = pool(1_000, 1_000, 0);
+        pl.open_incident(UNLOCK + WEEK, WEEK).unwrap();
         assert_eq!(
             refused(plan_withdraw_completion(&p, &pl, UNLOCK + WEEK, WEEK)),
             code(DrainCoverError::WithdrawRequestExpired)
