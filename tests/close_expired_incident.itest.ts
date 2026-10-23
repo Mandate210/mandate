@@ -31,8 +31,9 @@ const RETENTION = asset(50_000)
 const PREMIUM = asset(4_000)
 
 /**
- * The only suite that waits out a deadline, so it is the only one that cares how long
- * `Config.attest_window` is — and `Config` is a singleton that outlives a test run.
+ * One of two suites that wait out a deadline (the other is `us2-withdraw.itest.ts`), and
+ * the one that checks how long `Config.attest_window` is — and `Config` is a singleton
+ * that outlives a test run.
  * Longer than this and the wait below would look like a hang, so say what it is.
  */
 const REFUSE_WINDOW_ABOVE = 180
